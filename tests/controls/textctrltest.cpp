@@ -14,9 +14,6 @@
 
 #if wxUSE_TEXTCTRL
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/app.h"
@@ -169,14 +166,16 @@ long TextCtrlTestCase::ms_style = 0;
 
 void TextCtrlTestCase::CreateText(long extraStyles)
 {
+    const long style = ms_style | extraStyles;
+    const int h = (style & wxTE_MULTILINE) ? TEXT_HEIGHT : -1;
     m_text = new wxTextCtrl(wxTheApp->GetTopWindow(), wxID_ANY, "",
-                            wxDefaultPosition, wxSize(400, TEXT_HEIGHT),
-                            ms_style | extraStyles);
+                            wxDefaultPosition, wxSize(400, h),
+                            style);
 }
 
 void TextCtrlTestCase::setUp()
 {
-    CreateText(ms_style);
+    CreateText(0);
 }
 
 void TextCtrlTestCase::tearDown()
@@ -345,7 +344,7 @@ void TextCtrlTestCase::Redirector()
 void TextCtrlTestCase::HitTestSingleLine()
 {
 #ifdef __WXQT__
-	WARN("Does not work under WxQt");
+    WARN("Does not work under WxQt");
 #else
     m_text->ChangeValue("Hit me");
 
@@ -516,7 +515,7 @@ void TextCtrlTestCase::Style()
     CHECK( style.GetTextColour() == *wxRED );
     CHECK( style.GetBackgroundColour() == *wxWHITE );
 #else
-	WARN("Does not work under WxQt or OSX");
+    WARN("Does not work under WxQt or OSX");
 #endif
 }
 

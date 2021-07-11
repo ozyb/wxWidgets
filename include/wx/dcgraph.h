@@ -38,7 +38,7 @@ public:
 
 #ifdef __WXMSW__
     // override wxDC virtual functions to provide access to HDC associated with
-    // this Graphics object (implemented in src/msw/graphics.cpp)
+    // underlying wxGraphicsContext
     virtual WXHDC AcquireHDC() wxOVERRIDE;
     virtual void ReleaseHDC(WXHDC hdc) wxOVERRIDE;
 #endif // __WXMSW__
@@ -226,6 +226,10 @@ protected:
     // unused int parameter distinguishes this version, which does not create a
     // wxGraphicsContext, in the expectation that the derived class will do it
     wxGCDCImpl(wxDC* owner, int);
+
+#ifdef __WXOSX__
+    virtual wxPoint OSXGetOrigin() const { return wxPoint(); }
+#endif
 
     // scaling variables
     bool m_logicalFunctionSupported;

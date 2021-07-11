@@ -18,9 +18,6 @@
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_PREFERENCES_EDITOR
 
@@ -239,7 +236,7 @@ private:
         OnSelectPageForTool(tool);
     }
 
-    void OnClose(wxCloseEvent& e)
+    void OnClose(wxCloseEvent& WXUNUSED(e))
     {
         // Instead of destroying the window, just hide it, it could be
         // reused again by another invocation of the editor.

@@ -31,14 +31,10 @@
 #include "wx/vector.h"
 
 #include "wx/meta/convertible.h"
+#include "wx/meta/removeref.h"
 
-// Currently VC7 is known to not be able to compile CallAfter() code, so
-// disable it for it (FIXME-VC7).
-#if !defined(__VISUALC__) || wxCHECK_VISUALC_VERSION(8)
-    #include "wx/meta/removeref.h"
-
-    #define wxHAS_CALL_AFTER
-#endif
+// This is now always defined, but keep it for backwards compatibility.
+#define wxHAS_CALL_AFTER
 
 // ----------------------------------------------------------------------------
 // forward declarations
@@ -144,43 +140,58 @@ inline wxEventFunction wxEventFunctionCast(void (wxEvtHandler::*func)(T&))
     wxGCC_WARNING_RESTORE_CAST_FUNCTION_TYPE()
 }
 
-// Special hack to remove "noexcept" from the function type when using C++17 or
-// later: static_cast<> below would fail to cast a member function pointer to a
-// member of a derived class to the base class if noexcept is specified for the
-// former, so remove it first if necessary.
+// In good old pre-C++17 times we could just static_cast the event handler,
+// defined in some class deriving from wxEvtHandler, to the "functype" which is
+// a type of wxEvtHandler method. But with C++17 this doesn't work when the
+// handler is a noexcept function, so we need to cast it to a noexcept function
+// pointer first.
 #if __cplusplus >= 201703L
 
 namespace wxPrivate
 {
 
-// Generic template version, doing nothing.
-template <typename T>
-struct RemoveNoexceptEventHandler
+// Cast to noexcept function type first if necessary.
+template <typename E, typename C>
+constexpr auto DoCast(void (C::*pmf)(E&))
 {
-    using type = T;
+    return static_cast<void (wxEvtHandler::*)(E&)>(pmf);
+}
+
+template <typename E, typename C>
+constexpr auto DoCast(void (C::*pmf)(E&) noexcept)
+{
+    return static_cast<void (wxEvtHandler::*)(E&)>(
+            static_cast<void (wxEvtHandler::*)(E&) noexcept>(pmf)
+        );
+}
+
+// Helper used to recover the type of the handler argument from the function
+// type. This is required in order to explicitly pass this type to DoCast<> as
+// the compiler would be unable to deduce it for overloaded functions.
+
+// Generic template version, doing nothing.
+template <typename F>
+struct EventArgOf;
+
+// Specialization sufficient to cover all event handler function types.
+template <typename C, typename E>
+struct EventArgOf<void (C::*)(E&)>
+{
+    using type = E;
 };
 
-// Specialization removing noexcept when it's specified.
-//
-// Note that this doesn't pretend to be generally suitable, this is just enough
-// to work in our particular case.
-template <typename R, typename C, typename E>
-struct RemoveNoexceptEventHandler<R (C::*)(E&) noexcept>
-{
-    using type = R (C::*)(E&);
-};
 
 } // namespace wxPrivate
 
-#define wxREMOVE_NOEXCEPT_EVENT_HANDLER(pmf) \
-    static_cast<wxPrivate::RemoveNoexceptEventHandler<decltype(pmf)>::type>(pmf)
+#define wxEventHandlerNoexceptCast(functype, pmf) \
+    wxPrivate::DoCast<wxPrivate::EventArgOf<functype>::type>(pmf)
 #else
-#define wxREMOVE_NOEXCEPT_EVENT_HANDLER(pmf) pmf
+#define wxEventHandlerNoexceptCast(functype, pmf) static_cast<functype>(pmf)
 #endif
 
 // Try to cast the given event handler to the correct handler type:
 #define wxEVENT_HANDLER_CAST( functype, func ) \
-    wxEventFunctionCast(static_cast<functype>(wxREMOVE_NOEXCEPT_EVENT_HANDLER(&func)))
+    wxEventFunctionCast(wxEventHandlerNoexceptCast(functype, &func))
 
 
 // The tag is a type associated to the event type (which is an integer itself,
@@ -666,6 +677,7 @@ class WXDLLIMPEXP_FWD_CORE wxWindowDestroyEvent;
 class WXDLLIMPEXP_FWD_CORE wxShowEvent;
 class WXDLLIMPEXP_FWD_CORE wxIconizeEvent;
 class WXDLLIMPEXP_FWD_CORE wxMaximizeEvent;
+class WXDLLIMPEXP_FWD_CORE wxFullScreenEvent;
 class WXDLLIMPEXP_FWD_CORE wxMouseCaptureChangedEvent;
 class WXDLLIMPEXP_FWD_CORE wxMouseCaptureLostEvent;
 class WXDLLIMPEXP_FWD_CORE wxPaintEvent;
@@ -817,6 +829,7 @@ wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_DESTROY, wxWindowDestroyEvent);
 wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_SHOW, wxShowEvent);
 wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_ICONIZE, wxIconizeEvent);
 wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_MAXIMIZE, wxMaximizeEvent);
+wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_FULLSCREEN, wxFullScreenEvent);
 wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_MOUSE_CAPTURE_CHANGED, wxMouseCaptureChangedEvent);
 wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_MOUSE_CAPTURE_LOST, wxMouseCaptureLostEvent);
 wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_PAINT, wxPaintEvent);
@@ -1184,6 +1197,35 @@ private:
     wxDECLARE_NO_COPY_CLASS(wxPropagateOnce);
 };
 
+// Helper class changing the event object to make the event appear as coming
+// from a different source: this is somewhat of a hack, but avoids copying the
+// events just to change their event object field.
+class wxEventObjectOriginSetter
+{
+public:
+    wxEventObjectOriginSetter(wxEvent& event, wxObject* source, int winid = 0)
+        : m_event(event),
+          m_sourceOrig(event.GetEventObject()),
+          m_idOrig(event.GetId())
+    {
+        m_event.SetEventObject(source);
+        m_event.SetId(winid);
+    }
+
+    ~wxEventObjectOriginSetter()
+    {
+        m_event.SetId(m_idOrig);
+        m_event.SetEventObject(m_sourceOrig);
+    }
+
+private:
+    wxEvent& m_event;
+    wxObject* const m_sourceOrig;
+    const int m_idOrig;
+
+    wxDECLARE_NO_COPY_CLASS(wxEventObjectOriginSetter);
+};
+
 // A helper object used to temporarily make wxEvent::ShouldProcessOnlyIn()
 // return true for the handler passed to its ctor.
 class wxEventProcessInHandlerOnly
@@ -1355,8 +1397,6 @@ private:
 // specified method. The difference with a simple method call is that this is
 // done asynchronously, i.e. at some later time, instead of immediately when
 // the event object is constructed.
-
-#ifdef wxHAS_CALL_AFTER
 
 // This is a base class used to process all method calls.
 class wxAsyncMethodCallEvent : public wxEvent
@@ -1537,9 +1577,6 @@ public:
 private:
     FunctorType m_fn;
 };
-
-#endif // wxHAS_CALL_AFTER
-
 
 #if wxUSE_GUI
 
@@ -2181,6 +2218,9 @@ public:
     // get the raw key flags (platform-dependent)
     wxUint32 GetRawKeyFlags() const { return m_rawFlags; }
 
+    // returns true if this is a key auto repeat event
+    bool IsAutoRepeat() const { return m_isRepeat; }
+
     // Find the position of the event
     void GetPosition(wxCoord *xpos, wxCoord *ypos) const
     {
@@ -2242,6 +2282,9 @@ public:
     wxUint32      m_rawCode;
     wxUint32      m_rawFlags;
 
+    // Indicates whether the key event is a repeat
+    bool          m_isRepeat;
+
 private:
     // Set the event to propagate if necessary, i.e. if it's of wxEVT_CHAR_HOOK
     // type. This is used by all ctors.
@@ -2268,6 +2311,7 @@ private:
 #if wxUSE_UNICODE
         m_uniChar = evt.m_uniChar;
 #endif
+        m_isRepeat = evt.m_isRepeat;
     }
 
     // Initialize m_x and m_y using the current mouse cursor position if
@@ -2708,6 +2752,30 @@ public:
 
 private:
     wxDECLARE_DYNAMIC_CLASS_NO_ASSIGN(wxMaximizeEvent);
+};
+
+/*
+ wxEVT_FULLSCREEN
+ */
+class WXDLLIMPEXP_CORE wxFullScreenEvent : public wxEvent
+{
+public:
+    wxFullScreenEvent(int winid = 0, bool fullscreen = true)
+        : wxEvent(winid, wxEVT_FULLSCREEN)
+        { m_fullscreen = fullscreen; }
+    wxFullScreenEvent(const wxFullScreenEvent& event)
+        : wxEvent(event)
+        { m_fullscreen = event.m_fullscreen; }
+
+    bool IsFullScreen() const { return m_fullscreen; }
+
+    virtual wxEvent *Clone() const wxOVERRIDE { return new wxFullScreenEvent(*this); }
+
+protected:
+    bool m_fullscreen;
+
+private:
+    wxDECLARE_DYNAMIC_CLASS_NO_ASSIGN(wxFullScreenEvent);
 };
 
 // Joystick event class
@@ -3664,7 +3732,6 @@ public:
     static void WXConsumeException();
 #endif // wxUSE_EXCEPTIONS
 
-#ifdef wxHAS_CALL_AFTER
     // Asynchronous method calls: these methods schedule the given method
     // pointer for a later call (during the next idle event loop iteration).
     //
@@ -3708,7 +3775,6 @@ public:
     {
         QueueEvent(new wxAsyncMethodCallEventFunctor<T>(this, fn));
     }
-#endif // wxHAS_CALL_AFTER
 
 
     // Connecting and disconnecting
@@ -4281,15 +4347,11 @@ typedef void (wxEvtHandler::*wxPressAndTapEventFunction)(wxPressAndTapEvent&);
         static const wxEventTableEntry sm_eventTableEntries[];          \
     protected:                                                          \
         wxWARNING_SUPPRESS_MISSING_OVERRIDE()                           \
-        const wxEventTable* GetEventTable() const;                      \
-        wxEventHashTable& GetEventHashTable() const;                    \
+        const wxEventTable* GetEventTable() const wxDUMMY_OVERRIDE;     \
+        wxEventHashTable& GetEventHashTable() const wxDUMMY_OVERRIDE;   \
         wxWARNING_RESTORE_MISSING_OVERRIDE()                            \
         static const wxEventTable        sm_eventTable;                 \
         static wxEventHashTable          sm_eventHashTable
-
-// N.B.: when building DLL with Borland C++ 5.5 compiler, you must initialize
-//       sm_eventTable before using it in GetEventTable() or the compiler gives
-//       E2233 (see http://groups.google.com/groups?selm=397dcc8a%241_2%40dnews)
 
 #define wxBEGIN_EVENT_TABLE(theClass, baseClass) \
     const wxEventTable theClass::sm_eventTable = \

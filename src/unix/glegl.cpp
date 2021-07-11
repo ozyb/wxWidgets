@@ -457,8 +457,9 @@ bool wxGLCanvasEGL::CreateSurface()
     }
 
     GdkWindow *window = GTKGetDrawingWindow();
+    const char* name = g_type_name(G_TYPE_FROM_INSTANCE(window));
 #ifdef GDK_WINDOWING_X11
-    if ( GDK_IS_X11_WINDOW(window) )
+    if (strcmp("GdkX11Window", name) == 0)
     {
         m_xwindow = GDK_WINDOW_XID(window);
         m_surface = eglCreatePlatformWindowSurface(m_display, *m_config,
@@ -467,7 +468,7 @@ bool wxGLCanvasEGL::CreateSurface()
     }
 #endif
 #ifdef GDK_WINDOWING_WAYLAND
-    if ( GDK_IS_WAYLAND_WINDOW(window) )
+    if (strcmp("GdkWaylandWindow", name) == 0)
     {
         int x, y;
         gdk_window_get_origin(window, &x, &y);
@@ -479,7 +480,7 @@ bool wxGLCanvasEGL::CreateSurface()
         wl_registry_add_listener(registry, &wl_registry_listener, this);
         wl_display_roundtrip(display);
         if ( !m_wlCompositor || !m_wlSubcompositor )
-	{
+        {
             wxFAIL_MSG("Invalid Wayland compositor or subcompositor");
             return false;
         }

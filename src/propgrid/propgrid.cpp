@@ -11,9 +11,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_PROPGRID
 
@@ -65,6 +62,7 @@
 #include "wx/timer.h"
 #include "wx/dcbuffer.h"
 #include "wx/scopeguard.h"
+#include "wx/display.h"
 
 // Two pics for the expand / collapse buttons.
 // Files are not supplied with this project (since it is
@@ -1187,6 +1185,12 @@ wxSize wxPropertyGrid::DoGetBestSize() const
     return wxSize(width, lineHeight*numLines + 40);
 }
 
+void wxPropertyGrid::DoEnable(bool enable)
+{
+    wxControl::DoEnable(enable);
+    Refresh(false);
+}
+
 // -----------------------------------------------------------------------
 
 void wxPropertyGrid::OnTLPChanging( wxWindow* newTLP )
@@ -1718,27 +1722,29 @@ wxPoint wxPropertyGrid::GetGoodEditorDialogPosition( wxPGProperty* p,
 
     ImprovedClientToScreen( &x, &y );
 
-    int sw = wxSystemSettings::GetMetric( ::wxSYS_SCREEN_X, this );
-    int sh = wxSystemSettings::GetMetric( ::wxSYS_SCREEN_Y, this );
+    wxRect displayRect = wxDisplay(this).GetGeometry();
+
+    x -= displayRect.GetX();
+    y -= displayRect.GetY();
 
     int new_x;
     int new_y;
 
-    if ( x > (sw/2) )
+    if ( x > (displayRect.GetWidth()/2) )
         // left
         new_x = x + (m_width-splitterX) - sz.x;
     else
         // right
         new_x = x;
 
-    if ( y > (sh/2) )
+    if ( y > (displayRect.GetHeight()/2) )
         // above
         new_y = y - sz.y;
     else
         // below
         new_y = y + m_lineHeight;
 
-    return wxPoint(new_x,new_y);
+    return wxPoint(new_x + displayRect.GetX(), new_y + displayRect.GetY());
 }
 
 // -----------------------------------------------------------------------
@@ -2129,8 +2135,6 @@ int wxPropertyGrid::DoDrawItems( wxDC& dc,
     wxBrush capbgbrush(m_colCapBack,wxBRUSHSTYLE_SOLID);
     wxPen linepen(m_colLine,1,wxPENSTYLE_SOLID);
 
-    wxColour selBackCol = isPgEnabled ? m_colSelBack : m_colMargin;
-
     // pen that has same colour as text
     wxPen outlinepen(m_colPropFore,1,wxPENSTYLE_SOLID);
 
@@ -2294,20 +2298,20 @@ int wxPropertyGrid::DoDrawItems( wxDC& dc,
                 renderFlags |= wxPGCellRenderer::DontUseCellFgCol |
                                wxPGCellRenderer::DontUseCellBgCol;
 
-                if ( reallyFocused && p == firstSelected )
+                if ( reallyFocused )
                 {
-                    rowFgCol = m_colSelFore;
-                    rowBgCol = selBackCol;
+                    rowFgCol = (p == firstSelected) ? m_colSelFore : m_colPropFore;
+                    rowBgCol = m_colSelBack;
                 }
                 else if ( isPgEnabled )
                 {
                     rowFgCol = m_colPropFore;
-                    rowBgCol = p == firstSelected ? m_colMargin : selBackCol;
+                    rowBgCol = m_colMargin;
                 }
                 else
                 {
                     rowFgCol = m_colDisPropFore;
-                    rowBgCol = selBackCol;
+                    rowBgCol = m_colMargin;
                 }
             }
         }
@@ -3133,11 +3137,10 @@ bool wxPropertyGrid::PerformValidation( wxPGProperty* p, wxVariant& pendingValue
 wxStatusBar* wxPropertyGrid::GetStatusBar()
 {
     wxWindow* topWnd = ::wxGetTopLevelParent(this);
-    if ( wxDynamicCast(topWnd, wxFrame) )
+    wxFrame* frame = wxDynamicCast(topWnd, wxFrame);
+    if ( frame )
     {
-        wxFrame* pFrame = wxStaticCast(topWnd, wxFrame);
-        if ( pFrame )
-            return pFrame->GetStatusBar();
+        return frame->GetStatusBar();
     }
     return NULL;
 }
@@ -4459,7 +4462,6 @@ bool wxPropertyGrid::SelectProperty( wxPGPropArg id, bool focus )
 
 bool wxPropertyGrid::DoCollapse( wxPGProperty* p, bool sendEvents )
 {
-    wxPGProperty* pwc = wxStaticCast(p, wxPGProperty);
     wxPGProperty* selected = GetSelection();
 
     // If active editor was inside collapsed section, then disable it
@@ -4472,7 +4474,7 @@ bool wxPropertyGrid::DoCollapse( wxPGProperty* p, bool sendEvents )
     bool prevDontCenterSplitter = m_pState->m_dontCenterSplitter;
     m_pState->m_dontCenterSplitter = true;
 
-    bool res = m_pState->DoCollapse(pwc);
+    bool res = m_pState->DoCollapse(p);
 
     if ( res )
     {
@@ -5738,8 +5740,12 @@ void wxPropertyGrid::HandleKeyEvent( wxKeyEvent &event, bool fromChild )
 
         if ( action == wxPG_ACTION_EDIT && !editorFocused )
         {
-            DoSelectProperty( p, wxPG_SEL_FOCUS );
-            wasHandled = true;
+            // Mark as handled only for editable property
+            if ( !p->IsCategory() && p->IsEnabled() && !p->HasFlag(wxPG_PROP_READONLY) )
+            {
+                DoSelectProperty( p, wxPG_SEL_FOCUS );
+                wasHandled = true;
+            }
         }
 
         // Travel and expand/collapse
@@ -5779,10 +5785,10 @@ void wxPropertyGrid::HandleKeyEvent( wxKeyEvent &event, bool fromChild )
                 int selFlags = 0;
                 int reopenLabelEditorCol = -1;
 
-                if ( editorFocused )
+                if ( action == wxPG_ACTION_EDIT )
                 {
-                    // If editor was focused, then make the next editor
-                    // focused as well
+                    // Make the next editor focused as well
+                    // if we are actually going to edit the property.
                     selFlags |= wxPG_SEL_FOCUS;
                 }
                 else
@@ -6038,9 +6044,14 @@ void wxPropertyGrid::HandleFocusChange( wxWindow* newFocused )
         }
 
         // Redraw selected
-        wxPGProperty* selected = GetSelection();
-        if ( selected && (m_iFlags & wxPG_FL_INITIALIZED) )
-            DrawItem( selected );
+        if ( m_iFlags & wxPG_FL_INITIALIZED )
+        {
+            const wxArrayPGProperty& sel = GetSelectedProperties();
+            for ( size_t i = 0; i < sel.size(); i++ )
+            {
+                DrawItem(sel[i]);
+            }
+        }
     }
 }
 

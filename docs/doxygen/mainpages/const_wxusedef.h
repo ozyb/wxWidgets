@@ -90,6 +90,7 @@ library:
 @itemdef{wxUSE_CONSOLE_EVENTLOOP, Enable event loop in console programs.}
 @itemdef{wxUSE_CONSTRAINTS, Use wxLayoutConstraints}
 @itemdef{wxUSE_CONTROLS, If set to 0, no classes deriving from wxControl can be used.}
+@itemdef{wxUSE_CREDENTIALDLG, If set to 0, disabled wxCredentialEntryDialog used by wxWebRequest.}
 @itemdef{wxUSE_DATAOBJ, Use wxDataObject and related classes.}
 @itemdef{wxUSE_DATAVIEWCTRL, Use wxDataViewCtrl class.}
 @itemdef{wxUSE_DATEPICKCTRL, Use wxDatePickerCtrl class.}
@@ -254,6 +255,7 @@ library:
 @itemdef{wxUSE_URL_NATIVE, Use native support for some operations with wxURL.}
 @itemdef{wxUSE_VALIDATORS, Use wxValidator class.}
 @itemdef{wxUSE_VARIANT, Use wxVariant class.}
+@itemdef{wxUSE_WEBREQUEST, Use wxWebRequest class.}
 @itemdef{wxUSE_WEBVIEW, Use wxWebView class.}
 @itemdef{wxUSE_WIZARDDLG, Use wxWizard class.}
 @itemdef{wxUSE_WXHTML_HELP, Use wxHtmlHelpController and related classes.}
@@ -274,7 +276,7 @@ library:
 @itemdef{wxUSE_LIBSDL, Use SDL for wxSound implementation.}
 @itemdef{wxUSE_PLUGINS, See also wxUSE_LIBSDL.}
 @itemdef{wxUSE_UNIX, Enabled on Unix Platform.}
-@itemdef(wxUSE_XTEST, Use XTest extension.}
+@itemdef{wxUSE_XTEST, Use XTest extension.}
 @endDefList
 
 
@@ -325,7 +327,7 @@ library:
 @itemdef{wxUSE_DC_CACHEING, cache temporary wxDC objects.}
 @itemdef{wxUSE_DDE_FOR_IPC, See wx/ipc.h file.}
 @itemdef{wxUSE_DPI_AWARE_MANIFEST, Set the DPI awareness of the application
-(0=none, 1=system, 2=per-monitor. Used by CMake and when wxUSE_RC_MANIFEST is enabled.}
+(0=none, 1=system, 2=per-monitor). Used by CMake and when wxUSE_RC_MANIFEST is enabled.}
 @itemdef{wxUSE_ENH_METAFILE, Use wxEnhMetaFile.}
 @itemdef{wxUSE_HOTKEY, Use wxWindow::RegisterHotKey() and wxWindow::UnregisterHotKey}
 @itemdef{wxUSE_INKEDIT, Use InkEdit library. Related to Tablet PCs.}

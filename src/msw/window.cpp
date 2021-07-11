@@ -19,9 +19,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/window.h"
 
@@ -1000,7 +997,7 @@ bool wxWindowMSW::EnableTouchEvents(int eventsMask)
         if ( !GestureFuncs::SetGestureConfig()
              (
                 m_hWnd,
-                0,                      // Reserved, must be always 0.
+                wxRESERVED_PARAM,
                 numConfigs,             // Number of gesture configurations.
                 ptrConfigs,             // Pointer to the first one.
                 sizeof(GESTURECONFIG)   // Size of each configuration.
@@ -3775,13 +3772,12 @@ wxWindowMSW::MSWHandleMessage(WXLRESULT *result,
                     // it below if it fails.
                     RECT rcClient;
 
-                    wxClientDC dc((wxWindow *)this);
-                    wxMSWDCImpl *impl = (wxMSWDCImpl*) dc.GetImpl();
+                    WindowHDC hdc(GetHwnd());
 
                     if ( ::GetThemeBackgroundContentRect
                                 (
                                  hTheme,
-                                 GetHdcOf(*impl),
+                                 hdc,
                                  EP_EDITTEXT,
                                  IsEnabled() ? ETS_NORMAL : ETS_DISABLED,
                                  rect,
@@ -4220,7 +4216,7 @@ bool wxWindowMSW::HandleQueryEndSession(long logOff, bool *mayEnd)
     event.SetCanVeto(true);
     event.SetLoggingOff(logOff == (long)ENDSESSION_LOGOFF);
 
-    bool rc = wxTheApp->ProcessEvent(event);
+    bool rc = wxTheApp->SafelyProcessEvent(event);
 
     if ( rc )
     {
@@ -4239,7 +4235,7 @@ bool wxWindowMSW::HandleEndSession(bool endSession, long logOff)
         return false;
 
     // only send once
-    if ( (this != wxTheApp->GetTopWindow()) )
+    if ( this != wxApp::GetMainTopWindow() )
         return false;
 
     wxCloseEvent event(wxEVT_END_SESSION, wxID_ANY);
@@ -4247,7 +4243,7 @@ bool wxWindowMSW::HandleEndSession(bool endSession, long logOff)
     event.SetCanVeto(false);
     event.SetLoggingOff((logOff & ENDSESSION_LOGOFF) != 0);
 
-    return wxTheApp->ProcessEvent(event);
+    return wxTheApp->SafelyProcessEvent(event);
 }
 
 // ---------------------------------------------------------------------------
@@ -4296,6 +4292,14 @@ bool wxWindowMSW::HandleActivate(int state,
         // managed to even break the logic in wx itself (see #17128), so just
         // don't do it as there doesn't seem to be any need to be notified
         // about the activation of the window icon in the task bar in practice.
+        return false;
+    }
+
+    if ( m_isBeingDeleted )
+    {
+        // Same goes for activation events sent to an already half-destroyed
+        // window: this doesn't happen always, but can happen for a TLW using a
+        // (still existent) hidden parent, see #18970.
         return false;
     }
 
@@ -4564,7 +4568,7 @@ bool wxWindowMSW::HandlePower(WXWPARAM wParam,
             break;
 
         default:
-            wxLogDebug(wxT("Unknown WM_POWERBROADCAST(%d) event"), wParam);
+            wxLogDebug(wxT("Unknown WM_POWERBROADCAST(%zd) event"), wParam);
             wxFALLTHROUGH;
 
         // these messages are currently not mapped to wx events
@@ -4768,10 +4772,11 @@ static wxSize GetWindowDPI(HWND hwnd)
 }
 
 /*extern*/
-int wxGetSystemMetrics(int nIndex, const wxWindow* win)
+int wxGetSystemMetrics(int nIndex, const wxWindow* window)
 {
 #if wxUSE_DYNLIB_CLASS
-    const wxWindow* window = (!win && wxTheApp) ? wxTheApp->GetTopWindow() : win;
+    if ( !window )
+        window = wxApp::GetMainTopWindow();
 
     if ( window )
     {
@@ -4793,17 +4798,23 @@ int wxGetSystemMetrics(int nIndex, const wxWindow* win)
         }
     }
 #else
-    wxUnusedVar(win);
+    wxUnusedVar(window);
 #endif // wxUSE_DYNLIB_CLASS
 
     return ::GetSystemMetrics(nIndex);
 }
 
 /*extern*/
-bool wxSystemParametersInfo(UINT uiAction, UINT uiParam, PVOID pvParam, UINT fWinIni, const wxWindow* win)
+bool wxSystemParametersInfo(UINT uiAction, UINT uiParam, PVOID pvParam, UINT fWinIni, const wxWindow* window)
 {
-#if wxUSE_DYNLIB_CLASS
-    const wxWindow* window = (!win && wxTheApp) ? wxTheApp->GetTopWindow() : win;
+    // Note that we can't use SystemParametersInfoForDpi() in non-Unicode build
+    // because it always works with wide strings and we'd have to check for all
+    // uiAction values corresponding to strings and use a temporary wide buffer
+    // for them, and convert the returned value to ANSI after the call. Instead
+    // of doing all this, just don't use it at all in the deprecated ANSI build.
+#if wxUSE_DYNLIB_CLASS && wxUSE_UNICODE
+    if ( !window )
+        window = wxApp::GetMainTopWindow();
 
     if ( window )
     {
@@ -4828,7 +4839,7 @@ bool wxSystemParametersInfo(UINT uiAction, UINT uiParam, PVOID pvParam, UINT fWi
         }
     }
 #else
-    wxUnusedVar(win);
+    wxUnusedVar(window);
 #endif // wxUSE_DYNLIB_CLASS
 
     return ::SystemParametersInfo(uiAction, uiParam, pvParam, fWinIni) == TRUE;
@@ -4887,7 +4898,7 @@ static void ScaleCoordIfSet(int& coord, float scaleFactor)
     if ( coord != wxDefaultCoord )
     {
         const float coordScaled = coord * scaleFactor;
-        coord = scaleFactor > 1.0 ? ceil(coordScaled) : floor(coordScaled);
+        coord = int(scaleFactor > 1 ? std::ceil(coordScaled) : std::floor(coordScaled));
     }
 }
 
@@ -4919,10 +4930,13 @@ static void UpdateSizerOnDPIChange(wxSizer* sizer, float scaleFactor)
             ScaleCoordIfSet(min.y, scaleFactor);
             sizerItem->SetMinSize(min);
 
-            wxSize size = sizerItem->GetSize();
-            ScaleCoordIfSet(size.x, scaleFactor);
-            ScaleCoordIfSet(size.y, scaleFactor);
-            sizerItem->SetDimension(wxDefaultPosition, size);
+            if ( sizerItem->IsSpacer() )
+            {
+                wxSize size = sizerItem->GetSize();
+                ScaleCoordIfSet(size.x, scaleFactor);
+                ScaleCoordIfSet(size.y, scaleFactor);
+                sizerItem->SetDimension(wxDefaultPosition, size);
+            }
 
             // Update any child sizers if this is a sizer
             UpdateSizerOnDPIChange(sizerItem->GetSizer(), scaleFactor);
@@ -6288,6 +6302,8 @@ MSWInitAnyKeyEvent(wxKeyEvent& event,
     event.m_rawCode = (wxUint32) wParam;
     event.m_rawFlags = (wxUint32) lParam;
     event.SetTimestamp(::GetMessageTime());
+
+    event.m_isRepeat = (HIWORD(lParam) & KF_REPEAT) == KF_REPEAT;
 }
 
 } // anonymous namespace
@@ -7169,7 +7185,9 @@ wxKeyboardHook(int nCode, WXWPARAM wParam, WXLPARAM lParam)
                 wxEvtHandler * const handler = win ? win->GetEventHandler()
                                                    : wxTheApp;
 
-                if ( handler && handler->ProcessEvent(event) )
+                // Do not let exceptions propagate out of the hook, it's a
+                // module boundary.
+                if ( handler && handler->SafelyProcessEvent(event) )
                 {
                     if ( !event.IsNextEventAllowed() )
                     {

@@ -1105,8 +1105,34 @@ bool wxTextCtrl::IsEmpty() const
     return wxTextEntry::IsEmpty();
 }
 
+extern "C" {
+static void adjustmentChanged(GtkAdjustment* adj, GtkTextMark** mark)
+{
+    if (*mark)
+    {
+        const double value = gtk_adjustment_get_value(adj);
+        const double upper = gtk_adjustment_get_upper(adj);
+        const double page_size = gtk_adjustment_get_page_size(adj);
+        if (value < upper - page_size)
+        {
+            GtkTextIter iter;
+            GtkTextBuffer* buffer = gtk_text_mark_get_buffer(*mark);
+            gtk_text_buffer_get_iter_at_mark(buffer, &iter, *mark);
+            if (gtk_text_iter_is_end(&iter))
+            {
+                // Keep position at bottom as scrollbar is updated during layout
+                gtk_adjustment_set_value(adj, upper - page_size);
+            }
+        }
+    }
+}
+}
+
 void wxTextCtrl::GTKAfterLayout()
 {
+    g_signal_handlers_disconnect_by_func(
+        gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(m_widget)),
+        (void*)adjustmentChanged, &m_showPositionDefer);
     m_afterLayoutId = 0;
     if (m_showPositionDefer && !IsFrozen())
     {
@@ -1118,8 +1144,12 @@ void wxTextCtrl::GTKAfterLayout()
 extern "C" {
 static gboolean afterLayout(void* data)
 {
+    gdk_threads_enter();
+
     wxTextCtrl* win = static_cast<wxTextCtrl*>(data);
     win->GTKAfterLayout();
+
+    gdk_threads_leave();
     return false;
 }
 }
@@ -1193,10 +1223,11 @@ void wxTextCtrl::WriteText( const wxString &text )
 
     gtk_text_buffer_insert( m_buffer, &iter, buffer, buffer.length() );
 
+    GtkAdjustment* adj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(m_widget));
+
     // Scroll to cursor, if it is at the end and scrollbar thumb is at the bottom
     if (insertIsEnd)
     {
-        GtkAdjustment* adj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(m_widget));
         const double value = gtk_adjustment_get_value(adj);
         const double upper = gtk_adjustment_get_upper(adj);
         const double page_size = gtk_adjustment_get_page_size(adj);
@@ -1212,6 +1243,7 @@ void wxTextCtrl::WriteText( const wxString &text )
     }
     if (m_afterLayoutId == 0)
     {
+        g_signal_connect(adj, "changed", G_CALLBACK(adjustmentChanged), &m_showPositionDefer);
         m_afterLayoutId =
             g_idle_add_full(GTK_TEXT_VIEW_PRIORITY_VALIDATE + 1, afterLayout, this, NULL);
     }
@@ -1397,7 +1429,11 @@ void wxTextCtrl::SetInsertionPoint( long pos )
             // defer until Thaw, text view is not using m_buffer now
             m_showPositionDefer = mark;
         else
+        {
             gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(m_text), mark);
+            if (m_afterLayoutId)
+                m_showPositionDefer = mark;
+        }
     }
     else // single line
     {
@@ -1514,7 +1550,11 @@ void wxTextCtrl::ShowPosition( long pos )
             // defer until Thaw, text view is not using m_buffer now
             m_showPositionDefer = mark;
         else
+        {
             gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(m_text), mark);
+            if (m_afterLayoutId)
+                m_showPositionDefer = mark;
+        }
     }
     else // single line
     {   // This function not only shows character at required position
@@ -1542,17 +1582,7 @@ wxTextCtrl::HitTest(const wxPoint& pt, long *pos) const
         gtk_entry_get_layout_offsets(GTK_ENTRY(m_text), &ofsX, &ofsY);
 
         x -= ofsX;
-
-        // There is something really weird going on with vertical offset under
-        // GTK 3: normally it is just 0, because a single line control doesn't
-        // scroll vertically anyhow, but sometimes it can have big positive or
-        // negative values after scrolling horizontally, resulting in test
-        // failures in TextCtrlTestCase::HitTestSingleLine::Scrolled. So just
-        // ignore it completely, as, again, it shouldn't matter for single line
-        // text controls in any case, and so do not do this:
-#ifndef __WXGTK3__
         y -= ofsY;
-#endif // !__WXGTK3__
 
         // And scale the coordinates for Pango.
         x *= PANGO_SCALE;

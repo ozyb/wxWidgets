@@ -1403,6 +1403,16 @@ public:
     void ExpandAncestors( const wxDataViewItem & item );
 
     /**
+        Expand all children of the given item recursively.
+
+        This is the same as calling Expand() on the @a item itself and then
+        calling it for all of its children, grandchildren etc recursively.
+
+        @since 3.1.5
+     */
+    void ExpandChildren( const wxDataViewItem & item );
+
+    /**
         Returns pointer to the column. @a pos refers to the position in the
         control which may change after reordering columns by the user.
     */
@@ -1675,6 +1685,9 @@ public:
 
     /**
         Sets the selection to the array of wxDataViewItems.
+
+        Note that if @a sel contains any invalid items, they are simply
+        ignored.
     */
     virtual void SetSelections(const wxDataViewItemArray& sel);
 
@@ -2044,6 +2057,8 @@ public:
     /**
         Set the value of the renderer (and thus its cell) to @a value.
         The internal code will then render this cell with this data.
+
+        @param value A valid, i.e. non-null, value to be shown.
     */
     virtual bool SetValue(const wxVariant& value) = 0;
 
@@ -4013,6 +4028,9 @@ public:
         (selected) row, typically on a dark background.
 
         Default implementation returns @a value unmodified.
+
+        The @a value passed to this method is always non-null and it must
+        return a non-null value too.
     */
     virtual wxVariant MakeHighlighted(const wxVariant& value) const;
 };

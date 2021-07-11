@@ -19,9 +19,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#if defined(__BORLANDC__)
-    #pragma hdrstop
-#endif
 
 #if wxUSE_DATAOBJ
 
@@ -67,15 +64,15 @@
 namespace
 {
 
-wxDataFormat HtmlFormatFixup(wxDataFormat format)
+wxDataFormat NonStandardFormatsFixup(wxDataFormat format)
 {
-    // Since the HTML format is dynamically registered, the wxDF_HTML
-    // format does not match the native constant in the way other formats do,
+    // Since the HTML and PNG formats are dynamically registered, the wxDF_HTML and wxDF_PNG
+    // formats do not match the native constants in the way other formats do,
     // so for the format checks below to work, we must change the native
-    // id to the wxDF_HTML constant.
+    // id to the wxDF_HTML or wxDF_PNG constant.
     //
     // But skip this for the standard constants which are never going to match
-    // wxDF_HTML anyhow.
+    // wxDF_HTML or wxDF_PNG anyhow.
     if ( !format.IsStandard() )
     {
         wxChar szBuf[256];
@@ -83,6 +80,8 @@ wxDataFormat HtmlFormatFixup(wxDataFormat format)
         {
             if ( wxStrcmp(szBuf, wxT("HTML Format")) == 0 )
                 format = wxDF_HTML;
+            else if ( wxStrcmp(szBuf, wxT("PNG")) == 0 )
+                format = wxDF_PNG;
         }
     }
 
@@ -350,7 +349,7 @@ wxIDataObject::SaveSystemData(FORMATETC *pformatetc,
 
 bool wxDataFormat::operator==(wxDataFormatId format) const
 {
-    return HtmlFormatFixup(*this).m_format == (NativeFormat)format;
+    return NonStandardFormatsFixup(*this).m_format == (NativeFormat)format;
 }
 
 bool wxDataFormat::operator!=(wxDataFormatId format) const
@@ -360,7 +359,7 @@ bool wxDataFormat::operator!=(wxDataFormatId format) const
 
 bool wxDataFormat::operator==(const wxDataFormat& format) const
 {
-    return HtmlFormatFixup(*this).m_format == HtmlFormatFixup(format).m_format;
+    return NonStandardFormatsFixup(*this).m_format == NonStandardFormatsFixup(format).m_format;
 }
 
 bool wxDataFormat::operator!=(const wxDataFormat& format) const
@@ -370,7 +369,7 @@ bool wxDataFormat::operator!=(const wxDataFormat& format) const
 
 bool wxDataFormat::operator==(NativeFormat format) const
 {
-    return HtmlFormatFixup(*this).m_format == format;
+    return NonStandardFormatsFixup(*this).m_format == format;
 }
 
 bool wxDataFormat::operator!=(NativeFormat format) const
@@ -425,10 +424,12 @@ wxIEnumFORMATETC::wxIEnumFORMATETC(const wxDataFormat *formats, ULONG nCount)
     m_nCount = nCount;
     m_formats = new CLIPFORMAT[nCount];
     for ( ULONG n = 0; n < nCount; n++ ) {
-        if (formats[n].GetFormatId() != wxDF_HTML)
-            m_formats[n] = formats[n].GetFormatId();
-        else
+        if ( formats[n].GetFormatId() == wxDF_HTML )
             m_formats[n] = ::RegisterClipboardFormat(wxT("HTML Format"));
+        else if ( formats[n].GetFormatId() == wxDF_PNG )
+            m_formats[n] = ::RegisterClipboardFormat(wxT("PNG"));
+        else
+            m_formats[n] = formats[n].GetFormatId();
     }
 }
 
@@ -543,7 +544,7 @@ STDMETHODIMP wxIDataObject::GetData(FORMATETC *pformatetcIn, STGMEDIUM *pmedium)
     // for the bitmaps and metafiles we use the handles instead of global memory
     // to pass the data
     wxDataFormat format = (wxDataFormat::NativeFormat)pformatetcIn->cfFormat;
-    format = HtmlFormatFixup(format);
+    format = NonStandardFormatsFixup(format);
 
     // is this system data?
     if ( GetSystemData(format, pmedium) )
@@ -693,7 +694,7 @@ STDMETHODIMP wxIDataObject::SetData(FORMATETC *pformatetc,
             {
                 wxDataFormat format = pformatetc->cfFormat;
 
-                format = HtmlFormatFixup(format);
+                format = NonStandardFormatsFixup(format);
 
                 // check if this format is supported
                 if ( !m_pDataObject->IsSupported(format, wxDataObject::Set) ) {
@@ -720,15 +721,9 @@ STDMETHODIMP wxIDataObject::SetData(FORMATETC *pformatetc,
                     case CF_OEMTEXT:
                         size = strlen((const char *)ptr.Get());
                         break;
-#if !(defined(__BORLANDC__) && (__BORLANDC__ < 0x500))
                     case CF_UNICODETEXT:
-#if ( defined(__BORLANDC__) && (__BORLANDC__ > 0x530) )
-                        size = std::wcslen((const wchar_t *)ptr.Get()) * sizeof(wchar_t);
-#else
                         size = wxWcslen((const wchar_t *)ptr.Get()) * sizeof(wchar_t);
-#endif
                         break;
-#endif
                     case CF_BITMAP:
                     case CF_HDROP:
                         // these formats don't use size at all, anyhow (but
@@ -745,6 +740,9 @@ STDMETHODIMP wxIDataObject::SetData(FORMATETC *pformatetc,
                     case CF_METAFILEPICT:
                         size = sizeof(METAFILEPICT);
                         break;
+
+                    case wxDF_PNG:
+                        wxFALLTHROUGH;
 
                     default:
                         size = ptr.GetSize();
@@ -825,7 +823,7 @@ STDMETHODIMP wxIDataObject::QueryGetData(FORMATETC *pformatetc)
 
     // and now check the type of data requested
     wxDataFormat format = pformatetc->cfFormat;
-    format = HtmlFormatFixup(format);
+    format = NonStandardFormatsFixup(format);
 
     if ( m_pDataObject->IsSupportedFormat(format) ) {
         wxLogTrace(wxTRACE_OleCalls, wxT("wxIDataObject::QueryGetData: %s ok"),

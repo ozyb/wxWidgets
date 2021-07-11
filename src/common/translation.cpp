@@ -20,9 +20,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_INTL
 
@@ -48,6 +45,7 @@
 #include "wx/fontmap.h"
 #include "wx/scopedptr.h"
 #include "wx/stdpaths.h"
+#include "wx/version.h"
 #include "wx/private/threadinfo.h"
 
 #ifdef __WINDOWS__
@@ -1142,7 +1140,7 @@ bool wxMsgCatalogFile::LoadFile(const wxString& filename,
               );
     if ( !ok )
     {
-        wxLogWarning(_("'%s' is not a valid message catalog."), filename.c_str());
+        wxLogWarning(_("'%s' is not a valid message catalog."), filename);
         return false;
     }
 
@@ -1522,18 +1520,17 @@ wxArrayString wxTranslations::GetAvailableTranslations(const wxString& domain) c
 
 bool wxTranslations::AddStdCatalog()
 {
-    if ( !AddCatalog(wxS("wxstd")) )
-        return false;
+    // Try loading the message catalog for this version first, but fall back to
+    // the name without the version if it's not found, as message catalogs
+    // typically won't have the version in their names under non-Unix platforms
+    // (i.e. where they're not installed by our own "make install").
+    if ( AddCatalog("wxstd-" wxSTRINGIZE(wxMAJOR_VERSION) "." wxSTRINGIZE(wxMINOR_VERSION)) )
+        return true;
 
-    // there may be a catalog with toolkit specific overrides, it is not
-    // an error if this does not exist
-    wxString port(wxPlatformInfo::Get().GetPortIdName());
-    if ( !port.empty() )
-    {
-        AddCatalog(port.BeforeFirst(wxS('/')).MakeLower());
-    }
+    if ( AddCatalog(wxS("wxstd")) )
+        return true;
 
-    return true;
+    return false;
 }
 
 #if !wxUSE_UNICODE
@@ -1942,8 +1939,8 @@ wxMsgCatalog *wxFileTranslationsLoader::LoadCatalog(const wxString& domain,
         return NULL;
 
     // open file and read its data
-    wxLogVerbose(_("using catalog '%s' from '%s'."), domain, strFullName.c_str());
-    wxLogTrace(TRACE_I18N, wxS("Using catalog \"%s\"."), strFullName.c_str());
+    wxLogVerbose(_("using catalog '%s' from '%s'."), domain, strFullName);
+    wxLogTrace(TRACE_I18N, wxS("Using catalog \"%s\"."), strFullName);
 
     return wxMsgCatalog::CreateFromFile(strFullName, domain);
 }

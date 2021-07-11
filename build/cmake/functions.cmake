@@ -18,6 +18,14 @@ endif()
 include(cotire)                        # For precompiled header handling
 include(CMakePrintHelpers)
 
+# Use the MSVC/makefile naming convention, or the configure naming convention,
+# this is the same check as used in FindwxWidgets.
+if(WIN32 AND NOT CYGWIN AND NOT MSYS)
+    set(WIN32_MSVC_NAMING 1)
+else()
+    set(WIN32_MSVC_NAMING 0)
+endif()
+
 # This function adds a list of headers to a variable while prepending
 # include/ to the path
 macro(wx_add_headers src_var)
@@ -73,6 +81,17 @@ macro(wx_install)
     endif()
 endmacro()
 
+# Get a valid flavour name with optional prefix
+macro(wx_get_flavour flavour prefix)
+    if(wxBUILD_FLAVOUR)
+        set(flav ${wxBUILD_FLAVOUR})
+        string(REPLACE "-" "_" flav ${flav})
+        set(${flavour} "${prefix}${flav}")
+    else()
+        set(${flavour})
+    endif()
+endmacro()
+
 # Set properties common to builtin third party libraries and wx libs
 function(wx_set_common_target_properties target_name)
     cmake_parse_arguments(wxCOMMON_TARGET_PROPS "DEFAULT_WARNINGS" "" "" ${ARGN})
@@ -87,6 +106,25 @@ function(wx_set_common_target_properties target_name)
         set_target_properties(${target_name} PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
     endif()
 
+    set(common_gcc_clang_compile_options
+        -Wall
+        -Wno-ctor-dtor-privacy
+        -Woverloaded-virtual
+        -Wundef
+        -Wunused-parameter
+    )
+
+    if(WXOSX_COCOA OR WXGTK3)
+        # when building using GTK+ 3 or Cocoa we currently get tons of deprecation
+        # warnings from the standard headers -- disable them as we already know
+        # that they're deprecated but we still have to use them to support older
+        # toolkit versions and leaving this warning enabled prevents seeing any
+        # other ones
+        list(APPEND common_gcc_clang_compile_options
+            -Wno-deprecated-declarations
+        )
+    endif()
+
     if(MSVC)
         if(wxCOMMON_TARGET_PROPS_DEFAULT_WARNINGS)
             set(MSVC_WARNING_LEVEL "/W3")
@@ -96,11 +134,11 @@ function(wx_set_common_target_properties target_name)
         target_compile_options(${target_name} PRIVATE ${MSVC_WARNING_LEVEL})
     elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" AND NOT wxCOMMON_TARGET_PROPS_DEFAULT_WARNINGS)
         target_compile_options(${target_name} PRIVATE
-            -Wall
+            ${common_gcc_clang_compile_options}
             )
     elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" AND NOT wxCOMMON_TARGET_PROPS_DEFAULT_WARNINGS)
         target_compile_options(${target_name} PRIVATE
-            -Wall
+            ${common_gcc_clang_compile_options}
             -Wno-ignored-attributes
             )
     endif()
@@ -129,76 +167,97 @@ function(wx_set_target_properties target_name is_base)
     else()
         set(lib_toolkit ${wxBUILD_TOOLKIT}${wxBUILD_WIDGETSET})
     endif()
-    if(MSVC)
+
+    if(WIN32_MSVC_NAMING)
         set(lib_version ${wxMAJOR_VERSION}${wxMINOR_VERSION})
     else()
         set(lib_version ${wxMAJOR_VERSION}.${wxMINOR_VERSION})
     endif()
+    set(dll_version ${wxMAJOR_VERSION}${wxMINOR_VERSION})
+    if(wxVERSION_IS_DEV)
+        wx_string_append(dll_version ${wxRELEASE_NUMBER})
+    endif()
+
+    set(lib_unicode)
     if(wxUSE_UNICODE)
-        set(lib_unicode u)
-    else()
-        set(lib_unicode)
+        set(lib_unicode "u")
     endif()
+
+    set(lib_rls)
+    set(lib_dbg)
+    set(lib_gen)
+    if(WIN32_MSVC_NAMING)
+        set(lib_dbg "d")
+        set(lib_gen "$<$<CONFIG:Debug>:${lib_dbg}>")
+    endif()
+
+    set(lib_suffix)
     if(NOT target_name_short STREQUAL "base" AND NOT target_name_short STREQUAL "mono")
-        # Do not append library name for base library
-        set(lib_suffix _${target_name_short})
-    else()
-        set(lib_suffix)
+        # Do not append library name for base or mono library
+        set(lib_suffix "_${target_name_short}")
     endif()
-    set(lib_flavour "")
-    if(wxBUILD_FLAVOUR)
-        set(lib_flavour "_${wxBUILD_FLAVOUR}")
-        string(REPLACE "-" "_" lib_flavour ${lib_flavour})
+    wx_get_flavour(lib_flavour "_")
+    set(lib_suffix "${lib_flavour}${lib_suffix}")
+
+    set(dll_suffix "${lib_suffix}")
+    if(wxCOMPILER_PREFIX)
+        wx_string_append(dll_suffix "_${wxCOMPILER_PREFIX}")
+    endif()
+    if(wxBUILD_VENDOR AND wxVERSION_IS_DEV)
+        wx_string_append(dll_suffix "_${wxBUILD_VENDOR}")
     endif()
 
+    set(cross_target)
+    if (CMAKE_CROSSCOMPILING)
+        set(cross_target "-${CMAKE_SYSTEM_NAME}")
+    endif()
+
+    set(lib_prefix "lib")
+    if(MSVC OR (WIN32 AND wxBUILD_SHARED))
+        set(lib_prefix)
+    endif()
+
+    # static (and import) library names
+    if(WIN32_MSVC_NAMING)
+        # match msvc/makefile output name
+        set(wxOUTPUT_NAME       "wx${lib_toolkit}${lib_version}${lib_unicode}${lib_rls}${lib_suffix}")
+        set(wxOUTPUT_NAME_DEBUG "wx${lib_toolkit}${lib_version}${lib_unicode}${lib_dbg}${lib_suffix}")
+    else()
+        # match configure output name
+        set(wxOUTPUT_NAME       "wx_${lib_toolkit}${lib_unicode}${lib_rls}${lib_suffix}-${lib_version}${cross_target}")
+        set(wxOUTPUT_NAME_DEBUG "wx_${lib_toolkit}${lib_unicode}${lib_dbg}${lib_suffix}-${lib_version}${cross_target}")
+    endif()
+
+    # shared library names
     if(WIN32)
-        if(MSVC)
-            # match visual studio name
-            set_target_properties(${target_name}
-                PROPERTIES
-                    OUTPUT_NAME "wx${lib_toolkit}${lib_version}${lib_unicode}${lib_flavour}${lib_suffix}"
-                    OUTPUT_NAME_DEBUG "wx${lib_toolkit}${lib_version}${lib_unicode}d${lib_flavour}${lib_suffix}"
-                    PREFIX ""
-                )
-        else()
-            # match configure name (mingw, cygwin)
-            set_target_properties(${target_name}
-                PROPERTIES
-                    OUTPUT_NAME "wx_${lib_toolkit}${lib_unicode}${lib_flavour}${lib_suffix}-${lib_version}"
-                    OUTPUT_NAME_DEBUG "wx_${lib_toolkit}${lib_unicode}d${lib_flavour}${lib_suffix}-${lib_version}"
-                    PREFIX "lib"
-                )
-        endif()
-
-        if(wxBUILD_SHARED)
-            # Add compiler type and or vendor
-            set(dll_suffix "${lib_flavour}${lib_suffix}_${wxCOMPILER_PREFIX}")
-            if(wxBUILD_VENDOR)
-                wx_string_append(dll_suffix "_${wxBUILD_VENDOR}")
-            endif()
-
-            set(dll_version ${wxMAJOR_VERSION}${wxMINOR_VERSION})
-            if(wxVERSION_IS_DEV)
-                wx_string_append(dll_version ${wxRELEASE_NUMBER})
-            endif()
-            set_target_properties(${target_name}
-                PROPERTIES
-                    RUNTIME_OUTPUT_NAME "wx${lib_toolkit}${dll_version}${lib_unicode}${dll_suffix}"
-                    RUNTIME_OUTPUT_NAME_DEBUG "wx${lib_toolkit}${dll_version}${lib_unicode}d${dll_suffix}"
-                    PREFIX ""
-                )
-            target_compile_definitions(${target_name} PRIVATE
-                "-DWXDLLNAME=wx${lib_toolkit}${dll_version}${lib_unicode}$<$<CONFIG:Debug>:d>${dll_suffix}")
-        endif()
+        # msvc/makefile/configure use the same format on Windows
+        set(wxRUNTIME_OUTPUT_NAME       "wx${lib_toolkit}${dll_version}${lib_unicode}${lib_rls}${dll_suffix}")
+        set(wxRUNTIME_OUTPUT_NAME_DEBUG "wx${lib_toolkit}${dll_version}${lib_unicode}${lib_dbg}${dll_suffix}")
+        set(wxDLLNAME                   "wx${lib_toolkit}${dll_version}${lib_unicode}${lib_gen}${dll_suffix}")
     else()
-        set_target_properties(${target_name}
-            PROPERTIES
-                OUTPUT_NAME wx_${lib_toolkit}${lib_unicode}${lib_flavour}${lib_suffix}-${lib_version}
-                # NOTE: wx-config can not be used to connect the libraries with the debug suffix.
-                #OUTPUT_NAME_DEBUG wx_${lib_toolkit}${lib_unicode}d${lib_flavour}${lib_suffix}-${lib_version}
-                OUTPUT_NAME_DEBUG wx_${lib_toolkit}${lib_unicode}${lib_flavour}${lib_suffix}-${lib_version}
-            )
+        # match configure on linux/mac
+        set(wxRUNTIME_OUTPUT_NAME       "wx_${lib_toolkit}${lib_unicode}${lib_rls}${dll_suffix}-${lib_version}${cross_target}")
+        set(wxRUNTIME_OUTPUT_NAME_DEBUG "wx_${lib_toolkit}${lib_unicode}${lib_dbg}${dll_suffix}-${lib_version}${cross_target}")
+        set(wxDLLNAME                   "wx_${lib_toolkit}${lib_unicode}${lib_gen}${dll_suffix}-${lib_version}${cross_target}")
     endif()
+
+    set_target_properties(${target_name} PROPERTIES
+        OUTPUT_NAME               "${wxOUTPUT_NAME}"
+        OUTPUT_NAME_DEBUG         "${wxOUTPUT_NAME_DEBUG}"
+        RUNTIME_OUTPUT_NAME       "${wxRUNTIME_OUTPUT_NAME}"
+        RUNTIME_OUTPUT_NAME_DEBUG "${wxRUNTIME_OUTPUT_NAME_DEBUG}"
+        PREFIX                    "${lib_prefix}"
+    )
+
+    if(WIN32_MSVC_NAMING AND NOT MSVC)
+        # match makefile.gcc, use .a instead of .dll.a for import libraries
+        set_target_properties(${target_name} PROPERTIES IMPORT_SUFFIX ".a")
+    endif()
+
+    if(wxBUILD_SHARED)
+        target_compile_definitions(${target_name} PRIVATE "WXDLLNAME=${wxDLLNAME}")
+    endif()
+
     if(CYGWIN)
         target_link_libraries(${target_name} PUBLIC -L/usr/lib/w32api)
     endif()
@@ -259,7 +318,7 @@ function(wx_set_target_properties target_name is_base)
             rpcrt4
             advapi32
             version
-            wsock32
+            ws2_32
             wininet
             oleacc
             uxtheme
@@ -300,6 +359,11 @@ function(wx_set_target_properties target_name is_base)
     endif()
 
     set_target_properties(${target_name} PROPERTIES FOLDER Libraries)
+
+    set_target_properties(${target_name} PROPERTIES
+        SOVERSION ${wxSOVERSION_MAJOR}
+        VERSION ${wxSOVERSION}
+    )
 
     wx_set_common_target_properties(${target_name})
 endfunction()
@@ -347,10 +411,15 @@ macro(wx_add_library name)
         set_target_properties(${name} PROPERTIES PROJECT_LABEL ${name_short})
 
         # Setup install
+        set(runtime_dir "lib")
+        if(WIN32 AND NOT WIN32_MSVC_NAMING)
+            # configure puts the .dll in the bin directory
+            set(runtime_dir "bin")
+        endif()
         wx_install(TARGETS ${name}
             LIBRARY DESTINATION "lib${wxPLATFORM_LIB_DIR}"
             ARCHIVE DESTINATION "lib${wxPLATFORM_LIB_DIR}"
-            RUNTIME DESTINATION "lib${wxPLATFORM_LIB_DIR}"
+            RUNTIME DESTINATION "${runtime_dir}${wxPLATFORM_LIB_DIR}"
             BUNDLE DESTINATION Applications/wxWidgets
             )
     endif()
@@ -359,7 +428,7 @@ endmacro()
 # Enable cotire for target, use optional second argument for prec. header
 macro(wx_target_enable_precomp target_name)
     target_compile_definitions(${target_name} PRIVATE WX_PRECOMP)
-    if(NOT ${ARGV1} STREQUAL "")
+    if(${ARGC} GREATER 1 AND NOT ${ARGV1} STREQUAL "")
         set_target_properties(${target_name} PROPERTIES
             COTIRE_CXX_PREFIX_HEADER_INIT ${ARGV1})
     endif()
@@ -367,17 +436,8 @@ macro(wx_target_enable_precomp target_name)
     cotire(${target_name})
 endmacro()
 
-# Enable precompiled headers for tests
-macro(wx_test_enable_precomp target_name)
-    if(wxBUILD_PRECOMP)
-        wx_target_enable_precomp(${target_name} "${wxSOURCE_DIR}/tests/testprec.h")
-    elseif(MSVC)
-        target_compile_definitions(${target_name} PRIVATE NOPCH)
-    endif()
-endmacro()
-
-# Enable precompiled headers for samples
-macro(wx_sample_enable_precomp target_name)
+# Enable precompiled headers for applications
+macro(wx_app_enable_precomp target_name)
     if(wxBUILD_PRECOMP)
         wx_target_enable_precomp(${target_name} "${wxSOURCE_DIR}/include/wx/wxprec.h")
     elseif(MSVC)
@@ -414,10 +474,12 @@ endmacro()
 # wx_exe_link_libraries(target libs...)
 # Link wx libraries to executable
 macro(wx_exe_link_libraries name)
-    if(wxBUILD_MONOLITHIC)
-        target_link_libraries(${name} PUBLIC wxmono)
-    else()
-        target_link_libraries(${name};PRIVATE;${ARGN})
+    if(TARGET ${name})
+        if(wxBUILD_MONOLITHIC)
+            target_link_libraries(${name} PUBLIC wxmono)
+        else()
+            target_link_libraries(${name};PRIVATE;${ARGN})
+        endif()
     endif()
 endmacro()
 
@@ -457,24 +519,28 @@ endmacro()
 
 # Set common properties for a builtin third party library
 function(wx_set_builtin_target_properties target_name)
+    set(lib_unicode)
     if(wxUSE_UNICODE AND target_name STREQUAL "wxregex")
-        set(lib_unicode u)
-    else()
-        set(lib_unicode)
+        set(lib_unicode "u")
     endif()
-    if(NOT WIN32)
-        set(postfix -${wxMAJOR_VERSION}.${wxMINOR_VERSION})
+
+    set(lib_rls)
+    set(lib_dbg)
+    if(WIN32_MSVC_NAMING)
+        set(lib_dbg "d")
     endif()
-    set_target_properties(${target_name}
-        PROPERTIES
-            OUTPUT_NAME ${target_name}${lib_unicode}${postfix}
-        )
-    if(WIN32)
-        set_target_properties(${target_name}
-            PROPERTIES
-                OUTPUT_NAME_DEBUG ${target_name}${lib_unicode}d
-        )
+
+    wx_get_flavour(lib_flavour "_")
+
+    set(lib_version)
+    if(NOT WIN32_MSVC_NAMING)
+        set(lib_version "-${wxMAJOR_VERSION}.${wxMINOR_VERSION}")
     endif()
+
+    set_target_properties(${target_name} PROPERTIES
+        OUTPUT_NAME       "${target_name}${lib_unicode}${lib_rls}${lib_flavour}${lib_version}"
+        OUTPUT_NAME_DEBUG "${target_name}${lib_unicode}${lib_dbg}${lib_flavour}${lib_version}"
+    )
 
     if(wxUSE_UNICODE)
         if(WIN32)
@@ -612,82 +678,119 @@ function(wx_print_thirdparty_library_summary)
     message(STATUS ${message})
 endfunction()
 
-# Add executable for sample
-# wx_add_sample(<name> [CONSOLE|DLL] [IMPORTANT] [SRC_FILES...]
-#    [LIBRARIES ...] [NAME target_name] [FOLDER folder])
-# first parameter may be CONSOLE to indicate a console application
-# all following parameters a src files for the executable
-# source files are relative to samples/${name}/
+# Add sample, test, demo or benchmark
+# wx_add(<name> <group> [CONSOLE|CONSOLE_GUI|DLL] [IMPORTANT] [SRC_FILES...]
+#    [LIBRARIES ...] [NAME target_name] [FOLDER folder]
+#    [DATA ...] [DEFINITIONS ...] [RES ...])
+# name default target name
+# group can be Samples, Tests, Demos or Benchmarks
+# first parameter may be CONSOLE to indicate a console application or DLL to indicate a shared library
+# or CONSOLE_GUI to indicate a console application that uses gui libraries
+# all following parameters are src files for the executable
+#
 # Optionally:
-# DATA followed by required data files. Use a colon to separate different source and dest paths
-# DEFINITIONS list of definitions for the target
-# FOLDER subfolder in IDE
-# LIBRARIES followed by required libraries
-# NAME alternative target_name
-# IMPORTANT does not require wxBUILD_SAMPLES=ALL
-# RES followed by WIN32 .rc files
+#   IMPORTANT (samples only) does not require wxBUILD_SAMPLES=ALL
+#   LIBRARIES followed by required libraries
+#   NAME alternative target_name
+#   FOLDER subfolder in IDE
+#   DATA followed by required data files. Use a colon to separate different source and dest paths
+#   DEFINITIONS list of definitions for the target
+#   RES followed by WIN32 .rc files
 #
 # Additionally the following variables may be set before calling wx_add_sample:
 # wxSAMPLE_SUBDIR subdirectory in the samples/ folder to use as base
 # wxSAMPLE_FOLDER IDE sub folder to be used for the samples
+
 function(wx_add_sample name)
-    cmake_parse_arguments(SAMPLE
-        "CONSOLE;DLL;IMPORTANT"
+    wx_add(${name} "Samples" ${ARGN})
+endfunction()
+
+function(wx_add_test name)
+    wx_add(${name} "Tests" ${ARGN})
+endfunction()
+
+function(wx_add_demo name)
+    wx_add(${name} "Demos" ${ARGN})
+endfunction()
+
+function(wx_add_benchmark name)
+    wx_add(${name} "Benchmarks" ${ARGN})
+endfunction()
+
+function(wx_add name group)
+    cmake_parse_arguments(APP
+        "CONSOLE;CONSOLE_GUI;DLL;IMPORTANT"
         "NAME;FOLDER"
         "DATA;DEFINITIONS;DEPENDS;LIBRARIES;RES"
         ${ARGN}
         )
-    if(NOT SAMPLE_FOLDER AND wxSAMPLE_FOLDER)
-        set(SAMPLE_FOLDER ${wxSAMPLE_FOLDER})
+
+    if(APP_NAME)
+        set(target_name ${APP_NAME})
+    else()
+        set(target_name ${name})
     endif()
 
-    # Only build important samples without wxBUILD_SAMPLES=ALL
-    if(NOT SAMPLE_IMPORTANT AND NOT wxBUILD_SAMPLES STREQUAL "ALL")
+    if(group STREQUAL Samples)
+        if(NOT APP_IMPORTANT AND NOT wxBUILD_SAMPLES STREQUAL "ALL")
+            return()
+        endif()
+        set(SUB_DIR "samples/${wxSAMPLE_SUBDIR}${name}")
+        set(DEFAULT_RC_FILE "samples/sample.rc")
+    elseif(group STREQUAL Tests)
+        if(NOT APP_CONSOLE AND NOT wxBUILD_TESTS STREQUAL "ALL")
+            return()
+        endif()
+        set(SUB_DIR "tests")
+        set(DEFAULT_RC_FILE "samples/sample.rc")
+    elseif(group STREQUAL Demos)
+        set(SUB_DIR "demos/${name}")
+        set(DEFAULT_RC_FILE "demos/${name}/${target_name}.rc")
+    elseif(group STREQUAL Benchmarks)
+        set(SUB_DIR "tests/benchmarks")
+        set(DEFAULT_RC_FILE "samples/sample.rc")
+    else()
+        message(WARNING "Unknown group \"${group}\"")
         return()
     endif()
-    foreach(depend ${SAMPLE_DEPENDS})
+
+    foreach(depend ${APP_DEPENDS})
         if(NOT ${depend})
             return()
         endif()
     endforeach()
 
-    # Only build GUI samples with wxUSE_GUI=1
-    if(NOT wxUSE_GUI AND NOT SAMPLE_CONSOLE)
+    # Only build GUI applications with wxUSE_GUI=1
+    if(NOT wxUSE_GUI AND NOT APP_CONSOLE)
         return()
     endif()
 
-    if(SAMPLE_UNPARSED_ARGUMENTS)
+    if(APP_UNPARSED_ARGUMENTS)
         wx_list_add_prefix(src_files
-            "${wxSOURCE_DIR}/samples/${wxSAMPLE_SUBDIR}${name}/"
-            ${SAMPLE_UNPARSED_ARGUMENTS})
+            "${wxSOURCE_DIR}/${SUB_DIR}/"
+            ${APP_UNPARSED_ARGUMENTS})
     else()
         # If no source files have been specified use default src name
-        set(src_files ${wxSOURCE_DIR}/samples/${wxSAMPLE_SUBDIR}${name}/${name}.cpp)
+        set(src_files ${wxSOURCE_DIR}/${SUB_DIR}/${name}.cpp)
     endif()
 
     if(WIN32)
-        if(SAMPLE_RES)
-            foreach(res ${SAMPLE_RES})
-                list(APPEND src_files ${wxSOURCE_DIR}/samples/${wxSAMPLE_SUBDIR}${name}/${res})
+        if(APP_RES)
+            foreach(res ${APP_RES})
+                list(APPEND src_files ${wxSOURCE_DIR}/${SUB_DIR}/${res})
             endforeach()
         else()
-            # Include default sample.rc
-            list(APPEND src_files ${wxSOURCE_DIR}/samples/sample.rc)
+            # Include default resource file
+            list(APPEND src_files ${wxSOURCE_DIR}/${DEFAULT_RC_FILE})
         endif()
     elseif(APPLE AND NOT IPHONE)
         list(APPEND src_files ${wxSOURCE_DIR}/src/osx/carbon/wxmac.icns)
     endif()
 
-    if(SAMPLE_NAME)
-        set(target_name ${SAMPLE_NAME})
-    else()
-        set(target_name ${name})
-    endif()
-
-    if(SAMPLE_DLL)
+    if(APP_DLL)
         add_library(${target_name} SHARED ${src_files})
     else()
-        if(SAMPLE_CONSOLE)
+        if(APP_CONSOLE OR APP_CONSOLE_GUI)
             set(exe_type)
         else()
             set(exe_type WIN32 MACOSX_BUNDLE)
@@ -714,28 +817,37 @@ function(wx_add_sample name)
             target_compile_definitions(${target_name} PRIVATE wxUSE_DPI_AWARE_MANIFEST=${wxUSE_DPI_AWARE_MANIFEST_VALUE})
         endif()
     endif()
-    # All samples use at least the base library other libraries
+
+    # All applications use at least the base library other libraries
     # will have to be added with wx_link_sample_libraries()
     wx_exe_link_libraries(${target_name} wxbase)
-    if(NOT SAMPLE_CONSOLE)
-        # UI samples always require core
+    if(NOT APP_CONSOLE)
+        # UI applications always require core
         wx_exe_link_libraries(${target_name} wxcore)
     else()
         target_compile_definitions(${target_name} PRIVATE wxUSE_GUI=0 wxUSE_BASE=1)
     endif()
-    if(SAMPLE_LIBRARIES)
-        wx_exe_link_libraries(${target_name} ${SAMPLE_LIBRARIES})
+    if(APP_LIBRARIES)
+        wx_exe_link_libraries(${target_name} ${APP_LIBRARIES})
     endif()
     if(wxBUILD_SHARED)
         target_compile_definitions(${target_name} PRIVATE WXUSINGDLL)
     endif()
-    if(SAMPLE_DEFINITIONS)
-        target_compile_definitions(${target_name} PRIVATE ${SAMPLE_DEFINITIONS})
+    if(APP_DEFINITIONS)
+        target_compile_definitions(${target_name} PRIVATE ${APP_DEFINITIONS})
     endif()
-    if(SAMPLE_DATA)
+
+    if(group STREQUAL Samples)
+        target_include_directories(${target_name} PRIVATE ${wxSOURCE_DIR}/samples)
+    elseif(group STREQUAL Tests)
+        target_include_directories(${target_name} PRIVATE ${wxSOURCE_DIR}/tests)
+        target_include_directories(${target_name} PRIVATE ${wxSOURCE_DIR}/3rdparty/catch/include)
+    endif()
+
+    if(APP_DATA)
         # TODO: handle data files differently for OS X bundles
         # Copy data files to output directory
-        foreach(data_src ${SAMPLE_DATA})
+        foreach(data_src ${APP_DATA})
             string(FIND ${data_src} ":" HAS_COLON)
             if(${HAS_COLON} GREATER -1)
                 MATH(EXPR DEST_INDEX "${HAS_COLON}+1")
@@ -746,17 +858,15 @@ function(wx_add_sample name)
             endif()
 
             list(APPEND cmds COMMAND ${CMAKE_COMMAND}
-                -E copy ${wxSOURCE_DIR}/samples/${wxSAMPLE_SUBDIR}${name}/${data_src}
+                -E copy ${wxSOURCE_DIR}/${SUB_DIR}/${data_src}
                 ${wxOUTPUT_DIR}/${wxPLATFORM_LIB_DIR}/${data_dst})
         endforeach()
         add_custom_command(
             TARGET ${target_name} ${cmds}
-            COMMENT "Copying sample data files...")
+            COMMENT "Copying ${target_name} data files...")
     endif()
-    if(WIN32)
-        # The resource compiler needs this include directory to find res files
-        target_include_directories(${target_name} PRIVATE ${wxSOURCE_DIR}/samples/)
-    elseif(APPLE)
+
+    if(APPLE)
         if(NOT IPHONE)
             set_target_properties(${target_name} PROPERTIES
                 MACOSX_BUNDLE_INFO_PLIST "${wxSOURCE_DIR}/samples/Info.plist.in"
@@ -772,18 +882,27 @@ function(wx_add_sample name)
             )
     endif()
 
-    set(folder "Samples")
-    if(SAMPLE_FOLDER)
-        wx_string_append(folder "/${SAMPLE_FOLDER}")
+    if(APP_FOLDER)
+        set(APP_FOLDER ${group}/${APP_FOLDER})
+    elseif(wxSAMPLE_FOLDER)
+        set(APP_FOLDER ${group}/${wxSAMPLE_FOLDER})
+    else()
+        set(APP_FOLDER ${group})
     endif()
     wx_set_common_target_properties(${target_name})
-    wx_sample_enable_precomp(${target_name})
+    wx_app_enable_precomp(${target_name})
     set_target_properties(${target_name} PROPERTIES
-        FOLDER ${folder}
+        FOLDER ${APP_FOLDER}
         )
     set_target_properties(${target_name} PROPERTIES
-        VS_DEBUGGER_WORKING_DIRECTORY "${wxOUTPUT_DIR}/${wxCOMPILER_PREFIX}${wxARCH_SUFFIX}_${lib_suffix}"
+        VS_DEBUGGER_WORKING_DIRECTORY "${wxOUTPUT_DIR}/${wxPLATFORM_LIB_DIR}"
         )
+
+    if(group STREQUAL Tests)
+        add_test(NAME ${target_name}
+            COMMAND ${target_name}
+            WORKING_DIRECTORY "${wxOUTPUT_DIR}/${wxPLATFORM_LIB_DIR}")
+    endif()
 endfunction()
 
 # Link libraries to a sample
@@ -864,43 +983,3 @@ macro(wx_dependent_option option doc default depends force)
     set(${option} "${${option}_ISSET}")
   endif()
 endmacro()
-
-# wx_add_test(<name> [src...])
-# Optionally:
-# DATA followed by required data files
-# RES followed by WIN32 .rc files
-function(wx_add_test name)
-    cmake_parse_arguments(TEST "" "" "DATA;RES" ${ARGN})
-    wx_list_add_prefix(test_src "${wxSOURCE_DIR}/tests/" ${TEST_UNPARSED_ARGUMENTS})
-    if(WIN32 AND TEST_RES)
-        foreach(res ${TEST_RES})
-            list(APPEND test_src ${wxSOURCE_DIR}/tests/${res})
-        endforeach()
-    endif()
-    add_executable(${name} ${test_src})
-    target_include_directories(${name} PRIVATE "${wxSOURCE_DIR}/tests" "${wxSOURCE_DIR}/3rdparty/catch/include")
-    wx_exe_link_libraries(${name} wxbase)
-    if(wxBUILD_SHARED)
-        target_compile_definitions(${name} PRIVATE WXUSINGDLL)
-    endif()
-    if(TEST_DATA)
-        # Copy data files to output directory
-        foreach(data_file ${TEST_DATA})
-            list(APPEND cmds COMMAND ${CMAKE_COMMAND}
-                -E copy ${wxSOURCE_DIR}/tests/${data_file}
-                ${wxOUTPUT_DIR}/${wxPLATFORM_LIB_DIR}/${data_file})
-        endforeach()
-        add_custom_command(
-            TARGET ${name} ${cmds}
-            COMMENT "Copying test data files...")
-    endif()
-    wx_set_common_target_properties(${name})
-    set_target_properties(${name} PROPERTIES FOLDER "Tests")
-    set_target_properties(${name} PROPERTIES
-        VS_DEBUGGER_WORKING_DIRECTORY "${wxSOURCE_DIR}/tests"
-        )
-
-    add_test(NAME ${name}
-        COMMAND ${name}
-        WORKING_DIRECTORY ${wxSOURCE_DIR}/tests)
-endfunction()

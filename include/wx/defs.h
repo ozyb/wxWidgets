@@ -157,11 +157,6 @@
     #endif /* VC++ 8 */
 #endif /*  __VISUALC__ */
 
-/*  suppress some Borland C++ warnings */
-#ifdef __BORLANDC__
-#   pragma warn -inl                /*  Functions containing reserved words and certain constructs are not expanded inline */
-#endif /*  __BORLANDC__ */
-
 /*
    g++ gives a warning when a class has private dtor if it has no friends but
    this is a perfectly valid situation for a ref-counted class which destroys
@@ -497,7 +492,6 @@ typedef short int WXTYPE;
     #if defined(__GNUWIN32__)
         #define wxSTDCALL __attribute__((stdcall))
     #else
-        /*  both VC++ and Borland understand this */
         #define wxSTDCALL _stdcall
     #endif
 
@@ -579,14 +573,29 @@ typedef short int WXTYPE;
 /*
     Macros for marking functions as being deprecated.
 
-    The preferred macro in the new code is wxDEPRECATED_MSG() which allows to
-    explain why is the function deprecated. Almost all the existing code uses
-    the older wxDEPRECATED() or its variants currently, but this will hopefully
-    change in the future.
+    The preferred macro in the new code is wxDEPRECATED_ATTR() which expands to
+    the standard [[deprecated]] attribute if supported and allows to explain
+    why is the function deprecated. If supporting older compilers is important,
+    wxDEPRECATED_MSG() can be used as it's almost universally available and
+    still allows to explain the reason for the deprecation.
+
+    However almost all the existing code uses the older wxDEPRECATED() or its
+    variants currently, but this will hopefully change in the future.
  */
 
+#if defined(__has_cpp_attribute)
+    #if __has_cpp_attribute(deprecated)
+        /* gcc 5 claims to support this attribute, but actually doesn't */
+        #if !defined(__GNUC__) || wxCHECK_GCC_VERSION(6, 0)
+            #define wxHAS_DEPRECATED_ATTR
+        #endif
+    #endif
+#endif
+
 /* The basic compiler-specific construct to generate a deprecation warning. */
-#ifdef __clang__
+#ifdef wxHAS_DEPRECATED_ATTR
+    #define wxDEPRECATED_DECL [[deprecated]]
+#elif defined(__clang__)
     #define wxDEPRECATED_DECL __attribute__((deprecated))
 #elif defined(__GNUC__)
     #define wxDEPRECATED_DECL __attribute__((deprecated))
@@ -596,13 +605,28 @@ typedef short int WXTYPE;
     #define wxDEPRECATED_DECL
 #endif
 
+#ifdef wxHAS_DEPRECATED_ATTR
+    #define wxDEPRECATED_ATTR(msg) [[deprecated(msg)]]
+#else
+    /*
+        Note that we can't fall back on wxDEPRECATED_DECL here, as the standard
+        attribute works in places where the compiler-specific one don't,
+        notably it can be used after enumerator declaration with MSVC, while
+        __declspec(deprecated) can't occur there as it can only be used before
+        the declaration.
+     */
+    #define wxDEPRECATED_ATTR(msg)
+#endif
+
 /*
     Macro taking the deprecation message. It applies to the next declaration.
 
     If the compiler doesn't support showing the message, this degrades to a
     simple wxDEPRECATED(), i.e. at least gives a warning, if possible.
  */
-#if defined(__clang__) && defined(__has_extension)
+#ifdef wxHAS_DEPRECATED_ATTR
+    #define wxDEPRECATED_MSG(msg) [[deprecated(msg)]]
+#elif defined(__clang__) && defined(__has_extension)
     #if __has_extension(attribute_deprecated_with_message)
         #define wxDEPRECATED_MSG(msg) __attribute__((deprecated(msg)))
     #else
@@ -747,6 +771,17 @@ typedef short int WXTYPE;
 #endif
 
 /*
+    Macros above don't work with gcc 11 due to a compiler bug, unless we also
+    use "override" in the function declaration -- but this breaks other
+    compilers, so define a specific macro for gcc 11 only.
+ */
+#if wxCHECK_GCC_VERSION(11, 0)
+#   define wxDUMMY_OVERRIDE wxOVERRIDE
+#else
+#   define wxDUMMY_OVERRIDE
+#endif
+
+/*
     Combination of the two variants above: should be used for deprecated
     functions which are defined inline and are used by wxWidgets itself.
  */
@@ -880,12 +915,8 @@ typedef short int WXTYPE;
 /*  sometimes the value of a variable is *really* not used, to suppress  the */
 /*  resulting warning you may pass it to this function */
 #ifdef __cplusplus
-#   ifdef __BORLANDC__
-#       define wxUnusedVar(identifier) identifier
-#   else
-        template <class T>
-            inline void wxUnusedVar(const T& WXUNUSED(t)) { }
-#   endif
+    template <class T>
+        inline void wxUnusedVar(const T& WXUNUSED(t)) { }
 #endif
 
 /*  ---------------------------------------------------------------------------- */
@@ -1265,6 +1296,28 @@ typedef double wxDouble;
 /*  Geometric flags */
 /*  ---------------------------------------------------------------------------- */
 
+/*
+    In C++20 operations on the elements of different enums are deprecated and
+    many compilers (clang 10+, gcc 11+, MSVS 2019) warn about combining them,
+    as a lot of existing code using them does, so we provide explicit operators
+    for doing this, that do the same thing as would happen without them, but
+    without the warnings.
+ */
+#if defined(__cplusplus) && (__cplusplus >= 202002L)
+    #define wxALLOW_COMBINING_ENUMS_IMPL(en1, en2)                            \
+        inline int operator|(en1 v1, en2 v2)                                  \
+            { return static_cast<int>(v1) | static_cast<int>(v2); }           \
+        inline int operator+(en1 v1, en2 v2)                                  \
+            { return static_cast<int>(v1) + static_cast<int>(v2); }
+
+    #define wxALLOW_COMBINING_ENUMS(en1, en2)                                 \
+        wxALLOW_COMBINING_ENUMS_IMPL(en1, en2)                                \
+        wxALLOW_COMBINING_ENUMS_IMPL(en2, en1)
+#else /* !C++ 20 */
+    /* Don't bother doing anything in this case. */
+    #define wxALLOW_COMBINING_ENUMS(en1, en2)
+#endif /* C++ 20 */
+
 enum wxGeometryCentre
 {
     wxCENTRE                  = 0x0001,
@@ -1362,7 +1415,7 @@ enum wxStretch
     wxGROW                    = 0x2000,
     wxEXPAND                  = wxGROW,
     wxSHAPED                  = 0x4000,
-    wxTILE                    = wxSHAPED | wxFIXED_MINSIZE,
+    wxTILE                    = 0xc000, /* wxSHAPED | wxFIXED_MINSIZE */
 
     /*  a mask to extract stretch from the combination of flags */
     wxSTRETCH_MASK            = 0x7000 /* sans wxTILE */
@@ -1389,6 +1442,16 @@ enum wxBorder
 
 /* This makes it easier to specify a 'normal' border for a control */
 #define wxDEFAULT_CONTROL_BORDER    wxBORDER_SUNKEN
+
+/*
+    Elements of these enums can be combined with each other when using
+    wxSizer::Add() overload not using wxSizerFlags.
+ */
+wxALLOW_COMBINING_ENUMS(wxAlignment, wxDirection)
+wxALLOW_COMBINING_ENUMS(wxAlignment, wxGeometryCentre)
+wxALLOW_COMBINING_ENUMS(wxAlignment, wxStretch)
+wxALLOW_COMBINING_ENUMS(wxDirection, wxStretch)
+wxALLOW_COMBINING_ENUMS(wxDirection, wxGeometryCentre)
 
 /*  ---------------------------------------------------------------------------- */
 /*  Window style flags */
@@ -2163,6 +2226,7 @@ enum wxDataFormatId
     wxDF_LOCALE =           16,
     wxDF_PRIVATE =          20,
     wxDF_HTML =             30, /* Note: does not correspond to CF_ constant */
+    wxDF_PNG =              31, /* Note: does not correspond to CF_ constant */
     wxDF_MAX
 };
 
@@ -2614,6 +2678,7 @@ typedef int (* LINKAGEMODE wxListIterateFunction)(void *current);
 #ifdef __DARWIN__
 #define DECLARE_WXOSX_OPAQUE_CFREF( name ) typedef struct __##name* name##Ref;
 #define DECLARE_WXOSX_OPAQUE_CONST_CFREF( name ) typedef const struct __##name* name##Ref;
+
 #endif
 
 #ifdef __WXMAC__
@@ -2641,15 +2706,43 @@ typedef void*       WXDisplay;
  * core frameworks
  */
 
-typedef const void * CFTypeRef;
+#if __has_attribute(objc_bridge) && __has_feature(objc_bridge_id) && __has_feature(objc_bridge_id_on_typedefs)
 
-DECLARE_WXOSX_OPAQUE_CONST_CFREF( CFData )
-DECLARE_WXOSX_OPAQUE_CONST_CFREF( CFString )
-typedef struct __CFString * CFMutableStringRef;
-DECLARE_WXOSX_OPAQUE_CONST_CFREF( CFDictionary )
+#ifdef __OBJC__
+@class NSArray;
+@class NSString;
+@class NSData;
+@class NSDictionary;
+#endif
 
-DECLARE_WXOSX_OPAQUE_CONST_CFREF( CFArray )
-typedef struct __CFArray * CFMutableArrayRef;
+#define WXOSX_BRIDGED_TYPE(T)		__attribute__((objc_bridge(T)))
+#define WXOSX_BRIDGED_MUTABLE_TYPE(T)	__attribute__((objc_bridge_mutable(T)))
+
+#else
+
+#define WXOSX_BRIDGED_TYPE(T)
+#define WXOSX_BRIDGED_MUTABLE_TYPE(T)
+
+#endif
+
+#define DECLARE_WXOSX_BRIDGED_TYPE_AND_CFREF( name ) \
+    typedef const struct WXOSX_BRIDGED_TYPE(NS##name) __CF##name* CF##name##Ref;
+#define DECLARE_WXOSX_BRIDGED_MUTABLE_TYPE_AND_CFREF( name ) \
+    typedef struct WXOSX_BRIDGED_MUTABLE_TYPE(NSMutable##name) __CF##name* CFMutable##name##Ref;
+
+typedef const WXOSX_BRIDGED_TYPE(id) void * CFTypeRef;
+
+DECLARE_WXOSX_BRIDGED_TYPE_AND_CFREF( Data )
+DECLARE_WXOSX_BRIDGED_MUTABLE_TYPE_AND_CFREF( Data )
+
+DECLARE_WXOSX_BRIDGED_TYPE_AND_CFREF( String )
+DECLARE_WXOSX_BRIDGED_MUTABLE_TYPE_AND_CFREF( String )
+
+DECLARE_WXOSX_BRIDGED_TYPE_AND_CFREF( Dictionary )
+DECLARE_WXOSX_BRIDGED_MUTABLE_TYPE_AND_CFREF( Dictionary )
+
+DECLARE_WXOSX_BRIDGED_TYPE_AND_CFREF( Array )
+DECLARE_WXOSX_BRIDGED_MUTABLE_TYPE_AND_CFREF( Array )
 
 DECLARE_WXOSX_OPAQUE_CFREF( CFRunLoopSource )
 DECLARE_WXOSX_OPAQUE_CONST_CFREF( CTFont )
@@ -2799,6 +2892,7 @@ DECLARE_WXCOCOA_OBJC_CLASS(NSRotationGestureRecognizer);
 DECLARE_WXCOCOA_OBJC_CLASS(NSPressGestureRecognizer);
 DECLARE_WXCOCOA_OBJC_CLASS(NSTouch);
 DECLARE_WXCOCOA_OBJC_CLASS(NSPasteboard);
+DECLARE_WXCOCOA_OBJC_CLASS(WKWebView);
 
 typedef WX_NSWindow WXWindow;
 typedef WX_NSView WXWidget;
@@ -2807,6 +2901,7 @@ typedef WX_NSMenu WXHMENU;
 typedef WX_NSOpenGLPixelFormat WXGLPixelFormat;
 typedef WX_NSOpenGLContext WXGLContext;
 typedef WX_NSPasteboard OSXPasteboard;
+typedef WX_WKWebView OSXWebViewPtr;
 
 #elif wxOSX_USE_IPHONE
 
@@ -2820,7 +2915,6 @@ DECLARE_WXCOCOA_OBJC_CLASS(UIImage);
 DECLARE_WXCOCOA_OBJC_CLASS(UIEvent);
 DECLARE_WXCOCOA_OBJC_CLASS(NSSet);
 DECLARE_WXCOCOA_OBJC_CLASS(EAGLContext);
-DECLARE_WXCOCOA_OBJC_CLASS(UIWebView);
 DECLARE_WXCOCOA_OBJC_CLASS(UIPasteboard);
 
 typedef WX_UIWindow WXWindow;
@@ -2829,15 +2923,10 @@ typedef WX_UIImage WXImage;
 typedef WX_UIMenu WXHMENU;
 typedef WX_EAGLContext WXGLContext;
 typedef WX_NSString WXGLPixelFormat;
-typedef WX_UIWebView OSXWebViewPtr;
 typedef WX_UIPasteboard WXOSXPasteboard;
 
 #endif
 
-#if wxOSX_USE_COCOA_OR_CARBON
-DECLARE_WXCOCOA_OBJC_CLASS(WebView);
-typedef WX_WebView OSXWebViewPtr;
-#endif
 
 
 #endif /* __WXMAC__ */

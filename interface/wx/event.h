@@ -1547,6 +1547,15 @@ public:
     */
     bool IsKeyInCategory(int category) const;
 
+    /**
+        Returns true if this event is an auto-repeat of the key, false if this
+        is the initial key press.
+
+        @since 3.1.6
+        @onlyfor{wxosx,wxmsw,wxQt}
+    */
+    bool IsAutoRepeat() const;
+
     //@{
     /**
         Obtains the position (in client coordinates) at which the key was pressed.
@@ -1876,14 +1885,18 @@ public:
     @class wxSysColourChangedEvent
 
     This class is used for system colour change events, which are generated
-    when the user changes the colour settings using the control panel.
-    This is only appropriate under Windows.
+    when the user changes the colour settings or when the system theme changes
+    (e.g. automatic dark mode switching on macOS).
+
+    Event handlers for this event can access the new system colour settings through
+    wxSystemSettings::GetColour().
 
     @remarks
         The default event handler for this event propagates the event to child windows,
-        since Windows only sends the events to top-level windows.
-        If intercepting this event for a top-level window, remember to call the base
-        class handler, or to pass the event on to the window's children explicitly.
+        since the system events are only sent to top-level windows.
+        If intercepting this event for a top-level window, remember to either call
+        wxEvent::Skip() on the event, call the base class handler, or pass the event
+        on to the window's children explicitly.
 
     @beginEventTable{wxSysColourChangedEvent}
     @event{EVT_SYS_COLOUR_CHANGED(func)}
@@ -2257,6 +2270,46 @@ public:
     */
     wxMaximizeEvent(int id = 0);
 };
+
+/**
+    @class wxFullScreenEvent
+
+    An event being sent when the user enters or exits full screen mode.
+
+    Currently this event is only generated in the wxOSX/Cocoa port when
+    wxTopLevelWindow::EnableFullScreenView() is enabled and the user
+    the user enters or exits full screen. Note that this event is @e not
+    generated when wxTopLevelWindow::ShowFullScreen().
+
+    @beginEventTable{wxFullScreenEvent}
+    @event{EVT_FULLSCREEN(func)}
+        Process a @c wxEVT_FULLSCREEN event.
+    @endEventTable
+
+    @library{wxcore}
+    @category{events}
+
+    @since 3.1.5
+
+    @see @ref overview_events, wxTopLevelWindow::EnableFullScreenView,
+         wxTopLevelWindow::IsFullScreen
+*/
+class wxFullScreenEvent : public wxEvent
+{
+public:
+    /**
+        Constructor.
+    */
+    wxFullScreenEvent(int id = 0, bool fullscreen = true);
+
+    /**
+        Returns @true if the frame entered full screen, @false if exited
+        full screen.
+    */
+    bool IsFullScreen() const;
+};
+
+
 
 /**
     The possibles modes to pass to wxUpdateUIEvent::SetMode().
@@ -4311,7 +4364,7 @@ public:
 /**
     @class wxMouseCaptureChangedEvent
 
-    An mouse capture changed event is sent to a window that loses its
+    A mouse capture changed event is sent to a window that loses its
     mouse capture. This is called even if wxWindow::ReleaseMouse
     was called by the application code. Handling this event allows
     an application to cater for unexpected capture releases which
@@ -4479,7 +4532,6 @@ public:
     wxMenuBar, attached to wxFrame, and popup menus shown by
     wxWindow::PopupMenu(). They are sent to the following objects until one of
     them handles the event:
-
         -# The menu object itself, as returned by GetMenu(), if any.
         -# The wxMenuBar to which this menu is attached, if any.
         -# The window associated with the menu, e.g. the one calling
@@ -5148,4 +5200,3 @@ wxEventType wxEVT_WINDOW_MODAL_DIALOG_CLOSED;
 #endif // wxUSE_GUI
 
 //@}
-

@@ -11,9 +11,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 // ============================================================================
 // declarations
@@ -101,6 +98,13 @@ void wxGridSelection::SetSelectionMode( wxGrid::wxGridSelectionModes selmode )
     if (selmode == m_selectionMode)
         return;
 
+    if (selmode == wxGrid::wxGridSelectNone)
+    {
+        ClearSelection();
+        m_selectionMode = selmode;
+        return;
+    }
+
     if ( m_selectionMode != wxGrid::wxGridSelectCells )
     {
         // if changing form row to column selection
@@ -130,6 +134,7 @@ void wxGridSelection::SetSelectionMode( wxGrid::wxGridSelectionModes selmode )
             switch ( selmode )
             {
                 case wxGrid::wxGridSelectCells:
+                case wxGrid::wxGridSelectNone:
                     wxFAIL_MSG("unreachable");
                     break;
 
@@ -163,20 +168,22 @@ void wxGridSelection::SetSelectionMode( wxGrid::wxGridSelectionModes selmode )
 
 void wxGridSelection::SelectRow(int row, const wxKeyboardState& kbd)
 {
-    if ( m_selectionMode == wxGrid::wxGridSelectColumns )
+    if ( m_selectionMode == wxGrid::wxGridSelectColumns ||
+            m_selectionMode == wxGrid::wxGridSelectNone )
         return;
 
     Select(wxGridBlockCoords(row, 0, row, m_grid->GetNumberCols() - 1),
-           kbd, true);
+           kbd, wxEVT_GRID_RANGE_SELECTED);
 }
 
 void wxGridSelection::SelectCol(int col, const wxKeyboardState& kbd)
 {
-    if ( m_selectionMode == wxGrid::wxGridSelectRows )
+    if ( m_selectionMode == wxGrid::wxGridSelectRows ||
+            m_selectionMode == wxGrid::wxGridSelectNone )
         return;
 
     Select(wxGridBlockCoords(0, col, m_grid->GetNumberRows() - 1, col),
-           kbd, true);
+           kbd, wxEVT_GRID_RANGE_SELECTED);
 }
 
 void wxGridSelection::SelectBlock( int topRow, int leftCol,
@@ -217,6 +224,10 @@ void wxGridSelection::SelectBlock( int topRow, int leftCol,
             else
                 allowed = 0;
             break;
+
+        case wxGrid::wxGridSelectNone:
+            allowed = 0;
+            break;
     }
 
     wxASSERT_MSG(allowed != -1, "unknown selection mode?");
@@ -240,7 +251,7 @@ wxGridSelection::SelectAll()
     if ( numRows && numCols )
     {
         Select(wxGridBlockCoords(0, 0, numRows - 1, numCols - 1),
-               wxKeyboardState(), true /* send event */);
+               wxKeyboardState(), wxEVT_GRID_RANGE_SELECTED);
     }
 }
 
@@ -249,6 +260,10 @@ wxGridSelection::DeselectBlock(const wxGridBlockCoords& block,
                                const wxKeyboardState& kbd,
                                wxEventType eventType)
 {
+    // In wxGridSelectNone mode, all blocks should already be deselected.
+    if ( m_selectionMode == wxGrid::wxGridSelectNone )
+        return;
+
     const wxGridBlockCoords canonicalizedBlock = block.Canonicalize();
 
     size_t count, n;
@@ -314,6 +329,10 @@ wxGridSelection::DeselectBlock(const wxGridBlockCoords& block,
                 splitOrientation = wxHORIZONTAL;
             else
                 splitOrientation = wxVERTICAL;
+            break;
+
+        case wxGrid::wxGridSelectNone:
+            wxFAIL_MSG("unreachable");
             break;
         }
 
@@ -520,10 +539,14 @@ bool wxGridSelection::ExtendCurrentBlock(const wxGridCellCoords& blockStart,
     wxASSERT( blockStart.GetRow() != -1 && blockStart.GetCol() != -1 &&
               blockEnd.GetRow() != -1 && blockEnd.GetCol() != -1 );
 
+    if ( m_selectionMode == wxGrid::wxGridSelectNone )
+        return false;
+
     // If selection doesn't contain the current cell (which also covers the
     // special case of nothing being selected yet), we have to create a new
     // block containing it because it doesn't make sense to extend any existing
     // block to non-selected current cell.
+
     if ( !IsInSelection(m_grid->GetGridCursorCoords()) )
     {
         SelectBlock(blockStart, blockEnd, kbd, eventType);
@@ -576,6 +599,10 @@ bool wxGridSelection::ExtendCurrentBlock(const wxGridCellCoords& blockStart,
                 canChangeRow =
                 canChangeCol = true;
             }
+            break;
+
+        case wxGrid::wxGridSelectNone:
+            wxFAIL_MSG("unreachable");
             break;
     }
 
@@ -757,7 +784,8 @@ wxGridCellCoordsArray wxGridSelection::GetBlockSelectionBottomRight() const
 // is, anyhow, the best we can do.
 wxArrayInt wxGridSelection::GetRowSelection() const
 {
-    if ( m_selectionMode == wxGrid::wxGridSelectColumns )
+    if ( m_selectionMode == wxGrid::wxGridSelectColumns ||
+            m_selectionMode == wxGrid::wxGridSelectNone )
         return wxArrayInt();
 
     wxIntSortedArray uniqueRows;
@@ -788,7 +816,8 @@ wxArrayInt wxGridSelection::GetRowSelection() const
 // See comments for GetRowSelection().
 wxArrayInt wxGridSelection::GetColSelection() const
 {
-    if ( m_selectionMode == wxGrid::wxGridSelectRows )
+    if ( m_selectionMode == wxGrid::wxGridSelectRows ||
+            m_selectionMode == wxGrid::wxGridSelectNone )
         return wxArrayInt();
 
     wxIntSortedArray uniqueCols;

@@ -9,9 +9,8 @@
 
 /**
     Flags for wxColour -> wxString conversion (see wxColour::GetAsString).
-
-    @{
 */
+//@{
 enum {
     wxC2S_NAME             = 1,   // return colour name, when possible
     wxC2S_CSS_SYNTAX       = 2,   // return colour in rgb(r,g,b) syntax
@@ -202,6 +201,8 @@ public:
     /**
         Returns @true if the color can be described using RGB values, i.e. is solid,
         @false if it is a pattern (currently only possible on macOS)
+
+        @since 3.1.2
     */
     virtual bool IsSolid() const;
     //@{

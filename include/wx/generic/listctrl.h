@@ -68,6 +68,14 @@ public:
     bool SetColumn( int col, const wxListItem& item ) wxOVERRIDE;
     int GetColumnWidth( int col ) const wxOVERRIDE;
     bool SetColumnWidth( int col, int width) wxOVERRIDE;
+
+    // Column ordering functions
+    int GetColumnOrder(int col) const wxOVERRIDE;
+    int GetColumnIndexFromOrder(int order) const wxOVERRIDE;
+
+    wxArrayInt GetColumnsOrder() const wxOVERRIDE;
+    bool SetColumnsOrder(const wxArrayInt& orders) wxOVERRIDE;
+
     int GetCountPerPage() const; // not the same in wxGLC as in Windows, I think
     wxRect GetViewRect() const;
 
@@ -188,6 +196,8 @@ public:
     virtual wxColour GetForegroundColour() const;
     virtual bool SetFont( const wxFont &font ) wxOVERRIDE;
     virtual bool SetCursor( const wxCursor &cursor ) wxOVERRIDE;
+
+    virtual void ExtendRulesAndAlternateColour(bool extend = true) wxOVERRIDE;
 
 #if wxUSE_DRAG_AND_DROP
     virtual void SetDropTarget( wxDropTarget *dropTarget ) wxOVERRIDE;

@@ -12,6 +12,7 @@
 
 #include "wx/defs.h"
 #include "wx/object.h"
+#include "wx/compositewin.h"
 #include "wx/control.h"
 #include "wx/scrolwin.h"
 #include "wx/icon.h"
@@ -180,8 +181,9 @@ private:
 // wxDataViewCtrl
 // ---------------------------------------------------------
 
-class WXDLLIMPEXP_CORE wxDataViewCtrl : public wxDataViewCtrlBase,
-                                       public wxScrollHelper
+class WXDLLIMPEXP_CORE wxDataViewCtrl
+    : public wxCompositeWindow<wxDataViewCtrlBase>,
+      public wxScrollHelper
 {
     friend class wxDataViewMainWindow;
     friend class wxDataViewHeaderWindowBase;
@@ -191,6 +193,8 @@ class WXDLLIMPEXP_CORE wxDataViewCtrl : public wxDataViewCtrlBase,
 #if wxUSE_ACCESSIBILITY
     friend class wxDataViewCtrlAccessible;
 #endif // wxUSE_ACCESSIBILITY
+
+    typedef wxCompositeWindow<wxDataViewCtrlBase> BaseType;
 
 public:
     wxDataViewCtrl() : wxScrollHelper(this)
@@ -264,6 +268,8 @@ public:
     virtual void SetFocus() wxOVERRIDE;
 
     virtual bool SetFont(const wxFont & font) wxOVERRIDE;
+    virtual bool SetForegroundColour(const wxColour& colour) wxOVERRIDE;
+    virtual bool SetBackgroundColour(const wxColour& colour) wxOVERRIDE;
 
 #if wxUSE_ACCESSIBILITY
     virtual bool Show(bool show = true) wxOVERRIDE;
@@ -361,10 +367,13 @@ public:     // utility functions not part of the API
 #endif // wxUSE_ACCESSIBILITY
 
 private:
+    // Implement pure virtual method inherited from wxCompositeWindow.
+    virtual wxWindowList GetCompositeWindowParts() const wxOVERRIDE;
+
     virtual wxDataViewItem DoGetCurrentItem() const wxOVERRIDE;
     virtual void DoSetCurrentItem(const wxDataViewItem& item) wxOVERRIDE;
 
-    virtual void DoExpand(const wxDataViewItem& item) wxOVERRIDE;
+    virtual void DoExpand(const wxDataViewItem& item, bool expandChildren) wxOVERRIDE;
 
     void InvalidateColBestWidths();
     void InvalidateColBestWidth(int idx);

@@ -504,33 +504,32 @@ void wxWindowMac::DoSetWindowVariant( wxWindowVariant variant )
     }
 }
 
-void wxWindowMac::MacUpdateControlFont()
-{
-    if ( GetPeer() )
-        GetPeer()->SetFont( GetFont() , GetForegroundColour() , GetWindowStyle() ) ;
-
-    // do not trigger refreshes upon invisible and possible partly created objects
-    if ( IsShownOnScreen() )
-        Refresh() ;
-}
-
 bool wxWindowMac::SetFont(const wxFont& font)
 {
     bool retval = wxWindowBase::SetFont( font );
 
-    MacUpdateControlFont() ;
+    if (retval)
+    {
+        if ( GetPeer() )
+            GetPeer()->SetFont(GetFont()) ;
+
+        // do not trigger refreshes upon invisible and possible partly created objects
+        if ( IsShownOnScreen() )
+            Refresh() ;
+    }
 
     return retval;
 }
 
 bool wxWindowMac::SetForegroundColour(const wxColour& col )
 {
-    bool retval = wxWindowBase::SetForegroundColour( col );
+    if ( !wxWindowBase::SetForegroundColour( col ) )
+        return false;
 
-    if (retval)
-        MacUpdateControlFont();
+    if ( GetPeer() )
+        GetPeer()->SetForegroundColour(col);
 
-    return retval;
+    return true;
 }
 
 bool wxWindowMac::SetBackgroundStyle(wxBackgroundStyle style)
@@ -2568,12 +2567,11 @@ bool wxWindowMac::OSXHandleKeyEvent( wxKeyEvent& event )
                             : "unknown",
                wxDumpWindow(this));
 
-    bool handled = false;
-
-    // moved the ordinary key event sending AFTER the accel evaluation
+    if ( HandleWindowEvent(event) )
+        return true;
 
 #if wxUSE_ACCEL
-    if (event.GetEventType() == wxEVT_KEY_DOWN)
+    if (event.GetEventType() == wxEVT_CHAR_HOOK)
     {
         wxWindow *ancestor = this;
         while (ancestor)
@@ -2584,16 +2582,16 @@ bool wxWindowMac::OSXHandleKeyEvent( wxKeyEvent& event )
                 wxEvtHandler * const handler = ancestor->GetEventHandler();
 
                 wxCommandEvent command_event( wxEVT_MENU, command );
-                handled = handler->ProcessEvent( command_event );
-
-                if ( !handled )
+                if ( !handler->ProcessEvent( command_event ) )
                 {
                     // accelerators can also be used with buttons, try them too
                     command_event.SetEventType(wxEVT_BUTTON);
-                    handled = handler->ProcessEvent( command_event );
+                    handler->ProcessEvent( command_event );
                 }
 
-                break;
+                // In any case, the event was handled as it triggered an
+                // accelerator.
+                return true;
             }
 
             if (ancestor->IsTopNavigationDomain(wxWindow::Navigation_Accel))
@@ -2604,14 +2602,7 @@ bool wxWindowMac::OSXHandleKeyEvent( wxKeyEvent& event )
     }
 #endif // wxUSE_ACCEL
 
-    if ( !handled )
-    {
-        handled = HandleWindowEvent( event ) ;
-        if ( handled && event.GetSkipped() )
-            handled = false ;
-    }
-
-    return handled ;
+    return false;
 }
 
 /* static */

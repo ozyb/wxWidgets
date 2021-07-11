@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_SPINCTRL
 
@@ -39,6 +36,8 @@
 
 #include "wx/msw/private.h"
 #include "wx/msw/private/winstyle.h"
+
+#include "wx/scopeguard.h"
 
 #if wxUSE_TOOLTIPS
     #include "wx/tooltip.h"
@@ -362,12 +361,9 @@ bool wxSpinCtrl::Create(wxWindow *parent,
     SetRange(min, max);
     SetValue(initial);
 
-    // Also set the text part of the control if it was specified independently
-    // but don't generate an event for this, it would be unexpected.
-    m_blockEvent = true;
+    // Also set the text part of the control if it was specified independently.
     if ( !value.empty() )
         SetValue(value);
-    m_blockEvent = false;
 
     // Finally deal with the size: notice that this can only be done now both
     // windows are created and the text one is set up as buddy because
@@ -445,8 +441,16 @@ bool wxSpinCtrl::SetBase(int base)
 // wxTextCtrl-like methods
 // ----------------------------------------------------------------------------
 
+wxString wxSpinCtrl::GetTextValue() const
+{
+    return wxGetWindowText(m_hwndBuddy);
+}
+
 void wxSpinCtrl::SetValue(const wxString& text)
 {
+    m_blockEvent = true;
+    wxON_BLOCK_EXIT_SET(m_blockEvent, false);
+
     if ( !::SetWindowText(GetBuddyHwnd(), text.c_str()) )
     {
         wxLogLastError(wxT("SetWindowText(buddy)"));
@@ -456,6 +460,7 @@ void wxSpinCtrl::SetValue(const wxString& text)
 void  wxSpinCtrl::SetValue(int val)
 {
     m_blockEvent = true;
+    wxON_BLOCK_EXIT_SET(m_blockEvent, false);
 
     wxSpinButton::SetValue(val);
 
@@ -484,8 +489,6 @@ void  wxSpinCtrl::SetValue(int val)
     }
 
     m_oldValue = GetValue();
-
-    m_blockEvent = false;
 }
 
 int wxSpinCtrl::GetValue() const

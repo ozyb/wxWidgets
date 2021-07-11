@@ -463,7 +463,6 @@ bool wxToolBar::Create( wxWindow *parent,
     else
     {
         m_widget = gtk_event_box_new();
-        ConnectWidget( m_widget );
     }
     gtk_container_add(GTK_CONTAINER(m_widget), GTK_WIDGET(m_toolbar));
     wxGCC_WARNING_RESTORE()
@@ -572,7 +571,7 @@ bool wxToolBar::DoInsertTool(size_t pos, wxToolBarToolBase *toolBase)
                     break;
                 default:
                     wxFAIL_MSG("unknown toolbar child type");
-                    // fall through
+                    wxFALLTHROUGH;
                 case wxITEM_DROPDOWN:
                 case wxITEM_NORMAL:
                     tool->m_item = gtk_tool_button_new(NULL, "");

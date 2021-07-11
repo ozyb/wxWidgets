@@ -11,9 +11,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#if defined(__BORLANDC__)
-    #pragma hdrstop
-#endif
 
 #if wxUSE_GRAPHICS_CONTEXT
 
@@ -112,6 +109,25 @@ wxGCDC::wxGCDC() :
 wxGCDC::~wxGCDC()
 {
 }
+
+#ifdef __WXMSW__
+WXHDC wxGCDC::AcquireHDC()
+{
+    wxGraphicsContext* const gc = GetGraphicsContext();
+    wxCHECK_MSG(gc, NULL, "can't acquire HDC because there is no wxGraphicsContext");
+    return gc->GetNativeHDC();
+}
+
+void wxGCDC::ReleaseHDC(WXHDC hdc)
+{
+    if ( !hdc )
+        return;
+
+    wxGraphicsContext* const gc = GetGraphicsContext();
+    wxCHECK_RET(gc, "can't release HDC because there is no wxGraphicsContext");
+    gc->ReleaseNativeHDC(hdc);
+}
+#endif // __WXMSW__
 
 wxIMPLEMENT_ABSTRACT_CLASS(wxGCDCImpl, wxDCImpl);
 
@@ -400,7 +416,11 @@ void wxGCDCImpl::DestroyClippingRegion()
     // so we must explicitly make sure it only covers the area we want it to draw
     int width, height ;
     GetOwner()->GetSize( &width , &height ) ;
-    m_graphicContext->Clip( DeviceToLogicalX(0) , DeviceToLogicalY(0) , DeviceToLogicalXRel(width), DeviceToLogicalYRel(height) );
+    wxPoint origin;
+#ifdef __WXOSX__
+    origin = OSXGetOrigin();
+#endif
+    m_graphicContext->Clip( DeviceToLogicalX(origin.x) , DeviceToLogicalY(origin.y) , DeviceToLogicalXRel(width), DeviceToLogicalYRel(height) );
 
     m_graphicContext->SetPen( m_pen );
     m_graphicContext->SetBrush( m_brush );
@@ -779,29 +799,11 @@ void wxGCDCImpl::DoDrawPoint( wxCoord x, wxCoord y )
     if (!m_logicalFunctionSupported)
         return;
 
-    wxPen pointPen(m_pen.GetColour());
-    wxDCPenChanger penChanger(*GetOwner(), pointPen);
+    wxDCBrushChanger brushChanger(*GetOwner(), wxBrush(m_pen.GetColour()));
+    wxDCPenChanger penChanger(*GetOwner(), *wxTRANSPARENT_PEN);
 
-#if defined(__WXMSW__) && wxUSE_GRAPHICS_GDIPLUS
-    // single point path does not work with GDI+
-    if (m_graphicContext->GetRenderer() == wxGraphicsRenderer::GetGDIPlusRenderer())
-    {
-        const double dx = 0.25 / m_scaleX;
-        const double dy = 0.25 / m_scaleY;
-        m_graphicContext->StrokeLine(x - dx, y - dy, x + dx, y + dy);
-    }
-    else
-#endif
-    {
-#ifdef __WXOSX__
-        m_graphicContext->StrokeLine(x, y, x, y);
-#else
-        wxGraphicsPath path(m_graphicContext->CreatePath());
-        path.MoveToPoint(x, y);
-        path.CloseSubpath();
-        m_graphicContext->StrokePath(path);
-#endif
-    }
+    // Raster-based DCs draw a single pixel regardless of scale
+    m_graphicContext->DrawRectangle(x, y, 1 / m_scaleX, 1 / m_scaleY);
 
     CalcBoundingBox(x, y);
 }
@@ -844,53 +846,35 @@ void wxGCDCImpl::DoDrawLines(int n, const wxPoint points[],
 void wxGCDCImpl::DoDrawSpline(const wxPointList *points)
 {
     wxCHECK_RET( IsOk(), wxT("wxGCDC(cg)::DoDrawSpline - invalid DC") );
+    wxCHECK_RET(points, "NULL pointer to spline points?");
+    wxCHECK_RET(points->size() >= 2, "incomplete list of spline points?");
 
     if ( !m_logicalFunctionSupported )
         return;
 
     wxGraphicsPath path = m_graphicContext->CreatePath();
 
-    wxPointList::compatibility_iterator node = points->GetFirst();
-    if ( !node )
-        // empty list
-        return;
+    wxPointList::const_iterator itPt = points->begin();
+    const wxPoint* p = *itPt; ++itPt;
+    wxPoint2DDouble p1(*p);
 
-    const wxPoint *p = node->GetData();
+    p = *itPt; ++itPt;
+    wxPoint2DDouble p2(*p);
+    wxPoint2DDouble c1 = (p1 + p2) / 2.0;
 
-    wxCoord x1 = p->x;
-    wxCoord y1 = p->y;
-
-    node = node->GetNext();
-    p = node->GetData();
-
-    wxCoord x2 = p->x;
-    wxCoord y2 = p->y;
-    wxCoord cx1 = ( x1 + x2 ) / 2;
-    wxCoord cy1 = ( y1 + y2 ) / 2;
-
-    path.MoveToPoint( x1 , y1 );
-    path.AddLineToPoint( cx1 , cy1 );
-#if !wxUSE_STD_CONTAINERS
-
-    while ((node = node->GetNext()) != NULL)
-#else
-
-    while ((node = node->GetNext()))
-#endif // !wxUSE_STD_CONTAINERS
-
+    path.MoveToPoint(p1);
+    path.AddLineToPoint(c1);
+    while ( itPt != points->end() )
     {
-        p = node->GetData();
-        x1 = x2;
-        y1 = y2;
-        x2 = p->x;
-        y2 = p->y;
-        wxCoord cx4 = (x1 + x2) / 2;
-        wxCoord cy4 = (y1 + y2) / 2;
+        p = *itPt; ++itPt;
+        p1 = p2;
+        p2 = *p;
+        wxPoint2DDouble c4 = (p1 + p2) / 2.0;
 
-        path.AddQuadCurveToPoint(x1 , y1 ,cx4 , cy4 );
+        path.AddQuadCurveToPoint(p1.m_x , p1.m_y, c4.m_x, c4.m_y);
     }
 
-    path.AddLineToPoint( x2 , y2 );
+    path.AddLineToPoint(p2);
 
     m_graphicContext->StrokePath( path );
 
@@ -1210,6 +1194,11 @@ void wxGCDCImpl::DoDrawRotatedText(const wxString& text, wxCoord x, wxCoord y,
 
 void wxGCDCImpl::DoDrawText(const wxString& str, wxCoord x, wxCoord y)
 {
+    wxCHECK_RET( IsOk(), "wxGCDC::DoDrawText - invalid DC" );
+
+    if ( str.empty() )
+        return;
+
     // For compatibility with other ports (notably wxGTK) and because it's
     // genuinely useful, we allow passing multiline strings to DrawText().
     // However there is no native OSX function to draw them directly so we
@@ -1221,11 +1210,6 @@ void wxGCDCImpl::DoDrawText(const wxString& str, wxCoord x, wxCoord y)
         GetOwner()->DrawLabel(str, wxRect(x, y, 0, 0));
         return;
     }
-
-    wxCHECK_RET( IsOk(), wxT("wxGCDC(cg)::DoDrawText - invalid DC") );
-
-    if ( str.empty() )
-        return;
 
     // Text drawing shouldn't be affected by the raster operation
     // mode set by SetLogicalFunction() and should be always done
@@ -1368,6 +1352,9 @@ void wxGCDCImpl::DoGradientFillLinear(const wxRect& rect,
                                   const wxColour& destColour,
                                   wxDirection nDirection )
 {
+    if (rect.width == 0 || rect.height == 0)
+        return;
+
     wxPoint start;
     wxPoint end;
     switch( nDirection)
@@ -1395,9 +1382,6 @@ void wxGCDCImpl::DoGradientFillLinear(const wxRect& rect,
     default :
         break;
     }
-
-    if (rect.width == 0 || rect.height == 0)
-        return;
 
     m_graphicContext->SetBrush( m_graphicContext->CreateLinearGradientBrush(
         start.x,start.y,end.x,end.y, initialColour, destColour));

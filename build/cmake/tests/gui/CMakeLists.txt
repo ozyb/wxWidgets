@@ -23,8 +23,10 @@ set(TEST_GUI_SRC
     graphics/boundingbox.cpp
     graphics/clippingbox.cpp
     graphics/coords.cpp
+    graphics/graphbitmap.cpp
     graphics/graphmatrix.cpp
     graphics/graphpath.cpp
+    graphics/imagelist.cpp
     config/config.cpp
     controls/auitest.cpp
     controls/bitmapcomboboxtest.cpp
@@ -164,15 +166,33 @@ set(TEST_GUI_DATA
     image/horse_box_average_100x100.png
     image/horse_box_average_150x150.png
     image/horse_box_average_300x300.png
+    image/paste_input_background.png
+    image/paste_input_black.png
+    image/paste_input_overlay_transparent_border_opaque_square.png
+    image/paste_input_overlay_transparent_border_semitransparent_circle.png
+    image/paste_input_overlay_transparent_border_semitransparent_square.png
+    image/paste_result_background_plus_circle_plus_square.png
+    image/paste_result_background_plus_overlay_transparent_border_opaque_square.png
+    image/paste_result_background_plus_overlay_transparent_border_semitransparent_square.png
+    image/paste_result_no_background_square_over_circle.png
+    image/wx.png
+    image/wx.ico
+    image/toucan.png
+    image/toucan_hue_0.538.png
+    image/toucan_sat_-0.41.png
+    image/toucan_bright_-0.259.png
+    image/toucan_hsv_0.538_-0.41_-0.259.png
+    image/toucan_light_46.png
+    image/toucan_dis_240.png
+    image/toucan_grey.png
+    image/toucan_mono_255_255_255.png
     intl/ja/internat.mo
     intl/ja/internat.po
     )
 
-wx_add_test(test_gui ${TEST_GUI_SRC}
+wx_add_test(test_gui CONSOLE_GUI ${TEST_GUI_SRC}
     DATA ${TEST_GUI_DATA}
-    RES ../samples/sample.rc
     )
-wx_exe_link_libraries(test_gui wxcore)
 if(wxUSE_AUI)
     wx_exe_link_libraries(test_gui wxaui)
 endif()
@@ -200,4 +220,3 @@ endif()
 if(wxUSE_WEBVIEW)
     wx_exe_link_libraries(test_gui wxwebview)
 endif()
-wx_test_enable_precomp(test_gui)

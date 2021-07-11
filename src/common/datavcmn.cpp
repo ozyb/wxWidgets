@@ -10,9 +10,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_DATAVIEWCTRL
 
@@ -887,21 +884,19 @@ wxDataViewRendererBase::PrepareForItem(const wxDataViewModel *model,
     wxTRY
     {
 
-    // Now check if we have a value and remember it for rendering it later.
-    // Notice that we do it even if it's null, as the cell should be empty then
-    // and not show the last used value.
+    // Now check if we have a value and remember it if we do.
     wxVariant value = CheckedGetValue(model, item, column);
-
-    if ( m_valueAdjuster )
-    {
-        if ( IsHighlighted() )
-            value = m_valueAdjuster->MakeHighlighted(value);
-    }
-
-    SetValue(value);
 
     if ( !value.IsNull() )
     {
+        if ( m_valueAdjuster )
+        {
+            if ( IsHighlighted() )
+                value = m_valueAdjuster->MakeHighlighted(value);
+        }
+
+        SetValue(value);
+
         // Also set up the attributes for this item if it's not empty.
         wxDataViewItemAttr attr;
         model->GetAttr(item, column, attr);
@@ -1268,7 +1263,14 @@ void wxDataViewCtrlBase::Expand(const wxDataViewItem& item)
 {
     ExpandAncestors(item);
 
-    DoExpand(item);
+    DoExpand(item, false);
+}
+
+void wxDataViewCtrlBase::ExpandChildren(const wxDataViewItem& item)
+{
+    ExpandAncestors(item);
+
+    DoExpand(item, true);
 }
 
 void wxDataViewCtrlBase::ExpandAncestors( const wxDataViewItem & item )
@@ -1290,7 +1292,7 @@ void wxDataViewCtrlBase::ExpandAncestors( const wxDataViewItem & item )
     // then we expand the parents, starting at the root
     while (!parentChain.empty())
     {
-         DoExpand(parentChain.back());
+         DoExpand(parentChain.back(), false);
          parentChain.pop_back();
     }
 }

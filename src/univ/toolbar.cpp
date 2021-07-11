@@ -20,9 +20,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_TOOLBAR
 
@@ -716,7 +713,7 @@ bool wxToolBar::PerformAction(const wxControlAction& action,
     }
     else if ( action == wxACTION_TOOLBAR_PRESS )
     {
-        wxLogTrace(wxT("toolbar"), wxT("Button '%s' pressed."), tool->GetShortHelp().c_str());
+        wxLogTrace(wxT("toolbar"), wxT("Button '%s' pressed."), tool->GetShortHelp());
 
         tool->Invert();
 
@@ -724,7 +721,7 @@ bool wxToolBar::PerformAction(const wxControlAction& action,
     }
     else if ( action == wxACTION_TOOLBAR_RELEASE )
     {
-        wxLogTrace(wxT("toolbar"), wxT("Button '%s' released."), tool->GetShortHelp().c_str());
+        wxLogTrace(wxT("toolbar"), wxT("Button '%s' released."), tool->GetShortHelp());
 
         wxASSERT_MSG( tool->IsInverted(), wxT("release unpressed button?") );
 

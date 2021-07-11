@@ -19,9 +19,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_GRID
 
@@ -127,7 +124,6 @@ const int GRID_TEXT_MARGIN = 1;
 #include "wx/arrimpl.cpp"
 
 WX_DEFINE_OBJARRAY(wxGridCellCoordsArray)
-WX_DEFINE_OBJARRAY(wxGridCellWithAttrArray)
 
 // ----------------------------------------------------------------------------
 // events
@@ -160,6 +156,24 @@ wxDEFINE_EVENT( wxEVT_GRID_TABBING, wxGridEvent );
 // ============================================================================
 // implementation
 // ============================================================================
+
+namespace
+{
+
+// Helper function for consistent cell span determination based on cell size.
+wxGrid::CellSpan GetCellSpan(int numRows, int numCols)
+{
+    if ( numRows == 1 && numCols == 1 )
+        return wxGrid::CellSpan_None; // just a normal cell
+
+    if ( numRows < 0 || numCols < 0 )
+        return wxGrid::CellSpan_Inside; // covered by a multi-span cell
+
+    // this cell spans multiple cells to its right/bottom
+    return wxGrid::CellSpan_Main;
+}
+
+} // anonymous namespace
 
 wxIMPLEMENT_ABSTRACT_CLASS(wxGridCellEditorEvtHandler, wxEvtHandler);
 
@@ -317,7 +331,7 @@ void wxGridRowHeaderRendererDefault::DrawBorder(const wxGrid& grid,
         ofs = 1;
     }
 
-    dc.SetPen(*wxWHITE_PEN);
+    dc.SetPen(wxPen(wxSystemSettings::GetColour(wxSYS_COLOUR_3DLIGHT)));
     dc.DrawLine(rect.GetLeft() + ofs, rect.GetTop(),
                 rect.GetLeft() + ofs, rect.GetBottom());
     dc.DrawLine(rect.GetLeft() + ofs, rect.GetTop(),
@@ -346,7 +360,7 @@ void wxGridColumnHeaderRendererDefault::DrawBorder(const wxGrid& grid,
         ofs = 1;
     }
 
-    dc.SetPen(*wxWHITE_PEN);
+    dc.SetPen(wxPen(wxSystemSettings::GetColour(wxSYS_COLOUR_3DLIGHT)));
     dc.DrawLine(rect.GetLeft(), rect.GetTop() + ofs,
                 rect.GetLeft(), rect.GetBottom());
     dc.DrawLine(rect.GetLeft(), rect.GetTop() + ofs,
@@ -378,7 +392,7 @@ void wxGridCornerHeaderRendererDefault::DrawBorder(const wxGrid& grid,
         ofs = 1;
     }
 
-    dc.SetPen(*wxWHITE_PEN);
+    dc.SetPen(wxPen(wxSystemSettings::GetColour(wxSYS_COLOUR_3DLIGHT)));
     dc.DrawLine(rect.GetLeft() + 1, rect.GetTop() + ofs,
                 rect.GetRight() - 1, rect.GetTop() + ofs);
     dc.DrawLine(rect.GetLeft() + ofs, rect.GetTop() + ofs,
@@ -747,33 +761,62 @@ wxGridCellEditor* wxGridCellAttr::GetEditor(const wxGrid* grid, int row, int col
 // wxGridCellAttrData
 // ----------------------------------------------------------------------------
 
+namespace
+{
+
+// Helper functions to convert grid coords to a key for the attr map, and
+// vice versa.
+
+wxGridCoordsToAttrMap::key_type CoordsToKey(int row, int col)
+{
+    // Treat both row and col as unsigned to not cause havoc with (unsupported)
+    // negative coords.
+    return (static_cast<wxULongLong_t>(row) << 32) + static_cast<wxUint32>(col);
+}
+
+void KeyToCoords(wxGridCoordsToAttrMap::key_type key, int *pRow, int *pCol)
+{
+    *pRow = key >> 32;
+    *pCol = key & wxUINT32_MAX;
+}
+
+} // anonymous namespace
+
+wxGridCellAttrData::~wxGridCellAttrData()
+{
+    for ( wxGridCoordsToAttrMap::iterator it = m_attrs.begin();
+          it != m_attrs.end();
+          ++it )
+    {
+        it->second->DecRef();
+    }
+
+    m_attrs.clear();
+}
+
 void wxGridCellAttrData::SetAttr(wxGridCellAttr *attr, int row, int col)
 {
-    // Note: contrary to wxGridRowOrColAttrData::SetAttr, we must not
-    //       touch attribute's reference counting explicitly, since this
-    //       is managed by class wxGridCellWithAttr
-    int n = FindIndex(row, col);
-    if ( n == wxNOT_FOUND )
+    wxGridCoordsToAttrMap::iterator it = FindIndex(row, col);
+    if ( it == m_attrs.end() )
     {
         if ( attr )
         {
             // add the attribute
-            m_attrs.Add(new wxGridCellWithAttr(row, col, attr));
+            m_attrs[CoordsToKey(row, col)] = attr;
         }
         //else: nothing to do
     }
     else // we already have an attribute for this cell
     {
+        // See note near DecRef() in wxGridRowOrColAttrData::SetAttr for why
+        // this also works when old and new attribute are the same.
+        it->second->DecRef();
+
+        // Change or remove the attribute.
         if ( attr )
-        {
-            // change the attribute
-            m_attrs[(size_t)n].ChangeAttr(attr);
-        }
+            it->second = attr;
         else
-        {
-            // remove this attribute
-            m_attrs.RemoveAt((size_t)n);
-        }
+            m_attrs.erase(it);
     }
 }
 
@@ -781,97 +824,215 @@ wxGridCellAttr *wxGridCellAttrData::GetAttr(int row, int col) const
 {
     wxGridCellAttr *attr = NULL;
 
-    int n = FindIndex(row, col);
-    if ( n != wxNOT_FOUND )
+    wxGridCoordsToAttrMap::iterator it = FindIndex(row, col);
+    if ( it != m_attrs.end() )
     {
-        attr = m_attrs[(size_t)n].attr;
+        attr = it->second;
         attr->IncRef();
     }
 
     return attr;
 }
 
-void wxGridCellAttrData::UpdateAttrRows( size_t pos, int numRows )
+namespace
 {
-    size_t count = m_attrs.GetCount();
-    for ( size_t n = 0; n < count; n++ )
+
+void UpdateCellAttrRowsOrCols(wxGridCoordsToAttrMap& attrs, int editPos,
+                              int editRowCount, int editColCount)
+{
+    wxASSERT( !editRowCount || !editColCount );
+
+    const bool isEditingRows = (editRowCount != 0);
+    const int editCount = (isEditingRows ? editRowCount : editColCount);
+
+    // Copy updated attributes to a new map instead of attempting to edit attrs
+    // map in-place. This requires more memory but greatly simplifies the code
+    // and any attempt with in-place editing would likely also require a lot
+    // more attr lookups.
+    // The updated copy will contain an attrs map with, if applicable: adjusted
+    // coords and cell size, newly inserted attributes (for multicells), and
+    // without now deleted attributes.
+    wxGridCoordsToAttrMap newAttrs;
+
+    for ( wxGridCoordsToAttrMap::iterator it = attrs.begin();
+          it != attrs.end();
+          ++it )
     {
-        wxGridCellCoords& coords = m_attrs[n].coords;
-        wxCoord row = coords.GetRow();
-        if ((size_t)row >= pos)
+        const wxGridCoordsToAttrMap::key_type oldCoords = it->first;
+        wxGridCellAttr* cellAttr = it->second;
+
+        int cellRows, cellCols;
+        cellAttr->GetSize(&cellRows, &cellCols);
+
+        int cellRow, cellCol;
+        KeyToCoords(oldCoords, &cellRow, &cellCol);
+
+        const int cellPos = isEditingRows ? cellRow : cellCol;
+
+        if ( cellPos < editPos )
         {
-            if (numRows > 0)
+            // This cell's coords aren't influenced by the editing, however
+            // do adjust a multicell's main size, if needed.
+            if ( GetCellSpan(cellRows, cellCols) == wxGrid::CellSpan_Main )
             {
-                // If rows inserted, increment row counter where necessary
-                coords.SetRow(row + numRows);
+                int mainSize = isEditingRows ? cellRows : cellCols;
+                if ( cellPos + mainSize > editPos )
+                {
+                    // Multicell is within affected range:
+                    // Adjust its size.
+
+                    if ( editCount >= 0 )
+                    {
+                        mainSize += editCount;
+                    }
+                    else
+                    {
+                        // Reduce multicell size by number of deletions, but
+                        // never more than the multicell's size minus one:
+                        // cellPos (the main cell) is always less than editPos
+                        // at this point, then with the below code a multicell
+                        // with size 7 is at most reduced by:
+                        // cellPos + 7 - (cellPos + 1) = 7 - 1 = 6.
+                        mainSize -= wxMin(-editCount,
+                                          cellPos + mainSize - editPos);
+                        /*
+                        The above was derived from:
+                        first_del = edit
+                        last_del = min(edit - count - 1, cell + size - 1)
+                        size -= (last_del + 1 - first_del)
+
+                        eliminating the 1's:
+
+                        first_del = edit
+                        last_del = min(edit - count, cell + size)
+                        size -= (last_del - first_del)
+
+                        reducing each by edit:
+
+                        first_del = 0
+                        last_del_plus_1 = min(0 - count, cell + size - edit)
+                        size -= (last_del_plus_1 - 0)
+
+                        after eliminating the 0's and substitution, leaving:
+
+                        size -= min(-count, cell + size - edit)
+
+                        E.g. with a multicell of size 7 and at 2 positions
+                        after the main cell 100 positions are deleted then
+                        the size will not (/can't) be reduced by 100 cells
+                        but by:
+
+                        cellPos + 7 - editPos =       # editPos = cellPos + 2
+                        cellPos + 7 - (cellPos + 2) = # eliminate cellPos
+                        7 - 2 =
+                        5 cells, making the final size 7 - 5 = 2.
+                        */
+                    }
+
+                    cellAttr->SetSize(isEditingRows ? mainSize : cellRows,
+                                      isEditingRows ? cellCols : mainSize);
+                }
             }
-            else if (numRows < 0)
+
+            // Set attribute at old/unmodified coords.
+            newAttrs[oldCoords] = cellAttr;
+
+            continue;
+        }
+
+        if ( editCount < 0 && cellPos < editPos - editCount )
+        {
+            // This row/col is deleted and the cell doesn't exist any longer:
+            // Remove the attribute.
+            cellAttr->DecRef();
+
+            continue;
+        }
+
+        const wxGridCoordsToAttrMap::key_type newCoords
+            = CoordsToKey(cellRow + editRowCount, cellCol + editColCount);
+
+        if ( GetCellSpan(cellRows, cellCols) != wxGrid::CellSpan_Inside )
+        {
+            // Rows/cols inserted or deleted (and this cell still exists):
+            // Adjust cell coords.
+            newAttrs[newCoords] = cellAttr;
+
+            // Nothing more to do: cell is not an inside cell of a multicell.
+            continue;
+        }
+
+        // Handle inside cell's existence, coords, and size.
+
+        const int mainPos = cellPos + (isEditingRows ? cellRows : cellCols);
+
+        if ( editCount < 0
+             && mainPos >= editPos && mainPos < editPos - editCount )
+        {
+            // On a position that still exists after deletion but main cell
+            // of multicell is within deletion range so the multicell is gone:
+            // Remove the attribute.
+            cellAttr->DecRef();
+
+            continue;
+        }
+
+        // Rows/cols inserted or deleted (and this inside cell still exists):
+        // Adjust (inside) cell coords.
+        newAttrs[newCoords] = cellAttr;
+
+        if ( mainPos >= editPos )
+        {
+            // Nothing more to do: the multicell that this inside cell is part
+            // of is moving its main cell as well so offsets to the main cell
+            // don't change and there are no edits changing the multicell size.
+            continue;
+        }
+
+        if ( editCount > 0 && cellPos == editPos )
+        {
+            // At an (old) position that is newly inserted: this is the only
+            // opportunity to add required inside cells that point to
+            // the main cell. E.g. with a 2x1 multicell that increases in size
+            // there's only one inside cell that will be visited while there
+            // can be multiple insertions.
+            for ( int i = 0; i < editCount; ++i )
             {
-                // If rows deleted ...
-                if ((size_t)row >= pos - numRows)
-                {
-                    // ...either decrement row counter (if row still exists)...
-                    coords.SetRow(row + numRows);
-                }
-                else
-                {
-                    // ...or remove the attribute
-                    m_attrs.RemoveAt(n);
-                    n--;
-                    count--;
-                }
+                const int adjustRows = i * isEditingRows,
+                          adjustCols = i * !isEditingRows;
+
+                wxGridCellAttr* attr = new wxGridCellAttr;
+                attr->SetSize(cellRows - adjustRows, cellCols - adjustCols);
+
+                const int row = cellRow + adjustRows,
+                          col = cellCol + adjustCols;
+                newAttrs[CoordsToKey(row, col)] = attr;
             }
         }
+
+        // Let this inside cell's size point to the main cell of the multicell.
+        cellAttr->SetSize(cellRows - editRowCount, cellCols - editColCount);
     }
+
+    attrs = newAttrs;
+}
+
+} // anonymous namespace
+
+void wxGridCellAttrData::UpdateAttrRows( size_t pos, int numRows )
+{
+    UpdateCellAttrRowsOrCols(m_attrs, static_cast<int>(pos), numRows, 0);
 }
 
 void wxGridCellAttrData::UpdateAttrCols( size_t pos, int numCols )
 {
-    size_t count = m_attrs.GetCount();
-    for ( size_t n = 0; n < count; n++ )
-    {
-        wxGridCellCoords& coords = m_attrs[n].coords;
-        wxCoord col = coords.GetCol();
-        if ( (size_t)col >= pos )
-        {
-            if ( numCols > 0 )
-            {
-                // If cols inserted, increment col counter where necessary
-                coords.SetCol(col + numCols);
-            }
-            else if (numCols < 0)
-            {
-                // If cols deleted ...
-                if ((size_t)col >= pos - numCols)
-                {
-                    // ...either decrement col counter (if col still exists)...
-                    coords.SetCol(col + numCols);
-                }
-                else
-                {
-                    // ...or remove the attribute
-                    m_attrs.RemoveAt(n);
-                    n--;
-                    count--;
-                }
-            }
-        }
-    }
+    UpdateCellAttrRowsOrCols(m_attrs, static_cast<int>(pos), 0, numCols);
 }
 
-int wxGridCellAttrData::FindIndex(int row, int col) const
+wxGridCoordsToAttrMap::iterator
+wxGridCellAttrData::FindIndex(int row, int col) const
 {
-    size_t count = m_attrs.GetCount();
-    for ( size_t n = 0; n < count; n++ )
-    {
-        const wxGridCellCoords& coords = m_attrs[n].coords;
-        if ( (coords.GetRow() == row) && (coords.GetCol() == col) )
-        {
-            return n;
-        }
-    }
-
-    return wxNOT_FOUND;
+    return m_attrs.find(CoordsToKey(row, col));
 }
 
 // ----------------------------------------------------------------------------
@@ -2316,7 +2477,7 @@ void wxGrid::GetRenderSizes( const wxGridCellCoords& topLeft,
                              const wxGridCellCoords& bottomRight,
                              wxPoint& pointOffSet, wxSize& sizeGrid,
                              wxGridCellCoordsArray& renderCells,
-                             wxArrayInt& arrayCols, wxArrayInt& arrayRows )
+                             wxArrayInt& arrayCols, wxArrayInt& arrayRows ) const
 {
     pointOffSet.x = 0;
     pointOffSet.y = 0;
@@ -2668,8 +2829,13 @@ void wxGrid::InitPixelFields()
     m_defaultRowHeight += 4;
 #endif
 
-    m_rowLabelWidth  = FromDIP(WXGRID_DEFAULT_ROW_LABEL_WIDTH);
-    m_colLabelHeight = FromDIP(WXGRID_DEFAULT_COL_LABEL_HEIGHT);
+    // Don't change the value when called from OnDPIChanged() later if the
+    // corresponding label window is hidden, these values should remain zeroes
+    // then.
+    if ( m_rowLabelWin->IsShown() )
+        m_rowLabelWidth  = FromDIP(WXGRID_DEFAULT_ROW_LABEL_WIDTH);
+    if ( m_colLabelWin->IsShown() )
+        m_colLabelHeight = FromDIP(WXGRID_DEFAULT_COL_LABEL_HEIGHT);
 
     m_defaultColWidth = FromDIP(WXGRID_DEFAULT_COL_WIDTH);
 
@@ -2851,10 +3017,14 @@ void wxGrid::Init()
     m_gridLinesEnabled = true;
     m_gridLinesClipHorz =
     m_gridLinesClipVert = true;
-    m_cellHighlightColour = *wxBLACK;
+    m_cellHighlightColour = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
     m_cellHighlightPenWidth = 2;
     m_cellHighlightROPenWidth = 1;
-    m_gridFrozenBorderColour = *wxBLACK;
+    if ( wxSystemSettings::GetAppearance().IsDark() )
+        m_gridFrozenBorderColour = *wxWHITE;
+    else
+        m_gridFrozenBorderColour = *wxBLACK;
+
     m_gridFrozenBorderPenWidth = 2;
 
     m_canDragColMove = false;
@@ -3658,13 +3828,10 @@ void wxGrid::ProcessRowLabelMouseEvent( wxMouseEvent& event, wxGridRowLabelWindo
             switch ( m_cursorMode )
             {
                 case WXGRID_CURSOR_RESIZE_ROW:
-                {
                     DoGridDragResize(event.GetPosition(), wxGridRowOperations(), gridWindow);
-                }
-                break;
+                    break;
 
                 case WXGRID_CURSOR_SELECT_ROW:
-                {
                     if ( !m_selection || m_numRows == 0 || m_numCols == 0 )
                         break;
 
@@ -3681,8 +3848,7 @@ void wxGrid::ProcessRowLabelMouseEvent( wxMouseEvent& event, wxGridRowLabelWindo
                             event,
                             wxEVT_GRID_RANGE_SELECTING);
                     }
-                }
-                break;
+                    break;
 
                 // default label to suppress warnings about "enumeration value
                 // 'xxx' not handled in switch
@@ -4002,10 +4168,9 @@ void wxGrid::ProcessColLabelMouseEvent( wxMouseEvent& event, wxGridColLabelWindo
             {
                 case WXGRID_CURSOR_RESIZE_COL:
                     DoGridDragResize(event.GetPosition(), wxGridColumnOperations(), gridWindow);
-                break;
+                    break;
 
                 case WXGRID_CURSOR_SELECT_COL:
-                {
                     if ( col != -1 )
                     {
                         if ( !m_selection || m_numRows == 0 || m_numCols == 0 )
@@ -4023,8 +4188,7 @@ void wxGrid::ProcessColLabelMouseEvent( wxMouseEvent& event, wxGridColLabelWindo
                             event,
                             wxEVT_GRID_RANGE_SELECTING);
                     }
-                }
-                break;
+                    break;
 
                 case WXGRID_CURSOR_MOVE_COL:
                 {
@@ -4543,11 +4707,13 @@ bool wxGrid::DoGridDragEvent(wxMouseEvent& event,
             return DoGridCellDrag(event, coords, isFirstDrag);
 
         case WXGRID_CURSOR_RESIZE_ROW:
-            DoGridDragResize(event.GetPosition(), wxGridRowOperations(), gridWindow);
+            if ( m_dragRowOrCol != -1 )
+                DoGridDragResize(event.GetPosition(), wxGridRowOperations(), gridWindow);
             break;
 
         case WXGRID_CURSOR_RESIZE_COL:
-            DoGridDragResize(event.GetPosition(), wxGridColumnOperations(), gridWindow);
+            if ( m_dragRowOrCol != -1 )
+                DoGridDragResize(event.GetPosition(), wxGridColumnOperations(), gridWindow);
             break;
 
         default:
@@ -4634,6 +4800,7 @@ wxGrid::DoGridCellLeftDown(wxMouseEvent& event,
                         // mode and is compatible with 2.8 behaviour (see #12062).
                         switch ( m_selection->GetSelectionMode() )
                         {
+                            case wxGridSelectNone:
                             case wxGridSelectCells:
                             case wxGridSelectRowsOrColumns:
                                 // nothing to do in these cases
@@ -4699,12 +4866,14 @@ wxGrid::DoGridCellLeftUp(wxMouseEvent& event,
     else if ( m_cursorMode == WXGRID_CURSOR_RESIZE_ROW )
     {
         ChangeCursorMode(WXGRID_CURSOR_SELECT_CELL);
-        DoEndDragResizeRow(event, gridWindow);
+        if ( m_dragRowOrCol != -1 )
+            DoEndDragResizeRow(event, gridWindow);
     }
     else if ( m_cursorMode == WXGRID_CURSOR_RESIZE_COL )
     {
         ChangeCursorMode(WXGRID_CURSOR_SELECT_CELL);
-        DoEndDragResizeCol(event, gridWindow);
+        if ( m_dragRowOrCol != -1 )
+            DoEndDragResizeCol(event, gridWindow);
     }
 
     m_dragLastPos = -1;
@@ -4882,6 +5051,9 @@ void wxGrid::DoGridDragResize(const wxPoint& position,
                               const wxGridOperations& oper,
                               wxGridWindow* gridWindow)
 {
+    wxCHECK_RET( m_dragRowOrCol != -1,
+                 "shouldn't be called when not drag resizing" );
+
     // Get the logical position from the physical one we're passed.
     const wxPoint
         logicalPos = CalcGridWindowUnscrolledPosition(position, gridWindow);
@@ -6215,7 +6387,15 @@ void wxGrid::DrawGridCellArea( wxDC& dc, const wxGridCellCoordsArray& cells )
                 {
                     if (!m_table->IsEmptyCell(row + l, j))
                     {
-                        if ( GetCellAttrPtr(row + l, j)->CanOverflow() )
+                        wxGridCellAttrPtr attr = GetCellAttrPtr(row + l, j);
+                        int numRows, numCols;
+                        attr->GetSize(&numRows, &numCols);
+                        if ( GetCellSpan(numRows, numCols)
+                                 == wxGrid::CellSpan_Inside )
+                            // As above: don't bother drawing inside cells.
+                            continue;
+
+                        if ( attr->CanOverflow() )
                         {
                             wxGridCellCoords cell(row + l, j);
                             bool marked = false;
@@ -6903,8 +7083,11 @@ void wxGrid::DrawColLabel(wxDC& dc, int col)
     {
         // It is reported that we need to erase the background to avoid display
         // artefacts, see #12055.
-        wxDCBrushChanger setBrush(dc, m_colLabelWin->GetBackgroundColour());
-        dc.DrawRectangle(rect);
+        {
+            wxDCBrushChanger setBrush(dc, m_colLabelWin->GetBackgroundColour());
+            wxDCPenChanger setPen(dc, *wxTRANSPARENT_PEN);
+            dc.DrawRectangle(rect);
+        }
 
         rend.DrawBorder(*this, dc, rect);
     }
@@ -7038,7 +7221,7 @@ void wxGrid::DrawTextRectangle(wxDC& dc,
                                const wxRect& rect,
                                const wxGridCellAttr& attr,
                                int hAlign,
-                               int vAlign)
+                               int vAlign) const
 {
     attr.GetNonDefaultAlignment(&hAlign, &vAlign);
 
@@ -7922,8 +8105,9 @@ void wxGrid::MakeCellVisible( int row, int col )
          col < -1 || col >= m_numCols )
         return;
 
-    const bool processRow = row != -1;
-    const bool processCol = col != -1;
+    // We don't scroll in the corresponding direction if "pixels per line" is 0.
+    const bool processRow = row != -1 && m_yScrollPixelsPerLine != 0;
+    const bool processCol = col != -1 && m_xScrollPixelsPerLine != 0;
 
     // Get the cell rectangle in logical coords.
     wxRect r;
@@ -9115,14 +9299,7 @@ wxGrid::GetCellSize( int row, int col, int *num_rows, int *num_cols ) const
 {
     GetCellAttrPtr(row, col)->GetSize( num_rows, num_cols );
 
-    if ( *num_rows == 1 && *num_cols == 1 )
-        return CellSpan_None; // just a normal cell
-
-    if ( *num_rows < 0 || *num_cols < 0 )
-        return CellSpan_Inside; // covered by a multi-span cell
-
-    // this cell spans multiple cells to its right/bottom
-    return CellSpan_Main;
+    return GetCellSpan(*num_rows, *num_cols);
 }
 
 wxGridCellRenderer* wxGrid::GetCellRenderer(int row, int col) const
@@ -11242,7 +11419,7 @@ wxGetContentRect(wxSize contentSize,
     else if ( vAlign & wxALIGN_BOTTOM )
     {
         contentRect.SetY(cellRect.y + cellRect.height
-                          - contentRect.y - GRID_CELL_CHECKBOX_MARGIN);
+                          - contentSize.y - GRID_CELL_CHECKBOX_MARGIN);
     }
     else // wxALIGN_TOP
     {

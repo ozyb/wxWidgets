@@ -19,9 +19,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/event.h"
 #include "wx/eventfilter.h"
@@ -83,6 +80,7 @@
     wxIMPLEMENT_DYNAMIC_CLASS(wxShowEvent, wxEvent);
     wxIMPLEMENT_DYNAMIC_CLASS(wxMaximizeEvent, wxEvent);
     wxIMPLEMENT_DYNAMIC_CLASS(wxIconizeEvent, wxEvent);
+    wxIMPLEMENT_DYNAMIC_CLASS(wxFullScreenEvent, wxEvent);
     wxIMPLEMENT_DYNAMIC_CLASS(wxMenuEvent, wxEvent);
     wxIMPLEMENT_DYNAMIC_CLASS(wxJoystickEvent, wxEvent);
     wxIMPLEMENT_DYNAMIC_CLASS(wxDropFilesEvent, wxEvent);
@@ -291,6 +289,7 @@ wxDEFINE_EVENT( wxEVT_DESTROY, wxWindowDestroyEvent );
 wxDEFINE_EVENT( wxEVT_SHOW, wxShowEvent );
 wxDEFINE_EVENT( wxEVT_ICONIZE, wxIconizeEvent );
 wxDEFINE_EVENT( wxEVT_MAXIMIZE, wxMaximizeEvent );
+wxDEFINE_EVENT( wxEVT_FULLSCREEN, wxFullScreenEvent );
 wxDEFINE_EVENT( wxEVT_MOUSE_CAPTURE_CHANGED, wxMouseCaptureChangedEvent );
 wxDEFINE_EVENT( wxEVT_MOUSE_CAPTURE_LOST, wxMouseCaptureLostEvent );
 wxDEFINE_EVENT( wxEVT_PAINT, wxPaintEvent );
@@ -598,10 +597,7 @@ wxMouseEvent::wxMouseEvent(wxEventType commandType)
 void wxMouseEvent::Assign(const wxMouseEvent& event)
 {
     wxEvent::operator=(event);
-
-    // Borland C++ 5.82 doesn't compile an explicit call to an implicitly
-    // defined operator=() so need to do it this way:
-    *static_cast<wxMouseState *>(this) = event;
+    wxMouseState::operator=(event);
 
     m_x = event.m_x;
     m_y = event.m_y;
@@ -807,10 +803,7 @@ wxKeyEvent& wxKeyEvent::operator=(const wxKeyEvent& evt)
     if ( &evt != this )
     {
         wxEvent::operator=(evt);
-
-        // Borland C++ 5.82 doesn't compile an explicit call to an
-        // implicitly defined operator=() so need to do it this way:
-        *static_cast<wxKeyboardState *>(this) = evt;
+        wxKeyboardState::operator=(evt);
 
         DoAssignMembers(evt);
     }
@@ -1622,7 +1615,6 @@ bool wxEvtHandler::TryHereOnly(wxEvent& event)
     if ( GetEventHashTable().HandleEvent(event, this) )
         return true;
 
-#ifdef wxHAS_CALL_AFTER
     // There is an implicit entry for async method calls processing in every
     // event handler:
     if ( event.GetEventType() == wxEVT_ASYNC_METHOD_CALL &&
@@ -1631,7 +1623,6 @@ bool wxEvtHandler::TryHereOnly(wxEvent& event)
         static_cast<wxAsyncMethodCallEvent&>(event).Execute();
         return true;
     }
-#endif // wxHAS_CALL_AFTER
 
     // We don't have a handler for this event.
     return false;

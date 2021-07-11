@@ -18,9 +18,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/private/display.h"
 
@@ -224,11 +221,12 @@ unsigned wxDisplayFactoryMacOSX::GetCount()
 
 int wxDisplayFactoryMacOSX::GetFromPoint(const wxPoint& p)
 {
-    CGPoint thePoint = {(float)p.x, (float)p.y};
+    CGPoint thePoint = { CGFloat(p.x), CGFloat(p.y) };
     CGDirectDisplayID theID;
     CGDisplayCount theCount;
     CGDisplayErr err = CGGetDisplaysWithPoint(thePoint, 1, &theID, &theCount);
     wxASSERT(err == CGDisplayNoErr);
+    wxUnusedVar(err); // suppress "unused" warning in non-debug builds
 
     if (theCount)
         return wxOSXGetDisplayFromID(theID);
@@ -241,6 +239,10 @@ int wxDisplayFactoryMacOSX::GetFromWindow(const wxWindow *window)
     wxCHECK_MSG( window, wxNOT_FOUND, "window can't be NULL" );
 
     wxNonOwnedWindow* const tlw = window->MacGetTopLevelWindow();
+    // not yet instantiated
+    if ( tlw->GetWXWindow() == NULL )
+        return wxNOT_FOUND;
+
     int x,y,w,h;
 
     tlw->GetPosition(&x, &y);
@@ -256,7 +258,7 @@ int wxDisplayFactoryMacOSX::GetFromWindow(const wxWindow *window)
     wxASSERT(err == CGDisplayNoErr);
 
     const double scaleWindow = tlw->GetContentScaleFactor();
-    for ( int i = 0 ; i < theCount; ++i )
+    for ( unsigned i = 0; i < theCount; ++i )
     {
         // find a screen intersecting having the same contentScale as the window itself
         double scale = wxGetScaleFactor(theIDs[i]);

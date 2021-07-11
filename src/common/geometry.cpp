@@ -11,9 +11,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_GEOMETRY
 
@@ -323,15 +320,6 @@ void wxRect2DInt::ConstrainTo( const wxRect2DInt &rect )
 
     if ( GetTop() < rect.GetTop() )
         SetTop( rect.GetTop() );
-}
-
-wxRect2DInt& wxRect2DInt::operator=( const wxRect2DInt &r )
-{
-    m_x = r.m_x;
-    m_y = r.m_y;
-    m_width = r.m_width;
-    m_height = r.m_height;
-    return *this;
 }
 
 #if wxUSE_STREAMS

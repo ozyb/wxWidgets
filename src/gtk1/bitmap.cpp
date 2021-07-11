@@ -18,6 +18,7 @@
     #include "wx/icon.h"
     #include "wx/math.h"
     #include "wx/image.h"
+    #include "wx/cursor.h"
 #endif // WX_PRECOMP
 
 #include "wx/filefn.h"
@@ -222,16 +223,16 @@ bool wxMask::Create( const wxBitmap& bitmap )
 
 wxBitmap wxMask::GetBitmap() const
 {
-   wxBitmap bitmap;
+    wxBitmap bitmap;
 
-   if (m_bitmap)
-     {
-	bitmap.SetBitmap( m_bitmap );
-	bitmap.SetWidth( m_width );
-	bitmap.SetHeight( m_height );
-     }
+    if (m_bitmap)
+    {
+        bitmap.SetBitmap( m_bitmap );
+        bitmap.SetWidth( m_width );
+        bitmap.SetHeight( m_height );
+    }
 
-   return bitmap;
+    return bitmap;
 }
 
 
@@ -1142,6 +1143,11 @@ wxBitmap::wxBitmap( const char bits[], int width, int height, int WXUNUSED(depth
 
         wxASSERT_MSG( M_BMPDATA->m_bitmap, wxT("couldn't create bitmap") );
     }
+}
+
+wxBitmap::wxBitmap(const wxCursor& cursor)
+{
+    wxUnusedVar(cursor);
 }
 
 wxBitmap::~wxBitmap()

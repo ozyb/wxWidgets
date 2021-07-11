@@ -19,9 +19,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_DIRDLG
 
@@ -363,25 +360,14 @@ bool InitIFileOpenDialog(const wxString& message, const wxString& defaultPath,
                                             wxIID_PPV_ARGS(IShellItem,
                                                            &folder));
 
-        // Failing to parse the folder name is not really an error, we'll just
-        // ignore the initial directory in this case, but we should still show
-        // the dialog.
-        if ( FAILED(hr) )
-        {
-            if ( hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) )
-            {
-                wxLogApiError(wxS("SHCreateItemFromParsingName"), hr);
-                return false;
-            }
-        }
-        else // The folder was parsed correctly.
+        // Failing to parse the folder name or set it is not really an error,
+        // we'll just ignore the initial directory in this case, but we should
+        // still show the dialog.
+        if ( SUCCEEDED(hr) )
         {
             hr = dlg->SetFolder(folder);
             if ( FAILED(hr) )
-            {
                 wxLogApiError(wxS("IFileOpenDialog::SetFolder"), hr);
-                return false;
-            }
         }
     }
 

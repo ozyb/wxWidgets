@@ -71,10 +71,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-#pragma hdrstop
-#endif
-
 #ifndef WX_PRECOMP
     #ifdef __WINDOWS__
         #include "wx/msw/wrapwin.h" // For GetShort/LongPathName
@@ -94,6 +90,10 @@
 #include "wx/dir.h"
 #include "wx/longlong.h"
 #include "wx/uri.h"
+
+#if defined(wxHAS_NATIVE_READLINK)
+    #include "wx/vector.h"
+#endif
 
 #if defined(__WIN32__) && defined(__MINGW32__)
     #include "wx/msw/gccpriv.h"
@@ -174,12 +174,12 @@ public:
             if ( mode == ReadAttr )
             {
                 wxLogSysError(_("Failed to open '%s' for reading"),
-                              filename.c_str());
+                              filename);
             }
             else
             {
                 wxLogSysError(_("Failed to open '%s' for writing"),
-                              filename.c_str());
+                              filename);
             }
         }
     }
@@ -1672,6 +1672,57 @@ bool wxFileName::GetShortcutTarget(const wxString& shortcutPath,
 
 #endif // __WIN32__
 
+// ----------------------------------------------------------------------------
+// Resolve links
+// ----------------------------------------------------------------------------
+
+wxFileName wxFileName::ResolveLink()
+{
+    wxFileName linkTarget( *this );
+
+// Only resolve links on platforms with readlink (e.g. Unix-like platforms)
+#if defined(wxHAS_NATIVE_READLINK)
+    const wxString link = GetFullPath();
+    wxStructStat st;
+
+    // This means the link itself doesn't exist, so return an empty filename
+    if ( !StatAny(st, link, wxFILE_EXISTS_NO_FOLLOW) )
+    {
+        linkTarget.Clear();
+        return linkTarget;
+    }
+
+    // If it isn't an actual link, bail out just and return the link as the result
+    if ( !S_ISLNK(st.st_mode) )
+        return linkTarget;
+
+    // Dynamically compute the buffer size from the stat call, but fallback if it isn't valid
+    int bufSize = 4096;
+    if( st.st_size != 0 )
+        bufSize = st.st_size + 1;
+
+    wxVector<char> bufData(bufSize);
+    char* const buf = &bufData[0];
+    ssize_t result = wxReadlink(link, buf, bufSize - 1);
+
+    if ( result != -1 )
+    {
+        buf[result] = '\0'; // readlink() doesn't NULL-terminate the buffer
+        linkTarget.Assign( wxString(buf, wxConvLibc) );
+
+        // Ensure the resulting path is absolute since readlink can return paths relative to the link
+        if ( !linkTarget.IsAbsolute() )
+            linkTarget.MakeAbsolute(GetPath());
+    }
+    else
+    {
+        // This means the lookup failed for some reason
+        linkTarget.Clear();
+    }
+#endif
+
+    return linkTarget;
+}
 
 // ----------------------------------------------------------------------------
 // absolute/relative paths
@@ -2660,7 +2711,7 @@ bool wxFileName::SetTimes(const wxDateTime *dtAccess,
 #endif // platforms
 
     wxLogSysError(_("Failed to modify file times for '%s'"),
-                  GetFullPath().c_str());
+                  GetFullPath());
 
     return false;
 }
@@ -2674,7 +2725,7 @@ bool wxFileName::Touch() const
         return true;
     }
 
-    wxLogSysError(_("Failed to touch the file '%s'"), GetFullPath().c_str());
+    wxLogSysError(_("Failed to touch the file '%s'"), GetFullPath());
 
     return false;
 #else // other platform
@@ -2756,7 +2807,7 @@ bool wxFileName::GetTimes(wxDateTime *dtAccess,
 #endif // platforms
 
     wxLogSysError(_("Failed to retrieve file times for '%s'"),
-                  GetFullPath().c_str());
+                  GetFullPath());
 
     return false;
 }

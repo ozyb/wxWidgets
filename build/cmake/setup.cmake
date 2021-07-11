@@ -132,28 +132,6 @@ if(NOT MSVC)
     endif()
 endif()
 
-wx_check_c_source_compiles(
-    "#define test(fmt, ...) printf(fmt, __VA_ARGS__)
-    test(\"%s %d %p\", \"test\", 1, 0);"
-    HAVE_VARIADIC_MACROS
-    stdio.h
-    )
-#TODO: wxNO_VARIADIC_MACROS
-if(wxUSE_STL AND CMAKE_CXX_STANDARD EQUAL 98)
-    wx_check_cxx_source_compiles("
-        std::vector<int> moo;
-        std::list<int> foo;
-        std::vector<int>::iterator it =
-            std::find_if(moo.begin(), moo.end(),
-                std::bind2nd(std::less<int>(), 3));"
-        wxTEST_STL
-        string functional algorithm vector list
-        )
-    if(NOT wxTEST_STL)
-        message(FATAL_ERROR "Can't use wxUSE_STL as basic STL functionality is missing")
-    endif()
-endif()
-
 wx_check_cxx_source_compiles("
     std::string foo, bar;
     foo.compare(bar);
@@ -610,7 +588,6 @@ check_include_file(fcntl.h HAVE_FCNTL_H)
 check_include_file(langinfo.h HAVE_LANGINFO_H)
 check_include_file(sched.h HAVE_SCHED_H)
 check_include_file(unistd.h HAVE_UNISTD_H)
-check_include_file(w32api.h HAVE_W32API_H)
 check_include_file(wchar.h HAVE_WCHAR_H)
 check_include_file(wcstr.h HAVE_WCSTR_H)
 

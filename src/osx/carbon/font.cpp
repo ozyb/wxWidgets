@@ -472,6 +472,7 @@ wxFont::wxFont(wxOSXSystemFont font)
             break;
         case wxOSX_SYSTEM_FONT_FIXED:
             uifont = kCTFontUIFontUserFixedPitch;
+            break;
         default:
             break;
     }
@@ -779,7 +780,8 @@ void wxNativeFontInfo::InitFromFont(CTFontRef font)
 {
     Init();
 
-    InitFromFontDescriptor(CTFontCopyFontDescriptor(font) );
+    wxCFRef<CTFontDescriptorRef> desc(CTFontCopyFontDescriptor(font));
+    InitFromFontDescriptor( desc );
 }
 
 void wxNativeFontInfo::InitFromFontDescriptor(CTFontDescriptorRef desc)
@@ -883,27 +885,27 @@ void wxNativeFontInfo::CreateCTFontDescriptor()
     wxString familyname;
     wxCFTypeRef(CTFontDescriptorCopyAttribute(m_descriptor, kCTFontFamilyNameAttribute)).GetValue(familyname);
     wxLogTrace(TRACE_CTFONT,"****** CreateCTFontDescriptor ******");
-    wxLogTrace(TRACE_CTFONT,"Descriptor FontFamilyName: %s",familyname.c_str());
+    wxLogTrace(TRACE_CTFONT,"Descriptor FontFamilyName: %s",familyname);
     
     wxString name;
     wxCFTypeRef(CTFontDescriptorCopyAttribute(m_descriptor, kCTFontNameAttribute)).GetValue(name);
-    wxLogTrace(TRACE_CTFONT,"Descriptor FontName: %s",name.c_str());
+    wxLogTrace(TRACE_CTFONT,"Descriptor FontName: %s",name);
     
     wxString display;
     wxCFTypeRef(CTFontDescriptorCopyAttribute(m_descriptor, kCTFontDisplayNameAttribute)).GetValue(display);
-    wxLogTrace(TRACE_CTFONT,"Descriptor DisplayName: %s",display.c_str());
+    wxLogTrace(TRACE_CTFONT,"Descriptor DisplayName: %s",display);
     
     wxString style;
     wxCFTypeRef(CTFontDescriptorCopyAttribute(m_descriptor, kCTFontStyleNameAttribute)).GetValue(style);
-    wxLogTrace(TRACE_CTFONT,"Descriptor StyleName: %s",style.c_str());
+    wxLogTrace(TRACE_CTFONT,"Descriptor StyleName: %s",style);
 
     wxString psname;
     wxCFTypeRef(CTFontCopyPostScriptName(font)).GetValue(psname);
-    wxLogTrace(TRACE_CTFONT,"Created Font PostScriptName: %s",psname.c_str());
+    wxLogTrace(TRACE_CTFONT,"Created Font PostScriptName: %s",psname);
     
     wxString fullname;
     wxCFTypeRef(CTFontCopyFullName(font)).GetValue(fullname);
-    wxLogTrace(TRACE_CTFONT,"Created Font FullName: %s",fullname.c_str());
+    wxLogTrace(TRACE_CTFONT,"Created Font FullName: %s",fullname);
     
     wxLogTrace(TRACE_CTFONT,"************************************");
 #endif
@@ -978,12 +980,14 @@ bool wxNativeFontInfo::FromString(const wxString& s)
         token = tokenizer.GetNextToken();
         if ( !token.ToCDouble(&d) )
             return false;
-        if ( d < 0 || d > FLT_MAX )
+        if ( d < 0 )
             return false;
 #ifdef __LP64__
         // CGFloat is just double in this case.
         m_ctSize = d;
 #else // !__LP64__
+        if ( d > FLT_MAX )
+            return false;
         m_ctSize = static_cast<CGFloat>(d);
 #endif // __LP64__/!__LP64__
 
@@ -1063,6 +1067,7 @@ bool wxNativeFontInfo::FromString(const wxString& s)
         if (descriptor != NULL)
         {
             InitFromFontDescriptor(descriptor);
+            CFRelease(descriptor);
             m_underlined = underlined;
             m_strikethrough = strikethrough;
             m_encoding = encoding;
