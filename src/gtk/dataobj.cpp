@@ -20,19 +20,69 @@
 #endif
 
 #include "wx/mstream.h"
+#include "wx/scopedarray.h"
 #include "wx/uri.h"
 
 #include "wx/gtk/private.h"
 
 //-------------------------------------------------------------------------
-// global data
+// module data
 //-------------------------------------------------------------------------
 
-GdkAtom  g_textAtom        = 0;
-GdkAtom  g_altTextAtom     = 0;
-GdkAtom  g_pngAtom         = 0;
-GdkAtom  g_fileAtom        = 0;
-GdkAtom  g_htmlAtom        = 0;
+namespace
+{
+
+// Atom initialized on first access.
+//
+// Note that this is more than just an optimization, as we have to delay
+// calling gdk_atom_intern() until after GDK initialization.
+class wxGdkAtom
+{
+public:
+    // Name is literal, so we don't copy it but just store the pointer.
+    wxGdkAtom(const char* name) : m_name{name} {}
+
+    wxGdkAtom(const wxGdkAtom&) = delete;
+    wxGdkAtom& operator=(const wxGdkAtom&) = delete;
+
+    GdkAtom Get() const
+    {
+        if ( !m_atom )
+            m_atom = gdk_atom_intern(m_name, FALSE);
+
+        return m_atom;
+    }
+
+private:
+    const char* const m_name;
+    mutable GdkAtom m_atom = nullptr;
+};
+
+inline bool operator==(wxDataFormat format, const wxGdkAtom& wxatom)
+{
+    return format.GetFormatId() == wxatom.Get();
+}
+
+inline bool operator==(GdkAtom atom, const wxGdkAtom& wxatom)
+{
+    return atom == wxatom.Get();
+}
+
+// Text is special as it can be represented by several different atoms: we
+// accept all of them when pasting and provide all of them when copying.
+//
+// Note that there are also other atoms for text, e.g. "COMPOUND_TEXT" and
+// "TEXT", but it doesn't seem necessary to support them, so we don't.
+wxGdkAtom g_u8strAtom   {"UTF8_STRING"};
+wxGdkAtom g_strAtom     {"STRING"};
+wxGdkAtom g_u8textAtom  {"text/plain;charset=utf-8"};
+wxGdkAtom g_textAtom    {"text/plain"};
+
+wxGdkAtom g_pngAtom     {"image/png"};
+wxGdkAtom g_fileAtom    {"text/uri-list"};
+wxGdkAtom g_htmlAtom    {"text/html"};
+
+} // anonymous namespace
 
 //-------------------------------------------------------------------------
 // wxDataFormat
@@ -40,63 +90,42 @@ GdkAtom  g_htmlAtom        = 0;
 
 wxDataFormat::wxDataFormat()
 {
-    // do *not* call PrepareFormats() from here for 2 reasons:
-    //
-    // 1. we will have time to do it later because some other Set function
-    //    must be called before we really need them
-    //
-    // 2. doing so prevents us from declaring global wxDataFormats because
-    //    calling PrepareFormats (and thus gdk_atom_intern) before GDK is
-    //    initialised will result in a crash
     m_type = wxDF_INVALID;
-    m_format = (GdkAtom) 0;
+    m_format = (GdkAtom) nullptr;
 }
 
 wxDataFormat::wxDataFormat( wxDataFormatId type )
 {
-    PrepareFormats();
     SetType( type );
 }
 
 void wxDataFormat::InitFromString( const wxString &id )
 {
-    PrepareFormats();
     SetId( id );
 }
 
 wxDataFormat::wxDataFormat( NativeFormat format )
 {
-    PrepareFormats();
     SetId( format );
 }
 
 void wxDataFormat::SetType( wxDataFormatId type )
 {
-    PrepareFormats();
-
     m_type = type;
 
-#if wxUSE_UNICODE
     if (m_type == wxDF_UNICODETEXT)
-        m_format = g_textAtom;
+        m_format = g_u8strAtom.Get();
     else if (m_type == wxDF_TEXT)
-        m_format = g_altTextAtom;
-#else // !wxUSE_UNICODE
-    // notice that we don't map wxDF_UNICODETEXT to g_textAtom here, this
-    // would lead the code elsewhere to treat data objects with this format as
-    // containing UTF-8 data which is not true
-    if (m_type == wxDF_TEXT)
-        m_format = g_textAtom;
-#endif // wxUSE_UNICODE/!wxUSE_UNICODE
+        m_format = g_strAtom.Get();
     else
     if (m_type == wxDF_BITMAP)
-        m_format = g_pngAtom;
+        m_format = g_pngAtom.Get();
     else
     if (m_type == wxDF_FILENAME)
-        m_format = g_fileAtom;
+        m_format = g_fileAtom.Get();
     else
     if (m_type == wxDF_HTML)
-        m_format = g_htmlAtom;
+        m_format = g_htmlAtom.Get();
     else
     {
        wxFAIL_MSG( wxT("invalid dataformat") );
@@ -111,22 +140,21 @@ wxDataFormatId wxDataFormat::GetType() const
 wxString wxDataFormat::GetId() const
 {
     wxGtkString atom_name(gdk_atom_name(m_format));
-    return wxString::FromAscii(atom_name);
+
+    // In practice atom name is always in UTF-8, but don't lose the name
+    // entirely if it isn't.
+    wxMBConvUTF8 conv(wxMBConvUTF8::MAP_INVALID_UTF8_TO_PUA);
+    return wxString(conv.cMB2WX(atom_name.c_str()));
 }
 
 void wxDataFormat::SetId( NativeFormat format )
 {
-    PrepareFormats();
     m_format = format;
 
-    if (m_format == g_textAtom)
-#if wxUSE_UNICODE
+    if (m_format == g_u8strAtom || m_format == g_u8textAtom)
         m_type = wxDF_UNICODETEXT;
-#else
-        m_type = wxDF_TEXT;
-#endif
     else
-    if (m_format == g_altTextAtom)
+    if (m_format == g_strAtom || m_format == g_textAtom)
         m_type = wxDF_TEXT;
     else
     if (m_format == g_pngAtom)
@@ -143,36 +171,46 @@ void wxDataFormat::SetId( NativeFormat format )
 
 void wxDataFormat::SetId( const wxString& id )
 {
-    PrepareFormats();
     m_type = wxDF_PRIVATE;
     m_format = gdk_atom_intern( id.ToAscii(), FALSE );
 }
 
-void wxDataFormat::PrepareFormats()
+
+// This is also used by wxClipboard to check if the given atom refer to the
+// same format, so make it extern.
+extern bool wxGTKIsSameFormat(GdkAtom atom1, GdkAtom atom2)
 {
-    // VZ: GNOME included in RedHat 6.1 uses the MIME types below and not the
-    //     atoms STRING and file:ALL as the old code was, but normal X apps
-    //     use STRING for text selection when transferring the data via
-    //     clipboard, for example, so do use STRING for now (GNOME apps will
-    //     probably support STRING as well for compatibility anyhow), but use
-    //     text/uri-list for file dnd because compatibility is not important
-    //     here (with whom?)
-    if (!g_textAtom)
-    {
-#if wxUSE_UNICODE
-        g_textAtom = gdk_atom_intern( "UTF8_STRING", FALSE );
-        g_altTextAtom = gdk_atom_intern( "STRING", FALSE );
-#else
-        g_textAtom = gdk_atom_intern( "STRING" /* "text/plain" */, FALSE );
-#endif
-    }
-    if (!g_pngAtom)
-        g_pngAtom = gdk_atom_intern( "image/png", FALSE );
-    if (!g_fileAtom)
-        g_fileAtom = gdk_atom_intern( "text/uri-list", FALSE );
-    if (!g_htmlAtom)
-        g_htmlAtom = gdk_atom_intern( "text/html", FALSE );
+    if (atom1 == atom2)
+        return true;
+
+    if (atom1 == g_u8strAtom && atom2 == g_u8textAtom)
+        return true;
+
+    if (atom1 == g_strAtom && atom2 == g_textAtom)
+        return true;
+
+    return false;
 }
+
+// Also used by wxClipboard to use the alternative Wayland atoms for the text.
+extern GdkAtom wxGTKGetAltWaylandFormat(GdkAtom atom)
+{
+    if (atom == g_u8strAtom)
+        return g_u8textAtom.Get();
+    if (atom == g_strAtom)
+        return g_textAtom.Get();
+
+    return nullptr;
+}
+
+bool wxDataFormat::operator==(const wxDataFormat& other) const
+{
+    if ( m_type != other.m_type )
+        return false;
+
+    return wxGTKIsSameFormat(m_format, other.m_format);
+}
+
 
 //-------------------------------------------------------------------------
 // wxDataObject
@@ -196,38 +234,18 @@ bool wxDataObject::IsSupportedFormat(const wxDataFormat& format, Direction dir) 
     }
     else
     {
-        wxDataFormat *formats = new wxDataFormat[nFormatCount];
-        GetAllFormats(formats,dir);
+        wxScopedArray<wxDataFormat> formats(nFormatCount);
+        GetAllFormats(formats.get(), dir);
 
-        size_t n;
-        for ( n = 0; n < nFormatCount; n++ )
+        for ( size_t n = 0; n < nFormatCount; n++ )
         {
-            if ( formats[n] == format )
-                break;
+            if ( wxGTKIsSameFormat(formats[n], format) )
+                return true;
         }
 
-        delete [] formats;
-
-        // found?
-        return n < nFormatCount;
+        return false;
     }
 }
-
-// ----------------------------------------------------------------------------
-// wxTextDataObject
-// ----------------------------------------------------------------------------
-
-#if wxUSE_UNICODE
-
-void
-wxTextDataObject::GetAllFormats(wxDataFormat *formats,
-                                wxDataObjectBase::Direction WXUNUSED(dir)) const
-{
-    *formats++ = GetPreferredFormat();
-    *formats = g_altTextAtom;
-}
-
-#endif // wxUSE_UNICODE
 
 // ----------------------------------------------------------------------------
 // wxFileDataObject
@@ -239,7 +257,7 @@ bool wxFileDataObject::GetDataHere(void *buf) const
 
     for (size_t i = 0; i < m_filenames.GetCount(); i++)
     {
-        char* uri = g_filename_to_uri(m_filenames[i].mbc_str(), 0, 0);
+        wxGtkString uri(g_filename_to_uri(m_filenames[i].mbc_str(), nullptr, nullptr));
         if (uri)
         {
             size_t const len = strlen(uri);
@@ -247,10 +265,8 @@ bool wxFileDataObject::GetDataHere(void *buf) const
             out += len;
             *(out++) = '\r';
             *(out++) = '\n';
-            g_free(uri);
         }
     }
-    *out = 0;
 
     return true;
 }
@@ -261,22 +277,23 @@ size_t wxFileDataObject::GetDataSize() const
 
     for (size_t i = 0; i < m_filenames.GetCount(); i++)
     {
-        char* uri = g_filename_to_uri(m_filenames[i].mbc_str(), 0, 0);
-        if (uri) {
+        wxGtkString uri(g_filename_to_uri(m_filenames[i].mbc_str(), nullptr, nullptr));
+        if (uri)
+        {
             res += strlen(uri) + 2; // Including "\r\n"
-            g_free(uri);
         }
     }
 
-    return res + 1;
+    // Note that trailing NUL must not be included, as it would become part of
+    // the data for the other applications otherwise.
+    return res;
 }
 
 bool wxFileDataObject::SetData(size_t WXUNUSED(size), const void *buf)
 {
     // we get data in the text/uri-list format, i.e. as a sequence of URIs
-    // (filenames prefixed by "file:") delimited by "\r\n". size includes
-    // the trailing zero (in theory, not for Nautilus in early GNOME
-    // versions).
+    // (filenames prefixed by "file:") delimited by "\r\n". size doesn't
+    // include the trailing NUL, but we don't need it as GTK always adds one
 
     m_filenames.Empty();
 
@@ -313,16 +330,13 @@ bool wxFileDataObject::SetData(size_t WXUNUSED(size), const void *buf)
             break;
 
         // required to give it a trailing zero
-        gchar *uri = g_strndup( temp, len );
+        wxGtkString uri(g_strndup( temp, len ));
 
-        gchar *fn = g_filename_from_uri( uri, NULL, NULL );
-
-        g_free( uri );
+        wxGtkString fn(g_filename_from_uri( uri, nullptr, nullptr ));
 
         if (fn)
         {
             AddFile( wxConvFileName->cMB2WX( fn ) );
-            g_free( fn );
         }
     }
 
@@ -383,7 +397,7 @@ bool wxBitmapDataObject::SetData(size_t size, const void *buf)
 {
     Clear();
 
-    wxCHECK_MSG( wxImage::FindHandler(wxBITMAP_TYPE_PNG) != NULL,
+    wxCHECK_MSG( wxImage::FindHandler(wxBITMAP_TYPE_PNG) != nullptr,
                  false, wxT("You must call wxImage::AddHandler(new wxPNGHandler); to be able to use clipboard with bitmaps!") );
 
     m_pngSize = size;
@@ -408,7 +422,7 @@ void wxBitmapDataObject::DoConvertToPng()
     if ( !m_bitmap.IsOk() )
         return;
 
-    wxCHECK_RET( wxImage::FindHandler(wxBITMAP_TYPE_PNG) != NULL,
+    wxCHECK_RET( wxImage::FindHandler(wxBITMAP_TYPE_PNG) != nullptr,
                  wxT("You must call wxImage::AddHandler(new wxPNGHandler); to be able to use clipboard with bitmaps!") );
 
     wxImage image = m_bitmap.ConvertToImage();
@@ -431,7 +445,7 @@ class wxTextURIListDataObject : public wxDataObjectSimple
 {
 public:
     wxTextURIListDataObject(const wxString& url)
-        : wxDataObjectSimple(wxDataFormat(g_fileAtom)),
+        : wxDataObjectSimple(wxDataFormat(g_fileAtom.Get())),
           m_url(url)
     {
     }
@@ -440,57 +454,127 @@ public:
     void SetURL(const wxString& url) { m_url = url; }
 
 
-    virtual size_t GetDataSize() const wxOVERRIDE
+    virtual size_t GetDataSize() const override
     {
         // It is not totally clear whether we should include "\r\n" at the end
         // of the string if there is only one URL or not, but not doing it
         // doesn't seem to create any problems, so keep things simple.
-        return strlen(m_url.utf8_str()) + 1;
+        //
+        // Note that trailing NUL definitely must not be included, as it would
+        // become part of the data for the other applications otherwise.
+        return GetURI().length();
     }
 
-    virtual bool GetDataHere(void *buf) const wxOVERRIDE
+    virtual bool GetDataHere(void *buf) const override
     {
-        char* const dst = static_cast<char*>(buf);
+        const std::string uri = GetURI();
 
-        strcpy(dst, m_url.utf8_str());
+        memcpy(buf, uri.data(), uri.length());
 
         return true;
     }
 
-    virtual bool SetData(size_t len, const void *buf) wxOVERRIDE
+    virtual bool SetData(size_t len, const void *buf) override
     {
         const char* const src = static_cast<const char*>(buf);
 
+        // Length here normally doesn't include the trailing NUL, but it was
+        // included by wxGTK itself in the past, so ignore it if it's present.
+        if ( len > 0 && src[len - 1] == '\0' )
+            len--;
+
+        // The data is a list of URIs, one per line, which may also contain
+        // comment lines starting with "#" (see RFC 2483), which we remove.
+        //
+        // Notice that we keep all the URIs, even if there is more than one of
+        // them, as the existing code could rely on getting all of them, and
+        // that we don't decode them, as percent-encoding is part of the URI
+        // and decoding it could change its meaning.
+        std::string data;
+        data.reserve(len);
+
+        for ( size_t pos = 0; pos < len; )
+        {
+            const void* const eol = memchr(src + pos, '\n', len - pos);
+            const size_t posNext = eol
+                                    ? static_cast<const char*>(eol) - src + 1
+                                    : len;
+
+            if ( src[pos] != '#' )
+                data.append(src + pos, posNext - pos);
+
+            pos = posNext;
+        }
+
         // The string might be "\r\n"-terminated but this is not necessarily
         // the case (e.g. when dragging an URL from Firefox, it isn't).
-        if ( len > 1 && src[len - 1] == '\n' )
+        len = data.length();
+        if ( len > 1 && data[len - 1] == '\n' )
         {
-            if ( len > 2 && src[len - 2] == '\r' )
+            if ( len > 2 && data[len - 2] == '\r' )
                 len--;
 
             len--;
         }
 
-        m_url = wxString::FromUTF8(src, len);
+        m_url = wxString::FromUTF8(data.c_str(), len);
 
         return true;
     }
 
     // Must provide overloads to avoid hiding them (and warnings about it)
-    virtual size_t GetDataSize(const wxDataFormat&) const wxOVERRIDE
+    virtual size_t GetDataSize(const wxDataFormat&) const override
     {
         return GetDataSize();
     }
-    virtual bool GetDataHere(const wxDataFormat&, void *buf) const wxOVERRIDE
+    virtual bool GetDataHere(const wxDataFormat&, void *buf) const override
     {
         return GetDataHere(buf);
     }
-    virtual bool SetData(const wxDataFormat&, size_t len, const void *buf) wxOVERRIDE
+    virtual bool SetData(const wxDataFormat&, size_t len, const void *buf) override
     {
         return SetData(len, buf);
     }
 
 private:
+    // Return the URL converted to a valid URI by percent-encoding all the
+    // characters not allowed in URIs, without changing the URIs which are
+    // already valid.
+    //
+    // If there are several URLs separated by line breaks, they are converted
+    // separately and the line breaks are kept as is.
+    std::string GetURI() const
+    {
+        wxString uris;
+
+        for ( size_t pos = 0;; )
+        {
+            const size_t posEOL = m_url.find('\n', pos);
+
+            size_t posEnd = posEOL == wxString::npos ? m_url.length() : posEOL;
+            if ( posEnd > pos && m_url[posEnd - 1] == '\r' )
+                posEnd--;
+
+            // Note that we must check that the URL could be parsed, as
+            // otherwise BuildURI() would lose its part after the parsing
+            // error, and just keep it unchanged in this case.
+            const wxString url = m_url.substr(pos, posEnd - pos);
+
+            wxURI uri;
+            uris += uri.Create(url) ? uri.BuildURI() : url;
+
+            if ( posEOL == wxString::npos )
+                break;
+
+            // Append the line break, possibly including "\r", too.
+            uris += m_url.substr(posEnd, posEOL + 1 - posEnd);
+
+            pos = posEOL + 1;
+        }
+
+        return uris.utf8_string();
+    }
+
     wxString m_url;
 };
 

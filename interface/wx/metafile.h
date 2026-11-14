@@ -106,7 +106,7 @@ public:
         used for anything, but the wxMetafile object must still be destroyed by
         the application.
 
-        Below is a example of metafile, metafile device context and clipboard use
+        Below is an example of metafile, metafile device context and clipboard use
         from the @c hello.cpp example. Note the way the metafile dimensions
         are passed to the clipboard, making use of the device context's ability
         to keep track of the maximum extent of drawing commands.
@@ -128,6 +128,54 @@ public:
     bool SetClipboard(int width = 0, int height = 0);
 };
 
+/**
+    @class wxMetafileDataObject
+
+    This wxDataObject implementation provides support for exchanging metafiles
+    with the other applications through the clipboard or drag and drop.
+
+    @onlyfor{wxmsw}
+
+    @library{wxcore}
+
+    @see wxMetafile, wxDataObject
+*/
+class wxMetafileDataObject : public wxDataObjectSimple
+{
+public:
+    /**
+        Default constructor.
+
+        The object is initially empty, use SetMetafile() to set the data.
+    */
+    wxMetafileDataObject();
+
+    /**
+        Constructor taking a metafile.
+
+        The object is initialized with a copy of the given metafile.
+    */
+    wxMetafileDataObject(const wxMetafile& metafile);
+
+    /**
+        Set the metafile associated with this object.
+
+        This is useful when using the object as source of a drag and drop
+        operation or when putting data to the clipboard.
+     */
+    virtual void SetMetafile(const wxMetafile& metafile);
+
+    /**
+        Get the metafile associated with this object.
+
+        This is useful when using the object as target of a drag and drop
+        operation or when getting data from the clipboard.
+     */
+    virtual wxMetafile GetMetafile() const;
+
+protected:
+    wxMetafile m_metafile;
+};
 
 
 // ============================================================================
@@ -135,7 +183,7 @@ public:
 // ============================================================================
 
 /** @addtogroup group_funcmacro_gdi */
-//@{
+///@{
 
 /**
     Given a filename for an existing, valid metafile (as constructed using
@@ -169,5 +217,5 @@ bool wxMakeMetafilePlaceable(const wxString& filename,
                               int maxX, int maxY,
                               float scale = 1.0);
 
-//@}
+///@}
 

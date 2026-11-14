@@ -11,9 +11,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-#pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
 #include "wx/wx.h"
@@ -56,7 +53,7 @@ bool MyApp::OnInit()
         return false;
 
     // Create the main frame window
-    new MyFrame(NULL, "wxWidgets OpenGL Isosurf Sample");
+    new MyFrame(nullptr, "wxWidgets OpenGL Isosurf Sample");
 
     return true;
 }
@@ -94,7 +91,7 @@ wxEND_EVENT_TABLE()
 MyFrame::MyFrame(wxFrame *frame, const wxString& title, const wxPoint& pos,
                  const wxSize& size, long style)
     : wxFrame(frame, wxID_ANY, title, pos, size, style),
-      m_canvas(NULL)
+      m_canvas(nullptr)
 {
     SetIcon(wxICON(sample));
 
@@ -112,7 +109,7 @@ MyFrame::MyFrame(wxFrame *frame, const wxString& title, const wxPoint& pos,
 
   // JACS
 #ifdef __WXMSW__
-    int *gl_attrib = NULL;
+    int *gl_attrib = nullptr;
 #else
     int gl_attrib[20] =
         { WX_GL_RGBA, WX_GL_MIN_RED, 1, WX_GL_MIN_GREEN, 1,
@@ -184,11 +181,13 @@ TestGLCanvas::~TestGLCanvas()
 
 void TestGLCanvas::LoadSurface(const wxString& filename)
 {
+#if wxUSE_INTL
     // FIXME
     // we need to set english locale to force wxTextInputStream's calls to
     // wxStrtod to use the point and not the comma as decimal separator...
     // (the isosurf.dat contains points and not commas)...
     wxLocale l(wxLANGUAGE_ENGLISH);
+#endif
 
     wxZlibInputStream* stream =
         new wxZlibInputStream(new wxFFileInputStream(filename));
@@ -200,7 +199,7 @@ void TestGLCanvas::LoadSurface(const wxString& filename)
     }
 
     {
-        // we suppose to have in input a text file containing floating numbers
+        // we are supposed to have as input a text file containing floating numbers
         // space/newline-separated... first 3 numbers are the coordinates of a
         // vertex and the following 3 are the relative vertex normal and so on...
 
@@ -293,19 +292,19 @@ void TestGLCanvas::OnChar(wxKeyEvent& event)
         return;
 
     case WXK_LEFT:
-        m_yrot -= 15.0;
+        m_yrot -= 15;
         break;
 
     case WXK_RIGHT:
-        m_yrot += 15.0;
+        m_yrot += 15;
         break;
 
     case WXK_UP:
-        m_xrot += 15.0;
+        m_xrot += 15;
         break;
 
     case WXK_DOWN:
-        m_xrot -= 15.0;
+        m_xrot -= 15;
         break;
 
     case 's': case 'S':
@@ -349,8 +348,8 @@ void TestGLCanvas::OnMouseEvent(wxMouseEvent& event)
         }
         else
         {
-            m_yrot += (event.GetX() - last_x)*1.0;
-            m_xrot += (event.GetY() - last_y)*1.0;
+            m_yrot += event.GetX() - last_x;
+            m_xrot += event.GetY() - last_y;
             Refresh(false);
         }
         last_x = event.GetX();

@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_SEARCHCTRL
 
@@ -43,8 +40,6 @@
 
 #include "widgets.h"
 
-#include "icons/text.xpm"
-
 // ----------------------------------------------------------------------------
 // constants
 // ----------------------------------------------------------------------------
@@ -56,7 +51,8 @@ enum
      ID_CANCEL_CB,
      ID_MENU_CB,
 
-     ID_SEARCHMENU
+     ID_SEARCHMENU,
+     ID_SEARCHMENU_LAST = ID_SEARCHMENU + 5
 };
 
 
@@ -67,14 +63,14 @@ enum
 class SearchCtrlWidgetsPage : public WidgetsPage
 {
 public:
-    SearchCtrlWidgetsPage(WidgetsBookCtrl *book, wxImageList *imaglist);
+    SearchCtrlWidgetsPage(WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist);
 
-    virtual wxWindow *GetWidget() const wxOVERRIDE { return m_srchCtrl; }
-    virtual wxTextEntryBase *GetTextEntry() const wxOVERRIDE { return m_srchCtrl; }
-    virtual void RecreateWidget() wxOVERRIDE;
+    virtual wxWindow *GetWidget() const override { return m_srchCtrl; }
+    virtual wxTextEntryBase *GetTextEntry() const override { return m_srchCtrl; }
+    virtual void RecreateWidget() override;
 
     // lazy creation of the content
-    virtual void CreateContent() wxOVERRIDE;
+    virtual void CreateContent() override;
 
 protected:
 
@@ -84,6 +80,8 @@ protected:
 
     void OnText(wxCommandEvent& event);
     void OnTextEnter(wxCommandEvent& event);
+
+    void OnSearchMenu(wxCommandEvent& event);
 
     void OnSearch(wxCommandEvent& event);
     void OnSearchCancel(wxCommandEvent& event);
@@ -116,6 +114,9 @@ wxBEGIN_EVENT_TABLE(SearchCtrlWidgetsPage, WidgetsPage)
     EVT_TEXT(wxID_ANY, SearchCtrlWidgetsPage::OnText)
     EVT_TEXT_ENTER(wxID_ANY, SearchCtrlWidgetsPage::OnTextEnter)
 
+    EVT_MENU_RANGE(ID_SEARCHMENU, ID_SEARCHMENU_LAST,
+                   SearchCtrlWidgetsPage::OnSearchMenu)
+
     EVT_SEARCH(wxID_ANY, SearchCtrlWidgetsPage::OnSearch)
     EVT_SEARCH_CANCEL(wxID_ANY, SearchCtrlWidgetsPage::OnSearchCancel)
 wxEND_EVENT_TABLE()
@@ -124,7 +125,7 @@ wxEND_EVENT_TABLE()
 // implementation
 // ============================================================================
 
-#if defined(__WXMAC__) || defined(__WXGTK20__)
+#if defined(__WXMAC__) || defined(__WXGTK__)
     #define FAMILY_CTRLS NATIVE_CTRLS
 #else
     #define FAMILY_CTRLS GENERIC_CTRLS
@@ -134,34 +135,33 @@ IMPLEMENT_WIDGETS_PAGE(SearchCtrlWidgetsPage, "SearchCtrl",
                        FAMILY_CTRLS | EDITABLE_CTRLS | ALL_CTRLS);
 
 SearchCtrlWidgetsPage::SearchCtrlWidgetsPage(WidgetsBookCtrl *book,
-                                     wxImageList *imaglist)
-                  : WidgetsPage(book, imaglist, text_xpm)
+                                     wxVector<wxBitmapBundle>& imaglist)
+                  : WidgetsPage(book, imaglist, WidgetsIcon::Text)
 {
 }
 
 void SearchCtrlWidgetsPage::CreateContent()
 {
-    m_srchCtrl = NULL;
+    m_srchCtrl = nullptr;
 
     CreateControl();
 
 
-    wxSizer* box = new wxStaticBoxSizer(
-        new wxStaticBox(this, -1, "Options"),
-        wxVERTICAL);
+    wxStaticBoxSizer* sizerOptions = new wxStaticBoxSizer(wxVERTICAL, this, "Options");
+    wxStaticBox* const sizerOptionsBox = sizerOptions->GetStaticBox();
 
-    m_searchBtnCheck = new wxCheckBox(this, ID_SEARCH_CB, "Search button");
-    m_cancelBtnCheck = new wxCheckBox(this, ID_CANCEL_CB, "Cancel button");
-    m_menuBtnCheck   = new wxCheckBox(this, ID_MENU_CB,   "Search menu");
+    m_searchBtnCheck = new wxCheckBox(sizerOptionsBox, ID_SEARCH_CB, "Search button");
+    m_cancelBtnCheck = new wxCheckBox(sizerOptionsBox, ID_CANCEL_CB, "Cancel button");
+    m_menuBtnCheck   = new wxCheckBox(sizerOptionsBox, ID_MENU_CB,   "Search menu");
 
     m_searchBtnCheck->SetValue(true);
 
-    box->Add(m_searchBtnCheck, wxSizerFlags().Border());
-    box->Add(m_cancelBtnCheck, wxSizerFlags().Border());
-    box->Add(m_menuBtnCheck,   wxSizerFlags().Border());
+    sizerOptions->Add(m_searchBtnCheck, wxSizerFlags().Border());
+    sizerOptions->Add(m_cancelBtnCheck, wxSizerFlags().Border());
+    sizerOptions->Add(m_menuBtnCheck,   wxSizerFlags().Border());
 
     wxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
-    sizer->Add(box, wxSizerFlags().Expand().TripleBorder());
+    sizer->Add(sizerOptions, wxSizerFlags().Expand().TripleBorder());
     sizer->Add(m_srchCtrl, wxSizerFlags().Centre().TripleBorder());
 
     SetSizer(sizer);
@@ -176,6 +176,8 @@ void SearchCtrlWidgetsPage::CreateControl()
 
     m_srchCtrl = new wxSearchCtrl(this, -1, wxEmptyString, wxDefaultPosition,
                                   FromDIP(wxSize(150, -1)), style);
+
+    NotifyWidgetRecreation(m_srchCtrl);
 }
 
 void SearchCtrlWidgetsPage::RecreateWidget()
@@ -190,14 +192,13 @@ void SearchCtrlWidgetsPage::RecreateWidget()
 wxMenu* SearchCtrlWidgetsPage::CreateTestMenu()
 {
     wxMenu* menu = new wxMenu;
-    const int SEARCH_MENU_SIZE = 5;
     wxMenuItem* menuItem = menu->Append(wxID_ANY, "Recent Searches", "", wxITEM_NORMAL);
     menuItem->Enable(false);
-    for ( int i = 0; i < SEARCH_MENU_SIZE; i++ )
+    for ( int i = 0; i < ID_SEARCHMENU_LAST - ID_SEARCHMENU; i++ )
     {
         wxString itemText = wxString::Format("item %i",i);
         wxString tipText = wxString::Format("tip %i",i);
-        menu->Append(ID_SEARCHMENU+i, itemText, tipText, wxITEM_NORMAL);
+        menu->Append(ID_SEARCHMENU+i, itemText, tipText, wxITEM_CHECK);
     }
     return menu;
 }
@@ -223,7 +224,7 @@ void SearchCtrlWidgetsPage::OnToggleSearchMenu(wxCommandEvent&)
     if ( m_menuBtnCheck->GetValue() )
         m_srchCtrl->SetMenu( CreateTestMenu() );
     else
-        m_srchCtrl->SetMenu(NULL);
+        m_srchCtrl->SetMenu(nullptr);
 }
 
 void SearchCtrlWidgetsPage::OnText(wxCommandEvent& event)
@@ -236,6 +237,13 @@ void SearchCtrlWidgetsPage::OnTextEnter(wxCommandEvent& event)
 {
     wxLogMessage("Search control: enter pressed, contents is \"%s\".",
                  event.GetString());
+}
+
+void SearchCtrlWidgetsPage::OnSearchMenu(wxCommandEvent& event)
+{
+    int id = event.GetId() - ID_SEARCHMENU;
+    wxLogMessage("Search menu: \"item %i\" selected (%s).",
+                 id, event.IsChecked() ? "checked" : "unchecked");
 }
 
 void SearchCtrlWidgetsPage::OnSearch(wxCommandEvent& event)

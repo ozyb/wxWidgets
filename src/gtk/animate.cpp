@@ -24,8 +24,14 @@
 
 #include "wx/wfstream.h"
 #include "wx/gtk/private.h"
+#include "wx/gtk/private/error.h"
 #include "wx/gtk/private/object.h"
 
+#include <functional>
+
+// All animation-related APIs have been deprecated gdk-pixbuf 2.44, suppress
+// the warnings about using them as long as we still do.
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 
 // ============================================================================
 // implementation
@@ -40,7 +46,7 @@ void gdk_pixbuf_area_updated(GdkPixbufLoader    *loader,
                              gint               WXUNUSED(height),
                              wxAnimationGTKImpl *anim)
 {
-    if (anim && anim->GetPixbuf() == NULL)
+    if (anim && anim->GetPixbuf() == nullptr)
     {
         // we need to set the pixbuf only if this is the first time this signal
         // has been called!
@@ -71,7 +77,7 @@ bool wxAnimationGTKImpl::IsCompatibleWith(wxClassInfo* ci) const
 bool wxAnimationGTKImpl::LoadFile(const wxString &name, wxAnimationType WXUNUSED(type))
 {
     UnRef();
-    m_pixbuf = gdk_pixbuf_animation_new_from_file(wxGTK_CONV_FN(name), NULL);
+    m_pixbuf = gdk_pixbuf_animation_new_from_file(wxGTK_CONV_FN(name), nullptr);
     return IsOk();
 }
 
@@ -96,20 +102,20 @@ bool wxAnimationGTKImpl::Load(wxInputStream &stream, wxAnimationType type)
     }
 
     // create a GdkPixbufLoader
-    GError *error = NULL;
+    wxGtkError error;
     GdkPixbufLoader *loader;
     if (type != wxANIMATION_TYPE_INVALID && type != wxANIMATION_TYPE_ANY)
-        loader = gdk_pixbuf_loader_new_with_type(anim_type, &error);
+        loader = gdk_pixbuf_loader_new_with_type(anim_type, error.Out());
     else
         loader = gdk_pixbuf_loader_new();
 
     wxGtkObject<GdkPixbufLoader> ensureUnrefLoader(loader);
 
     if (!loader ||
-        error != NULL)  // even if the loader was allocated, an error could have happened
+        error)  // even if the loader was allocated, an error could have happened
     {
         wxLogDebug(wxT("Could not create the loader for '%s' animation type: %s"),
-                   anim_type, error->message);
+                   anim_type, error.GetMessage());
         return false;
     }
 
@@ -124,18 +130,18 @@ bool wxAnimationGTKImpl::Load(wxInputStream &stream, wxAnimationType type)
         if (!stream.Read(buf, sizeof(buf)) &&
             stream.GetLastError() != wxSTREAM_EOF)   // EOF is OK for now
         {
-            // gdk_pixbuf_loader_close wants the GError == NULL
-            gdk_pixbuf_loader_close(loader, NULL);
+            // gdk_pixbuf_loader_close wants the GError == nullptr
+            gdk_pixbuf_loader_close(loader, nullptr);
             return false;
         }
 
         // fetch all data into the loader
-        if (!gdk_pixbuf_loader_write(loader, buf, stream.LastRead(), &error))
+        if (!gdk_pixbuf_loader_write(loader, buf, stream.LastRead(), error.Out()))
         {
-            wxLogDebug(wxT("Could not write to the loader: %s"), error->message);
+            wxLogDebug(wxT("Could not write to the loader: %s"), error.GetMessage());
 
-            // gdk_pixbuf_loader_close wants the GError == NULL
-            gdk_pixbuf_loader_close(loader, NULL);
+            // gdk_pixbuf_loader_close wants the GError == nullptr
+            gdk_pixbuf_loader_close(loader, nullptr);
             return false;
         }
 
@@ -145,16 +151,16 @@ bool wxAnimationGTKImpl::Load(wxInputStream &stream, wxAnimationType type)
     if (!data_written)
     {
         wxLogDebug("Could not read data from the stream...");
-        gdk_pixbuf_loader_close(loader, NULL);
+        gdk_pixbuf_loader_close(loader, nullptr);
         return false;
     }
 
     // load complete: gdk_pixbuf_loader_close will now check if the data we
     // wrote inside the pixbuf loader does make sense and will give an error
     // if it doesn't (because of a truncated file, corrupted data or whatelse)
-    if (!gdk_pixbuf_loader_close(loader, &error))
+    if (!gdk_pixbuf_loader_close(loader, error.Out()))
     {
-        wxLogDebug(wxT("Could not close the loader: %s"), error->message);
+        wxLogDebug(wxT("Could not close the loader: %s"), error.GetMessage());
         return false;
     }
 
@@ -162,9 +168,104 @@ bool wxAnimationGTKImpl::Load(wxInputStream &stream, wxAnimationType type)
     return data_written;
 }
 
-wxImage wxAnimationGTKImpl::GetFrame(unsigned int WXUNUSED(frame)) const
+namespace
 {
-    return wxNullImage;
+
+// Type of callback for ForEachFrame(): return false to stop iterating, true to
+// continue.
+using FrameCallback = std::function<bool (unsigned int frame,
+                                          GdkPixbufAnimationIter* iter,
+                                          int total_delay_ms)>;
+
+// Execute the given function for each frame of the animation.
+void ForEachFrame(GdkPixbufAnimation* anim, const FrameCallback& func)
+{
+    GTimeVal start_time;
+    g_get_current_time(&start_time);
+    wxGtkObject<GdkPixbufAnimationIter> iter(gdk_pixbuf_animation_get_iter(anim, &start_time));
+
+    int total_delay_ms = 0;
+
+    for (unsigned int frame = 0; ; frame++)
+    {
+        int delay = gdk_pixbuf_animation_iter_get_delay_time(iter);
+        if (delay <= 0)
+            break; // static state or an error
+
+        if (!func(frame, iter, delay))
+            break;
+
+        // Check if we reached the last frame.
+        if (gdk_pixbuf_animation_iter_on_currently_loading_frame(iter))
+            break;
+
+        total_delay_ms += delay;
+
+        GTimeVal next_time = start_time;
+        g_time_val_add(&next_time, total_delay_ms * 1000); // microseconds
+        gdk_pixbuf_animation_iter_advance(iter, &next_time);
+    }
+}
+
+} // anonymous namespace
+
+unsigned int wxAnimationGTKImpl::GetFrameCount() const
+{
+    int frame_count = 0;
+
+    ForEachFrame(m_pixbuf, [&frame_count](unsigned int WXUNUSED(frame),
+                                          GdkPixbufAnimationIter* WXUNUSED(iter),
+                                          int WXUNUSED(delay))
+    {
+        frame_count++;
+        return true;
+    });
+
+    return frame_count;
+}
+
+int wxAnimationGTKImpl::GetDelay(unsigned int frame) const
+{
+    int delay = 0;
+
+    ForEachFrame(m_pixbuf, [&](unsigned int current_frame,
+                               GdkPixbufAnimationIter* WXUNUSED(iter),
+                               int current_delay)
+    {
+        if (current_frame == frame)
+        {
+            delay = current_delay;
+
+            return false;
+        }
+
+        return true;
+    });
+
+    return delay;
+}
+
+wxImage wxAnimationGTKImpl::GetFrame(unsigned int frame) const
+{
+    wxBitmap bmp;
+
+    ForEachFrame(m_pixbuf, [&](unsigned int current_frame,
+                               GdkPixbufAnimationIter* iter,
+                               int WXUNUSED(delay))
+    {
+        if (current_frame == frame)
+        {
+            GdkPixbuf *buf = gdk_pixbuf_animation_iter_get_pixbuf(iter);
+            g_object_ref(buf);
+            bmp = wxBitmap(buf);
+
+            return false;
+        }
+
+        return true;
+    });
+
+    return bmp.ConvertToImage();
 }
 
 wxSize wxAnimationGTKImpl::GetSize() const
@@ -177,7 +278,7 @@ void wxAnimationGTKImpl::UnRef()
 {
     if (m_pixbuf)
         g_object_unref(m_pixbuf);
-    m_pixbuf = NULL;
+    m_pixbuf = nullptr;
 }
 
 void wxAnimationGTKImpl::SetPixbuf(GdkPixbufAnimation* p)
@@ -200,8 +301,8 @@ wxEND_EVENT_TABLE()
 
 void wxAnimationCtrl::Init()
 {
-    m_anim = NULL;
-    m_iter = NULL;
+    m_anim = nullptr;
+    m_iter = nullptr;
     m_bPlaying = false;
 }
 
@@ -275,7 +376,7 @@ wxAnimationImpl* wxAnimationCtrl::DoCreateAnimationImpl() const
     return new wxAnimationGTKImpl();
 }
 
-void wxAnimationCtrl::SetAnimation(const wxAnimation &anim)
+void wxAnimationCtrl::SetAnimation(const wxAnimationBundle& animations)
 {
     if (IsPlaying())
         Stop();
@@ -283,15 +384,26 @@ void wxAnimationCtrl::SetAnimation(const wxAnimation &anim)
     ResetAnim();
     ResetIter();
 
-    m_animation = anim;
-    if (!m_animation.IsOk())
+    m_animations = animations.GetAll();
+
+    // Reset animation if we don't have any valid ones.
+    if ( m_animations.empty() )
     {
-        m_anim = NULL;
+        m_animation.UnRef();
+        m_anim = nullptr;
         DisplayStaticImage();
         return;
     }
 
-    wxCHECK_RET(anim.IsCompatibleWith(GetClassInfo()),
+    // TODO: Support higher resolution animations. Currently we always take the
+    // animation for the standard resolution, which will be scaled if
+    // necessary, we would need to create the pixbuf using the correct
+    // animation when it's actually needed (by which time we will also have the
+    // correct scale factor, which is not the case yet if we're called before
+    // the control is shown, as is usually the case).
+    m_animation = m_animations[0];
+
+    wxCHECK_RET(m_animation.IsCompatibleWith(GetClassInfo()),
                 wxT("incompatible animation") );
 
     // copy underlying GdkPixbuf object
@@ -326,24 +438,24 @@ void wxAnimationCtrl::ResetAnim()
 {
     if (m_anim)
         g_object_unref(m_anim);
-    m_anim = NULL;
+    m_anim = nullptr;
 }
 
 void wxAnimationCtrl::ResetIter()
 {
     if (m_iter)
         g_object_unref(m_iter);
-    m_iter = NULL;
+    m_iter = nullptr;
 }
 
 bool wxAnimationCtrl::Play()
 {
-    if (m_anim == NULL)
+    if (m_anim == nullptr)
         return false;
 
     // init the iterator and start a one-shot timer
     ResetIter();
-    m_iter = gdk_pixbuf_animation_get_iter (m_anim, NULL);
+    m_iter = gdk_pixbuf_animation_get_iter (m_anim, nullptr);
     m_bPlaying = true;
 
     // gdk_pixbuf_animation_iter_get_delay_time() may return -1 which means
@@ -455,11 +567,11 @@ bool wxAnimationCtrl::SetBackgroundColour( const wxColour &colour )
 
 void wxAnimationCtrl::OnTimer(wxTimerEvent& WXUNUSED(ev))
 {
-    wxASSERT(m_iter != NULL);
+    wxASSERT(m_iter != nullptr);
 
     // gdk_pixbuf_animation_iter_advance() will automatically restart
     // the animation, if necessary and we have no way to know !!
-    if (gdk_pixbuf_animation_iter_advance(m_iter, NULL))
+    if (gdk_pixbuf_animation_iter_advance(m_iter, nullptr))
     {
         // start a new one-shot timer
         int n = gdk_pixbuf_animation_iter_get_delay_time(m_iter);
@@ -482,7 +594,7 @@ void wxAnimationCtrl::OnTimer(wxTimerEvent& WXUNUSED(ev))
 
 GdkPixbufAnimation* wxAnimationCtrl::AnimationImplGetPixbuf() const
 {
-    wxCHECK_MSG( m_animation.IsOk(), NULL, wxT("invalid animation") );
+    wxCHECK_MSG( m_animation.IsOk(), nullptr, wxT("invalid animation") );
     return ANIMATION->GetPixbuf();
 }
 

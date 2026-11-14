@@ -36,7 +36,7 @@ enum wxRibbonGalleryButtonState
         This event is available since wxWidgets 2.9.2.
     @event{EVT_RIBBONGALLERY_HOVER_CHANGED(id, func)}
         Triggered when the item being hovered over by the user changes. The
-        item in the event will be the new item being hovered, or NULL if there
+        item in the event will be the new item being hovered, or @NULL if there
         is no longer an item being hovered. Note that the ID is that of the
         gallery, not of the item.
     @endEventTable
@@ -122,7 +122,27 @@ public:
             ID number to associate with the item. Not currently used for
             anything important.
     */
-    wxRibbonGalleryItem* Append(const wxBitmap& bitmap, int id);
+    wxRibbonGalleryItem* Append(const wxBitmapBundle& bitmap, int id);
+
+    /**
+        Add an item to the gallery with a label.
+
+        The label is not shown in the gallery itself, but it is used as the
+        accessible name of the item, allowing the screen readers to announce it,
+        so it is recommended to specify it for all the items.
+
+        @param bitmap
+            The bitmap to display for the item. Note that all items must
+            have equally sized bitmaps.
+        @param id
+            ID number to associate with the item. Not currently used for
+            anything important.
+        @param label
+            The label of the item.
+
+        @since 3.3.4
+    */
+    wxRibbonGalleryItem* Append(const wxBitmapBundle& bitmap, int id, const wxString& label);
 
     /**
         Add an item to the gallery (with simple client data).
@@ -135,7 +155,7 @@ public:
         @param clientData
             An opaque pointer to associate with the item.
     */
-    wxRibbonGalleryItem* Append(const wxBitmap& bitmap, int id, void* clientData);
+    wxRibbonGalleryItem* Append(const wxBitmapBundle& bitmap, int id, void* clientData);
 
     /**
         Add an item to the gallery (with complex client data)
@@ -151,7 +171,23 @@ public:
             client data is changed to something else, or when the item is
             destroyed.
     */
-    wxRibbonGalleryItem* Append(const wxBitmap& bitmap, int id, wxClientData* clientData);
+    wxRibbonGalleryItem* Append(const wxBitmapBundle& bitmap, int id, wxClientData* clientData);
+
+    /**
+        Set the label of a gallery item.
+
+        See Append() for the description of the label.
+
+        @since 3.3.4
+    */
+    void SetItemLabel(wxRibbonGalleryItem* item, const wxString& label);
+
+    /**
+        Return the label of a gallery item.
+
+        @since 3.3.4
+    */
+    wxString GetItemLabel(const wxRibbonGalleryItem* item) const;
 
     /**
         Set the client object associated with a gallery item.
@@ -175,14 +211,14 @@ public:
 
     /**
         Set the selection to the given item, or removes the selection if
-        @a item == NULL.
+        @a item == nullptr.
 
         Note that this not cause any events to be emitted.
     */
     void SetSelection(wxRibbonGalleryItem* item);
 
     /**
-        Get the currently selected item, or NULL if there is none.
+        Get the currently selected item, or @NULL if there is none.
 
         The selected item is set by SetSelection(), or by the user clicking on
         an item.
@@ -190,14 +226,14 @@ public:
     wxRibbonGalleryItem* GetSelection() const;
 
     /**
-        Get the currently hovered item, or NULL if there is none.
+        Get the currently hovered item, or @NULL if there is none.
 
         The hovered item is the item underneath the mouse cursor.
     */
     wxRibbonGalleryItem* GetHoveredItem() const;
 
     /**
-        Get the currently active item, or NULL if there is none.
+        Get the currently active item, or @NULL if there is none.
 
         The active item is the item being pressed by the user, and will thus
         become the selected item if the user releases the mouse button.
@@ -255,6 +291,28 @@ public:
         Scroll the gallery to ensure that the given item is visible.
     */
     void EnsureVisible(const wxRibbonGalleryItem* item);
+
+    /**
+        Assigns the KeyTip used to reach this gallery.
+
+        The gallery is one KeyTip target as a whole, its items don't get their
+        own. Activating it gives the gallery focus, so that the arrow keys and
+        Enter can then be used to pick an item.
+
+        Pass an empty string to remove it. The KeyTip is stored upper-cased.
+
+        @see wxRibbonBar::ShowKeyTips()
+
+        @since 3.3.4
+    */
+    void SetKeyTip(const wxString& keytip);
+
+    /**
+        Returns the KeyTip of this gallery, or an empty string.
+
+        @since 3.3.4
+    */
+    wxString GetKeyTip() const;
 };
 
 /**
@@ -273,8 +331,8 @@ public:
     */
     wxRibbonGalleryEvent(wxEventType command_type = wxEVT_NULL,
                          int win_id = 0,
-                         wxRibbonGallery* gallery = NULL,
-                         wxRibbonGalleryItem* item = NULL);
+                         wxRibbonGallery* gallery = nullptr,
+                         wxRibbonGalleryItem* item = nullptr);
 
     /**
         Returns the gallery which the event relates to.
@@ -282,7 +340,7 @@ public:
     wxRibbonGallery* GetGallery();
 
     /**
-        Returns the gallery item which the event relates to, or NULL if it does
+        Returns the gallery item which the event relates to, or @NULL if it does
         not relate to an item.
     */
     wxRibbonGalleryItem* GetGalleryItem();

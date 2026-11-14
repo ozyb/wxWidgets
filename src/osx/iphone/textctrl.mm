@@ -33,10 +33,6 @@
     #include <stat.h>
 #endif
 
-#if wxUSE_STD_IOSTREAM
-    #include <fstream>
-#endif
-
 #include "wx/filefn.h"
 #include "wx/sysopt.h"
 #include "wx/thread.h"
@@ -121,20 +117,20 @@ protected :
     wxWidgetIPhoneImpl* impl = (wxWidgetIPhoneImpl* ) wxWidgetImpl::FindFromWXWidget( self );
     if ( impl )
     {
-        impl->DoNotifyFocusEvent( false, NULL );
+        impl->DoNotifyFocusEvent( false, nullptr );
     }
 }
 
 @end
 
-#if 0 
+#if 0
 @implementation wxUITextFieldEditor
 
 - (void) keyDown:(NSEvent*) event
 {
     wxWidgetIPhoneImpl* impl = (wxWidgetIPhoneImpl* ) wxWidgetImpl::FindFromWXWidget( (WXWidget) [self delegate] );
     lastKeyDownEvent = event;
-    if ( impl == NULL || !impl->DoHandleKeyEvent(event) )
+    if ( impl == nullptr || !impl->DoHandleKeyEvent(event) )
         [super keyDown:event];
     lastKeyDownEvent = nil;
 }
@@ -142,14 +138,14 @@ protected :
 - (void) keyUp:(NSEvent*) event
 {
     wxWidgetIPhoneImpl* impl = (wxWidgetIPhoneImpl* ) wxWidgetImpl::FindFromWXWidget( (WXWidget) [self delegate] );
-    if ( impl == NULL || !impl->DoHandleKeyEvent(event) )
+    if ( impl == nullptr || !impl->DoHandleKeyEvent(event) )
         [super keyUp:event];
 }
 
 - (void) flagsChanged:(NSEvent*) event
 {
     wxWidgetIPhoneImpl* impl = (wxWidgetIPhoneImpl* ) wxWidgetImpl::FindFromWXWidget( (WXWidget) [self delegate] );
-    if ( impl == NULL || !impl->DoHandleKeyEvent(event) )
+    if ( impl == nullptr || !impl->DoHandleKeyEvent(event) )
         [super flagsChanged:event];
 }
 
@@ -162,7 +158,7 @@ protected :
 - (void) insertText:(id) str
 {
     wxWidgetIPhoneImpl* impl = (wxWidgetIPhoneImpl* ) wxWidgetImpl::FindFromWXWidget( (WXWidget) [self delegate] );
-    if ( impl == NULL || lastKeyDownEvent==nil || !impl->DoHandleCharEvent(lastKeyDownEvent, str) )
+    if ( impl == nullptr || lastKeyDownEvent==nil || !impl->DoHandleCharEvent(lastKeyDownEvent, str) )
     {
         [super insertText:str];
     }
@@ -244,7 +240,7 @@ protected :
     wxWidgetIPhoneImpl* impl = (wxWidgetIPhoneImpl* ) wxWidgetImpl::FindFromWXWidget( self );
     if ( impl )
     {
-        impl->DoNotifyFocusEvent( false, NULL );
+        impl->DoNotifyFocusEvent( false, nullptr );
     }
 }
 @end
@@ -275,14 +271,14 @@ protected :
 {
     wxWidgetIPhoneImpl* impl = (wxWidgetIPhoneImpl* ) wxWidgetImpl::FindFromWXWidget( textView );
     if ( impl )
-        impl->DoNotifyFocusEvent(true, NULL);
+        impl->DoNotifyFocusEvent(true, nullptr);
 }
 
 - (void)textViewDidEndEditing:(UITextView *)textView
 {
     wxWidgetIPhoneImpl* impl = (wxWidgetIPhoneImpl* ) wxWidgetImpl::FindFromWXWidget( textView );
     if ( impl )
-        impl->DoNotifyFocusEvent(false, NULL);
+        impl->DoNotifyFocusEvent(false, nullptr);
 }
 
 - (BOOL)textView:(UITextView *)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text
@@ -306,7 +302,7 @@ protected :
 // wxUITextViewControl
 //
 
-wxUITextViewControl::wxUITextViewControl( wxTextCtrl *wxPeer, UITextView* v) : 
+wxUITextViewControl::wxUITextViewControl( wxTextCtrl *wxPeer, UITextView* v) :
     wxWidgetIPhoneImpl(wxPeer, v),
     wxTextWidgetImpl(wxPeer)
 {
@@ -336,7 +332,7 @@ wxString wxUITextViewControl::GetStringValue() const
     if (m_textView)
     {
         result = wxMacConvertNewlines13To10(
-            wxCFStringRef::AsString([m_textView text], m_wxPeer->GetFont().GetEncoding()));
+            wxCFStringRef::AsString([m_textView text]));
     }
     return result;
 }
@@ -348,8 +344,25 @@ void wxUITextViewControl::SetStringValue( const wxString &str)
     if (m_textView)
     {
         wxString st(wxMacConvertNewlines10To13(str));
-        [m_textView setText: wxCFStringRef( st , m_wxPeer->GetFont().GetEncoding() ).AsNSString()];
+        [m_textView setText: wxCFStringRef( st ).AsNSString()];
     }
+}
+
+wxString wxUITextViewControl::GetRTFValue() const
+{
+    wxFAIL_MSG("GetRTFValue() should only be used with multiline controls.");
+    return wxEmptyString;
+}
+
+void wxUITextViewControl::SetRTFValue(const wxString& /*str*/)
+{
+    wxFAIL_MSG("SetRTFValue() should only be used with multiline controls.");
+}
+
+wxTextSearchResult wxUITextViewControl::SearchText(const wxTextSearch& /*search*/) const
+{
+    wxFAIL_MSG("SearchText() should only be used with multiline controls.");
+    return wxTextSearchResult();
 }
 
 void wxUITextViewControl::Copy()
@@ -419,36 +432,36 @@ void wxUITextViewControl::WriteText(const wxString& str)
     wxString st(wxMacConvertNewlines10To13(str));
     wxMacEditHelper helper(m_textView);
 
-    wxCFStringRef insert( st , m_wxPeer->GetFont().GetEncoding() );
+    wxCFStringRef insert( st );
     NSMutableString* subst = [NSMutableString stringWithString:[m_textView text]];
     [subst replaceCharactersInRange:[m_textView selectedRange] withString:insert.AsNSString()];
 
     [m_textView setText:subst];
 }
 
-void wxUITextViewControl::SetFont( const wxFont & font , const wxColour& WXUNUSED(foreground) , long WXUNUSED(windowStyle), bool WXUNUSED(ignoreBlack) )
+void wxUITextViewControl::SetFont(const wxFont & font)
 {
     if ([m_textView respondsToSelector:@selector(setFont:)])
         [m_textView setFont: font.OSXGetUIFont()];
 }
 
-bool wxUITextViewControl::GetStyle(long position, wxTextAttr& style)
+bool wxUITextViewControl::GetStyle(long position, wxTextAttr& /*style*/)
 {
     if (m_textView && position >=0)
-    {   
-        // UIFont* font = NULL;
-        // NSColor* bgcolor = NULL;
-        // NSColor* fgcolor = NULL;
+    {
+        // UIFont* font = nullptr;
+        // NSColor* bgcolor = nullptr;
+        // NSColor* fgcolor = nullptr;
         // NOTE: It appears that other platforms accept GetStyle with the position == length
         // but that UITextStorage does not accept length as a valid position.
         // Therefore we return the default control style in that case.
         /*
-        if (position < [[m_textView string] length]) 
+        if (position < [[m_textView string] length])
         {
             UITextStorage* storage = [m_textView textStorage];
-            font = [[storage attribute:NSFontAttributeName atIndex:position effectiveRange:NULL] autorelease];
-            bgcolor = [[storage attribute:NSBackgroundColorAttributeName atIndex:position effectiveRange:NULL] autorelease];
-            fgcolor = [[storage attribute:NSForegroundColorAttributeName atIndex:position effectiveRange:NULL] autorelease];
+            font = [[storage attribute:NSFontAttributeName atIndex:position effectiveRange:nullptr] autorelease];
+            bgcolor = [[storage attribute:NSBackgroundColorAttributeName atIndex:position effectiveRange:nullptr] autorelease];
+            fgcolor = [[storage attribute:NSForegroundColorAttributeName atIndex:position effectiveRange:nullptr] autorelease];
         }
         else
         {
@@ -476,7 +489,7 @@ bool wxUITextViewControl::GetStyle(long position, wxTextAttr& style)
 
 void wxUITextViewControl::SetStyle(long start,
                                 long end,
-                                const wxTextAttr& style)
+                                const wxTextAttr& /*style*/)
 {
     if (m_textView) {
         NSRange range = NSMakeRange(start, end-start);
@@ -498,10 +511,6 @@ void wxUITextViewControl::SetStyle(long start,
             [storage addAttribute:NSForegroundColorAttributeName value:fgcolor.OSXGetNSColor() range:range];
 */
     }
-}
-
-void wxUITextViewControl::CheckSpelling(bool check)
-{
 }
 
 wxSize wxUITextViewControl::GetBestSize() const
@@ -535,7 +544,7 @@ wxSize wxUITextViewControl::GetBestSize() const
 // wxUITextFieldControl
 //
 
-wxUITextFieldControl::wxUITextFieldControl( wxTextCtrl *wxPeer, UITextField* w ) : 
+wxUITextFieldControl::wxUITextFieldControl( wxTextCtrl *wxPeer, UITextField* w ) :
     wxWidgetIPhoneImpl(wxPeer, w),
     wxTextWidgetImpl(wxPeer)
 {
@@ -554,14 +563,32 @@ wxUITextFieldControl::~wxUITextFieldControl()
 
 wxString wxUITextFieldControl::GetStringValue() const
 {
-    return wxCFStringRef::AsString([m_textField text], m_wxPeer->GetFont().GetEncoding());
+    return wxCFStringRef::AsString([m_textField text]);
 }
 
 void wxUITextFieldControl::SetStringValue( const wxString &str)
 {
 //    wxMacEditHelper helper(m_textField);
-    [m_textField setText: wxCFStringRef( str , m_wxPeer->GetFont().GetEncoding() ).AsNSString()];
+    [m_textField setText: wxCFStringRef( str ).AsNSString()];
 }
+
+wxString wxUITextFieldControl::GetRTFValue() const
+{
+    wxFAIL_MSG("GetRTFValue() should only be used with multiline controls.");
+    return wxEmptyString;
+}
+
+void wxUITextFieldControl::SetRTFValue(const wxString& /*str*/)
+{
+    wxFAIL_MSG("SetRTFValue() should only be used with multiline controls.");
+}
+
+wxTextSearchResult wxUITextFieldControl::SearchText(const wxTextSearch& /*search*/) const
+{
+    wxFAIL_MSG("SearchText() should only be used with multiline controls.");
+    return wxTextSearchResult();
+}
+
 
 wxSize wxUITextFieldControl::GetBestSize() const
 {
@@ -640,7 +667,7 @@ void wxUITextFieldControl::WriteText(const wxString& str)
     if ( editor )
     {
         wxMacEditHelper helper(m_textField);
-        [editor insertText:wxCFStringRef( str , m_wxPeer->GetFont().GetEncoding() ).AsNSString()];
+        [editor insertText:wxCFStringRef( str ).AsNSString()];
     }
     else
 #endif
@@ -658,8 +685,7 @@ void wxUITextFieldControl::WriteText(const wxString& str)
 #endif
 }
 
-void wxUITextFieldControl::controlAction(WXWidget WXUNUSED(slf),
-    void* WXUNUSED(_cmd), void *WXUNUSED(sender))
+void wxUITextFieldControl::controlAction(wxUint32 /*controlEvent*/)
 {
     wxWindow* wxpeer = (wxWindow*) GetWXPeer();
     if ( wxpeer && (wxpeer->GetWindowStyle() & wxTE_PROCESS_ENTER) )
@@ -694,8 +720,8 @@ wxWidgetImplType* wxWidgetImpl::CreateTextControl( wxTextCtrl* wxpeer,
                                     long WXUNUSED(extraStyle))
 {
     CGRect r = wxOSXGetFrameForControl( wxpeer, pos , size ) ;
-    wxWidgetIPhoneImpl* c = NULL;
-    wxTextWidgetImpl* t = NULL;
+    wxWidgetIPhoneImpl* c = nullptr;
+    wxTextWidgetImpl* t = nullptr;
     id<UITextInputTraits> tv = nil;
 
 #if wxOSX_IPHONE_USE_TEXTFIELD

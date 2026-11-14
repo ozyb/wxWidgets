@@ -12,20 +12,22 @@
 
 #include "wx/sharedptr.h"
 
+#include <unordered_map>
+
 #ifdef wxHAS_INOTIFY
     class wxFSWatchEntryUnix;
     #define wxFSWatchEntry wxFSWatchEntryUnix
-    WX_DECLARE_STRING_HASH_MAP(wxSharedPtr<wxFSWatchEntry>,wxFSWatchEntries);
+    using wxFSWatchEntries = std::unordered_map<wxString, wxSharedPtr<wxFSWatchEntry>>;
     #include "wx/unix/private/fswatcher_inotify.h"
 #elif defined(wxHAS_KQUEUE)
     class wxFSWatchEntryKq;
     #define wxFSWatchEntry wxFSWatchEntryKq
-    WX_DECLARE_STRING_HASH_MAP(wxSharedPtr<wxFSWatchEntry>,wxFSWatchEntries);
+    using wxFSWatchEntries = std::unordered_map<wxString, wxSharedPtr<wxFSWatchEntry>>;
     #include "wx/unix/private/fswatcher_kqueue.h"
 #elif defined(__WINDOWS__)
     class wxFSWatchEntryMSW;
     #define wxFSWatchEntry wxFSWatchEntryMSW
-    WX_DECLARE_STRING_HASH_MAP(wxSharedPtr<wxFSWatchEntry>,wxFSWatchEntries);
+    using wxFSWatchEntries = std::unordered_map<wxString, wxSharedPtr<wxFSWatchEntry>>;
     #include "wx/msw/private/fswatcher.h"
 #else
     #define wxFSWatchEntry wxFSWatchEntryPolling
@@ -85,11 +87,9 @@ public:
     virtual bool RemoveAll()
     {
         bool ret = true;
-        for ( wxFSWatchEntries::iterator it = m_watches.begin();
-              it != m_watches.end();
-              ++it )
+        for ( const auto& watch : m_watches )
         {
-            if ( !DoRemove(it->second) )
+            if ( !DoRemove(watch.second) )
                ret = false;
         }
         m_watches.clear();

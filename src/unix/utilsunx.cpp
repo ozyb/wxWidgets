@@ -34,14 +34,12 @@
     #include "wx/wxcrtvararg.h"
     #if USE_PUTENV
         #include "wx/module.h"
-        #include "wx/hashmap.h"
     #endif
 #endif
 
 #include "wx/apptrait.h"
 
 #include "wx/process.h"
-#include "wx/scopedptr.h"
 #include "wx/thread.h"
 
 #include "wx/cmdline.h"
@@ -50,6 +48,7 @@
 
 #include "wx/private/selectdispatcher.h"
 #include "wx/private/fdiodispatcher.h"
+#include "wx/private/glibc.h"
 #include "wx/unix/private/execute.h"
 #include "wx/unix/pipe.h"
 #include "wx/unix/private.h"
@@ -57,6 +56,10 @@
 #include "wx/evtloop.h"
 #include "wx/mstream.h"
 #include "wx/private/fdioeventloopsourcehandler.h"
+#include "wx/config.h"
+#include "wx/filename.h"
+
+#include <memory>
 
 #include <pwd.h>
 #include <sys/wait.h>       // waitpid()
@@ -80,7 +83,11 @@
 // different platforms and even different versions of the same system (Solaris
 // 7 and 8): if you want to test for this, don't forget that the problems only
 // appear if the large files support is enabled
-#ifdef HAVE_STATFS
+#if defined(HAVE_STATVFS)
+    #include <sys/statvfs.h>
+
+    #define wxStatfs statvfs
+#elif defined(HAVE_STATFS)
     #ifdef __BSD__
         #include <sys/param.h>
         #include <sys/mount.h>
@@ -94,15 +101,9 @@
         // some systems lack statfs() prototype in the system headers (AIX 4)
         extern "C" int statfs(const char *path, struct statfs *buf);
     #endif
-#endif // HAVE_STATFS
+#endif // HAVE_STATVFS/HAVE_STATFS
 
-#ifdef HAVE_STATVFS
-    #include <sys/statvfs.h>
-
-    #define wxStatfs statvfs
-#endif // HAVE_STATVFS
-
-#if defined(HAVE_STATFS) || defined(HAVE_STATVFS)
+#if defined(HAVE_STATVFS) || defined(HAVE_STATFS)
     // WX_STATFS_T is detected by configure
     #define wxStatfs_t WX_STATFS_T
 #endif
@@ -139,6 +140,11 @@
 
 #ifdef HAVE_SETPRIORITY
     #include <sys/resource.h>   // for setpriority()
+#endif
+
+#if defined(__DARWIN__)
+    #include <sys/sysctl.h>
+    #include <AvailabilityMacros.h>
 #endif
 
 // ----------------------------------------------------------------------------
@@ -181,7 +187,7 @@ void wxMicroSleep(unsigned long microseconds)
     tmReq.tv_nsec = (microseconds % 1000000) * 1000;
 
     // we're not interested in remaining time nor in return value
-    (void)nanosleep(&tmReq, NULL);
+    (void)nanosleep(&tmReq, nullptr);
 #elif defined(HAVE_USLEEP)
     // uncomment this if you feel brave or if you are sure that your version
     // of Solaris has a safe usleep() function but please notice that usleep()
@@ -200,6 +206,33 @@ void wxMicroSleep(unsigned long microseconds)
 void wxMilliSleep(unsigned long milliseconds)
 {
     wxMicroSleep(milliseconds*1000);
+}
+
+// ----------------------------------------------------------------------------
+// security
+// ----------------------------------------------------------------------------
+
+void wxSecureZeroMemory(void* v, size_t n)
+{
+#if wxCHECK_GLIBC_VERSION(2, 25) || \
+    (defined(__FreeBSD__) && __FreeBSD__ >= 11)
+    // This non-standard function is somewhat widely available elsewhere too,
+    // but may be found in a non-standard header file, or in a library that is
+    // not linked by default.
+    explicit_bzero(v, n);
+#elif (defined(__DARWIN__) && (MAC_OS_X_VERSION_MIN_REQUIRED >= 1090)) || \
+    defined(__STDC_LIB_EXT1__)
+    // memset_s() is available since OS X 10.9, and may be available on
+    // other platforms.
+    memset_s(v, n, 0, n);
+#else
+    // A generic implementation based on the example at:
+    // http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1381.pdf
+    int c = 0;
+    volatile unsigned char *p = reinterpret_cast<unsigned char *>(v);
+    while ( n-- )
+        *p++ = c;
+#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -297,7 +330,7 @@ bool wxPipeInputStream::CanRead() const
     wxFD_ZERO(&readfds);
     wxFD_SET(fd, &readfds);
 
-    switch ( select(fd + 1, &readfds, NULL, NULL, &tv) )
+    switch ( select(fd + 1, &readfds, nullptr, nullptr, &tv) )
     {
         case -1:
             wxLogSysError(_("Impossible to get child process input"));
@@ -366,7 +399,7 @@ size_t wxPipeOutputStream::OnSysWrite(const void *buffer, size_t size)
 static wxString wxMakeShellCommand(const wxString& command)
 {
     wxString cmd;
-    if ( !command )
+    if ( command.empty() )
     {
         // just an interactive shell
         cmd = wxT("xterm");
@@ -410,7 +443,6 @@ public:
         }
     }
 
-#if wxUSE_UNICODE
     ArgsArray(const wchar_t* const* wargv)
     {
         int argc = 0;
@@ -424,7 +456,6 @@ public:
             m_argv[i] = wxSafeConvertWX2MB(wargv[i]).release();
         }
     }
-#endif // wxUSE_UNICODE
 
     ~ArgsArray()
     {
@@ -443,7 +474,7 @@ private:
     {
         m_argc = argc;
         m_argv = new char *[m_argc + 1];
-        m_argv[m_argc] = NULL;
+        m_argv[m_argc] = nullptr;
     }
 
     int m_argc;
@@ -458,7 +489,7 @@ private:
 // wxExecute implementations
 // ----------------------------------------------------------------------------
 
-#if defined(__DARWIN__) && !defined(__WXOSX_IPHONE__)
+#ifdef __WXDARWIN_OSX__
 bool wxCocoaLaunch(const char* const* argv, pid_t &pid);
 #endif
 
@@ -471,8 +502,6 @@ long wxExecute(const wxString& command, int flags, wxProcess *process,
     return wxExecute(argv, flags, process, env);
 }
 
-#if wxUSE_UNICODE
-
 long wxExecute(const wchar_t* const* wargv, int flags, wxProcess* process,
         const wxExecuteEnv *env)
 {
@@ -480,8 +509,6 @@ long wxExecute(const wchar_t* const* wargv, int flags, wxProcess* process,
 
     return wxExecute(argv, flags, process, env);
 }
-
-#endif // wxUSE_UNICODE
 
 namespace
 {
@@ -519,12 +546,12 @@ int BlockUntilChildExit(wxExecuteData& execData)
 
     // Do register all the FDs we want to monitor here: first, the one used to
     // handle the signals asynchronously.
-    wxScopedPtr<wxFDIOHandler>
+    std::unique_ptr<wxFDIOHandler>
         signalHandler(wxTheApp->RegisterSignalWakeUpPipe(dispatcher));
 
 #if wxUSE_STREAMS
     // And then the two for the child output and error streams if necessary.
-    wxScopedPtr<wxFDIOHandler>
+    std::unique_ptr<wxFDIOHandler>
         stdoutHandler,
         stderrHandler;
     if ( execData.IsRedirected() )
@@ -583,7 +610,7 @@ long wxExecute(const char* const* argv, int flags, wxProcess* process,
                     wxT("wxExecute() can be called only from the main thread") );
 #endif // wxUSE_THREADS
     pid_t pid;
-#if defined(__DARWIN__) && !defined(__WXOSX_IPHONE__)
+#ifdef __WXDARWIN_OSX__
     pid = -1;
     // wxCocoaLaunch() only executes app bundles and only does it asynchronously.
     // It returns false if the target is not an app bundle, thus falling
@@ -595,7 +622,7 @@ long wxExecute(const char* const* argv, int flags, wxProcess* process,
 #endif // __DARWIN__
 
     // this struct contains all information which we use for housekeeping
-    wxScopedPtr<wxExecuteData> execDataPtr(new wxExecuteData);
+    std::unique_ptr<wxExecuteData> execDataPtr(new wxExecuteData);
     wxExecuteData& execData = *execDataPtr;
 
     execData.m_flags = flags;
@@ -867,11 +894,10 @@ long wxExecute(const char* const* argv, int flags, wxProcess* process,
 const wxChar* wxGetHomeDir( wxString *home  )
 {
     *home = wxGetUserHome();
-    wxString tmp;
     if ( home->empty() )
         *home = wxT("/");
 #ifdef __VMS
-    tmp = *home;
+    wxString tmp = *home;
     if ( tmp.Last() != wxT(']'))
         if ( tmp.Last() != wxT('/')) *home << wxT('/');
 #endif
@@ -880,19 +906,19 @@ const wxChar* wxGetHomeDir( wxString *home  )
 
 wxString wxGetUserHome( const wxString &user )
 {
-    struct passwd *who = (struct passwd *) NULL;
+    struct passwd *who = (struct passwd *) nullptr;
 
-    if ( !user )
+    if ( user.empty() )
     {
         wxChar *ptr;
 
-        if ((ptr = wxGetenv(wxT("HOME"))) != NULL)
+        if ((ptr = wxGetenv(wxT("HOME"))) != nullptr)
         {
             return ptr;
         }
 
-        if ((ptr = wxGetenv(wxT("USER"))) != NULL ||
-             (ptr = wxGetenv(wxT("LOGNAME"))) != NULL)
+        if ((ptr = wxGetenv(wxT("USER"))) != nullptr ||
+             (ptr = wxGetenv(wxT("LOGNAME"))) != nullptr)
         {
             who = getpwnam(wxSafeConvertWX2MB(ptr));
         }
@@ -905,10 +931,10 @@ wxString wxGetUserHome( const wxString &user )
     }
     else
     {
-      who = getpwnam (user.mb_str());
+      who = getpwnam (user.mb_str(wxConvWhateverWorks));
     }
 
-    return wxSafeConvertMB2WX(who ? who->pw_dir : 0);
+    return wxSafeConvertMB2WX(who ? who->pw_dir : nullptr);
 }
 
 // ----------------------------------------------------------------------------
@@ -926,7 +952,11 @@ wxGetCommandOutput(const wxString &cmd, wxMBConv& conv = wxConvISO8859_1)
 {
     // Suppress stderr from the shell to avoid outputting errors if the command
     // doesn't exist.
+#ifdef __VMS
+    FILE *f = popen(( "pipe " + cmd + " 2>/nl:").ToAscii(), "r");
+#else
     FILE *f = popen((cmd + " 2>/dev/null").ToAscii(), "r");
+#endif
     if ( !f )
     {
         // Notice that this doesn't happen simply if the command doesn't exist,
@@ -959,7 +989,7 @@ wxGetCommandOutput(const wxString &cmd, wxMBConv& conv = wxConvISO8859_1)
 // private use only)
 static bool wxGetHostNameInternal(wxChar *buf, int sz)
 {
-    wxCHECK_MSG( buf, false, wxT("NULL pointer in wxGetHostNameInternal") );
+    wxCHECK_MSG( buf, false, wxT("null pointer in wxGetHostNameInternal") );
 
     *buf = wxT('\0');
 
@@ -1043,7 +1073,7 @@ bool wxGetUserId(wxChar *buf, int sz)
     struct passwd *who;
 
     *buf = wxT('\0');
-    if ((who = getpwuid(getuid ())) != NULL)
+    if ((who = getpwuid(getuid ())) != nullptr)
     {
         wxStrlcpy (buf, wxSafeConvertMB2WX(who->pw_name), sz);
         return true;
@@ -1058,7 +1088,7 @@ bool wxGetUserName(wxChar *buf, int sz)
     struct passwd *who;
 
     *buf = wxT('\0');
-    if ((who = getpwuid (getuid ())) != NULL)
+    if ((who = getpwuid (getuid ())) != nullptr)
     {
        char *comma = strchr(who->pw_gecos, ',');
        if (comma)
@@ -1079,7 +1109,7 @@ bool wxIsPlatform64Bit()
     (void)wxGetCommandOutput;
     return true;  // 64-bit programs run only on 64-bit platforms
 #else
-    const wxString machine = wxGetCommandOutput(wxT("uname -m"));
+    const wxString machine = wxGetCpuArchitectureName();
 
     // the test for "64" is obviously not 100% reliable but seems to work fine
     // in practice
@@ -1088,7 +1118,48 @@ bool wxIsPlatform64Bit()
 #endif
 }
 
+wxString wxGetCpuArchitectureName()
+{
+    return wxGetCommandOutput(wxT("uname -m"));
+}
+
+wxString wxGetNativeCpuArchitectureName()
+{
+#if defined(__DARWIN__)
+    // macOS on ARM will report an x86_64 process as translated, assume the native CPU is arm64
+    int translated;
+    size_t translated_size = sizeof(translated);
+    if (sysctlbyname("sysctl.proc_translated", &translated, &translated_size, nullptr, 0) == 0)
+        return "arm64";
+    else
+#endif
+        return wxGetCpuArchitectureName();
+}
+
 #ifdef __LINUX__
+
+static bool
+wxGetValuesFromOSRelease(const wxString& filename, wxLinuxDistributionInfo& ret)
+{
+#if wxUSE_CONFIG
+    if ( !wxFileName::Exists(filename) )
+    {
+        return false;
+    }
+
+    wxFileConfig fc(wxEmptyString, wxEmptyString, wxEmptyString, filename);
+    ret.Id = fc.Read(wxS("ID"), wxEmptyString).Capitalize();
+    ret.Description = fc.Read(wxS("PRETTY_NAME"), wxEmptyString);
+    ret.Release = fc.Read(wxS("VERSION_ID"), wxEmptyString);
+    ret.CodeName = fc.Read(wxS("VERSION_CODENAME"), wxEmptyString);
+    ret.ParentName = fc.Read(wxS("ID_LIKE"), wxEmptyString);
+    ret.ParentCodeName = fc.Read(wxS("UBUNTU_CODENAME"), wxEmptyString);
+
+    return true;
+#else
+    return false;
+#endif
+}
 
 static bool
 wxGetValueFromLSBRelease(const wxString& arg, const wxString& lhs, wxString* rhs)
@@ -1103,6 +1174,17 @@ wxGetValueFromLSBRelease(const wxString& arg, const wxString& lhs, wxString* rhs
 wxLinuxDistributionInfo wxGetLinuxDistributionInfo()
 {
     wxLinuxDistributionInfo ret;
+
+    // Read /etc/os-release and fall back to /usr/lib/os-release per below
+    // https://www.freedesktop.org/software/systemd/man/os-release.html
+    if ( wxGetValuesFromOSRelease(wxS("/etc/os-release"), ret) )
+    {
+        return ret;
+    }
+    if ( wxGetValuesFromOSRelease(wxS("/usr/lib/os-release"), ret) )
+    {
+        return ret;
+    }
 
     if ( !wxGetValueFromLSBRelease(wxS("--id"), wxS("Distributor ID:\t"),
                                    &ret.Id) )
@@ -1129,13 +1211,25 @@ wxOperatingSystemId wxGetOsVersion(int *verMaj, int *verMin, int *verMicro)
 {
     // get OS version
     int major = -1, minor = -1, micro = -1;
+#ifdef __VMS
+    wxString release = wxGetCommandOutput(wxT("uname -v"));
+#else
     wxString release = wxGetCommandOutput(wxT("uname -r"));
+#endif
     if ( !release.empty() )
     {
+#ifdef __VMS
+        if ( wxSscanf(release.c_str(), wxT("V%d.%d-%d"), &major, &minor, &micro ) != 3 )
+#else
         if ( wxSscanf(release.c_str(), wxT("%d.%d.%d"), &major, &minor, &micro ) != 3 )
+#endif
         {
             micro = 0;
+#ifdef __VMS
+            if ( wxSscanf(release.c_str(), wxT("V%d.%d"), &major, &minor ) != 2 )
+#else
             if ( wxSscanf(release.c_str(), wxT("%d.%d"), &major, &minor ) != 2 )
+#endif
             {
                 // failed to get version string or unrecognized format
                 major = minor = micro = -1;
@@ -1161,9 +1255,105 @@ wxOperatingSystemId wxGetOsVersion(int *verMaj, int *verMin, int *verMicro)
     return wxPlatformInfo::GetOperatingSystemId(kernel);
 }
 
+static bool
+wxGetDescFromOSRelease(wxString* distName, wxString* version,
+                       wxString* parentName, wxString* parentCodeName)
+{
+#if wxUSE_CONFIG
+    // Read /etc/os-release and fall back to /usr/lib/os-release per below
+    // https://www.freedesktop.org/software/systemd/man/os-release.html
+    static const char* const osReleasePaths[] =
+    {
+        "/etc/os-release",
+        "/usr/lib/os-release"
+    };
+
+    for ( const auto& fileName : osReleasePaths )
+    {
+        if ( wxFileName::Exists(fileName) )
+        {
+            // No app, no vendor, no global file path, just the local config
+            // file to read the values from.
+            wxFileConfig fc({}, {}, {}, fileName);
+
+            // Default value suggested by the spec
+            *distName = fc.Read("NAME", "Linux");
+
+            *version = fc.Read("VERSION");
+
+            *parentName = fc.Read("ID_LIKE");
+            *parentCodeName = fc.Read("UBUNTU_CODENAME");
+
+            return true;
+        }
+    }
+#endif // wxUSE_CONFIG
+
+    return false;
+}
+
 wxString wxGetOsDescription()
 {
+#ifdef __VMS
+    return wxGetCommandOutput(wxT("uname -s -v -m"));
+#else
+    wxString distName, version, parentName, parentCodeName;
+    if ( wxGetDescFromOSRelease(&distName, &version, &parentName, &parentCodeName) )
+    {
+        wxString osDesc = distName;
+        if ( !version.empty() )
+        {
+            osDesc += " " + version;
+        }
+        if ( !parentName.empty() )
+        {
+            if ( !parentCodeName.empty() )
+            {
+                /* TRANSLATORS: first %s is a Linux distribution parent name, second %s is its codename. */
+                osDesc += wxString::Format(_(", based on %s (%s)"), parentName, parentCodeName);
+            }
+            else
+            {
+                /* TRANSLATORS: %s is a Linux distribution parent name. */
+                osDesc += wxString::Format(_(", based on %s"), parentName);
+            }
+        }
+        else if ( !parentCodeName.empty() )
+        {
+            /* TRANSLATORS: %s is an upstream codename. */
+            osDesc += wxString::Format(_(", based on %s"), parentCodeName);
+        }
+        osDesc += ",";
+
+        const wxString unameSystem = wxGetCommandOutput(wxT("uname -s"));
+        const wxString unameRelease = wxGetCommandOutput(wxT("uname -r"));
+        const wxString unameMachine = wxGetCommandOutput(wxT("uname -m"));
+
+        // If any of the strings above is already present in the info
+        // read from os-release, avoid repeating the values to keep
+        // the description relatively short. Also do not repeat
+        // e.g. the machine type if it is already part of the kernel
+        // version number.
+
+        if ( osDesc.Find(unameSystem) == wxNOT_FOUND )
+        {
+            osDesc += " " + unameSystem;
+        }
+        if ( osDesc.Find(unameRelease) == wxNOT_FOUND )
+        {
+            osDesc += " " + unameRelease;
+        }
+        if ( osDesc.Find(unameMachine) == wxNOT_FOUND )
+        {
+            osDesc += " " + unameMachine;
+        }
+
+        osDesc.Trim(false);
+        return osDesc;
+    }
+
     return wxGetCommandOutput(wxT("uname -s -r -m"));
+#endif
 }
 
 bool wxCheckOsVersion(int majorVsn, int minorVsn, int microVsn)
@@ -1299,9 +1489,9 @@ bool wxGetDiskSpace(const wxString& path, wxDiskspaceSize_t *pTotal, wxDiskspace
 
 #if USE_PUTENV
 
-WX_DECLARE_STRING_HASH_MAP(char *, wxEnvVars);
+#include <unordered_map>
 
-static wxEnvVars gs_envVars;
+static std::unordered_map<wxString, char*> gs_envVars;
 
 class wxSetEnvModule : public wxModule
 {
@@ -1309,7 +1499,7 @@ public:
     virtual bool OnInit() { return true; }
     virtual void OnExit()
     {
-        for ( wxEnvVars::const_iterator i = gs_envVars.begin();
+        for ( auto i = gs_envVars.begin();
               i != gs_envVars.end();
               ++i )
         {
@@ -1328,15 +1518,12 @@ wxIMPLEMENT_DYNAMIC_CLASS(wxSetEnvModule, wxModule);
 
 bool wxGetEnv(const wxString& var, wxString *value)
 {
-    // wxGetenv is defined as getenv()
-    char *p = wxGetenv(var);
+    char *p = wxGetenv(var.mb_str(wxConvWhateverWorks));
     if ( !p )
         return false;
 
     if ( value )
-    {
-        *value = p;
-    }
+        value->assign(wxScopedCharBuffer::CreateNonOwned(p), wxConvWhateverWorks);
 
     return true;
 }
@@ -1349,21 +1536,21 @@ static bool wxDoSetEnv(const wxString& variable, const char *value)
 #ifdef HAVE_UNSETENV
         // don't test unsetenv() return value: it's void on some systems (at
         // least Darwin)
-        unsetenv(variable.mb_str());
+        unsetenv(variable.mb_str(wxConvWhateverWorks));
         return true;
 #else
-        value = ""; // we can't pass NULL to setenv()
+        value = ""; // we can't pass nullptr to setenv()
 #endif
     }
 
-    return setenv(variable.mb_str(), value, 1 /* overwrite */) == 0;
+    return setenv(variable.mb_str(wxConvWhateverWorks), value, 1 /* overwrite */) == 0;
 #elif defined(HAVE_PUTENV)
     wxString s = variable;
     if ( value )
         s << wxT('=') << value;
 
     // transform to ANSI
-    const wxWX2MBbuf p = s.mb_str();
+    const wxWX2MBbuf p = s.mb_str(wxConvWhateverWorks);
 
     char *buf = (char *)malloc(strlen(p) + 1);
     strcpy(buf, p);
@@ -1388,12 +1575,12 @@ static bool wxDoSetEnv(const wxString& variable, const char *value)
 
 bool wxSetEnv(const wxString& variable, const wxString& value)
 {
-    return wxDoSetEnv(variable, value.mb_str());
+    return wxDoSetEnv(variable, value.mb_str(wxConvWhateverWorks));
 }
 
 bool wxUnsetEnv(const wxString& variable)
 {
-    return wxDoSetEnv(variable, NULL);
+    return wxDoSetEnv(variable, nullptr);
 }
 
 // ----------------------------------------------------------------------------
@@ -1405,7 +1592,7 @@ bool wxUnsetEnv(const wxString& variable)
 #include <signal.h>
 
 extern "C" {
-static void wxFatalSignalHandler(wxTYPE_SA_HANDLER)
+static void wxFatalSignalHandler(int WXUNUSED(signal))
 {
     if ( wxTheApp )
     {
@@ -1453,10 +1640,10 @@ bool wxHandleFatalExceptions(bool doit)
     else if ( s_savedHandlers )
     {
         // uninstall the signal handler
-        ok &= sigaction(SIGFPE, &s_handlerFPE, NULL) == 0;
-        ok &= sigaction(SIGILL, &s_handlerILL, NULL) == 0;
-        ok &= sigaction(SIGBUS, &s_handlerBUS, NULL) == 0;
-        ok &= sigaction(SIGSEGV, &s_handlerSEGV, NULL) == 0;
+        ok &= sigaction(SIGFPE, &s_handlerFPE, nullptr) == 0;
+        ok &= sigaction(SIGILL, &s_handlerILL, nullptr) == 0;
+        ok &= sigaction(SIGBUS, &s_handlerBUS, nullptr) == 0;
+        ok &= sigaction(SIGSEGV, &s_handlerSEGV, nullptr) == 0;
         if ( !ok )
         {
             wxLogDebug(wxT("Failed to uninstall our signal handler."));
@@ -1505,7 +1692,7 @@ wxAppTraits::RunLoopUntilChildExit(wxExecuteData& execData,
 
 #if wxUSE_STREAMS
     // Monitor the child streams if necessary.
-    wxScopedPtr<wxEventLoopSourceHandler>
+    std::unique_ptr<wxEventLoopSourceHandler>
         stdoutHandler,
         stderrHandler;
     if ( execData.IsRedirected() )
@@ -1610,11 +1797,9 @@ void wxExecuteData::OnSomeChildExited(int WXUNUSED(sig))
     // Make a copy of the list before iterating over it to avoid problems due
     // to deleting entries from it in the process.
     const ChildProcessesData allChildProcesses = ms_childProcesses;
-    for ( ChildProcessesData::const_iterator it = allChildProcesses.begin();
-          it != allChildProcesses.end();
-          ++it )
+    for ( const auto& kv : allChildProcesses )
     {
-        const int pid = it->first;
+        const int pid = kv.first;
 
         // Check whether this child exited.
         int exitcode;
@@ -1624,7 +1809,7 @@ void wxExecuteData::OnSomeChildExited(int WXUNUSED(sig))
         // And handle its termination if it did.
         //
         // Notice that this will implicitly remove it from ms_childProcesses.
-        it->second->OnExit(exitcode);
+        kv.second->OnExit(exitcode);
     }
 }
 

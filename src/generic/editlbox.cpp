@@ -9,9 +9,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_EDITABLELISTBOX
 
@@ -58,9 +55,9 @@ public:
     {
          int w = GetSize().x;
 #ifdef __WXMSW__
-         w -= wxSystemSettings::GetMetric(wxSYS_VSCROLL_X, this) + 6;
+         w -= GetScrollbarSize(wxVERTICAL) + 6;
 #else
-         w -= 2*wxSystemSettings::GetMetric(wxSYS_VSCROLL_X, this);
+         w -= 2*GetScrollbarSize(wxVERTICAL);
 #endif
          if (w < 0) w = 0;
          SetColumnWidth(0, w);
@@ -116,6 +113,10 @@ bool wxEditableListBox::Create(wxWindow *parent, wxWindowID id,
 
     m_style = style;
 
+    // wxEL_ALLOW_NEW requires ability to edit labels so implicitly add wxEL_ALLOW_EDIT
+    if ( m_style & wxEL_ALLOW_NEW )
+      m_style |= wxEL_ALLOW_EDIT;
+
     wxSizer *sizer = new wxBoxSizer(wxVERTICAL);
 
     wxPanel *subp = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
@@ -170,7 +171,7 @@ bool wxEditableListBox::Create(wxWindow *parent, wxWindowID id,
     sizer->Add(subp, wxSizerFlags().Expand());
 
     long st = wxLC_REPORT | wxLC_NO_HEADER | wxLC_SINGLE_SEL | wxSUNKEN_BORDER;
-    if ( style & wxEL_ALLOW_EDIT )
+    if ( m_style & wxEL_ALLOW_EDIT )
          st |= wxLC_EDIT_LABELS;
     m_listCtrl = new CleverListCtrl(this, wxID_ELB_LISTCTRL,
                                     wxDefaultPosition, wxDefaultSize, st);

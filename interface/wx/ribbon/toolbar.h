@@ -78,7 +78,7 @@ public:
     */
     virtual wxRibbonToolBarToolBase* AddTool(
                 int tool_id,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string,
                 wxRibbonButtonKind kind = wxRIBBON_BUTTON_NORMAL);
 
@@ -89,7 +89,7 @@ public:
     */
     virtual wxRibbonToolBarToolBase* AddDropdownTool(
                 int tool_id,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string = wxEmptyString);
 
     /**
@@ -99,7 +99,7 @@ public:
     */
     virtual wxRibbonToolBarToolBase* AddHybridTool(
                 int tool_id,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string = wxEmptyString);
 
     /**
@@ -111,8 +111,8 @@ public:
     */
     virtual wxRibbonToolBarToolBase* AddToggleTool(
         int tool_id,
-        const wxBitmap& bitmap,
-        const wxString& help_string);
+        const wxBitmapBundle& bitmap,
+        const wxString& help_string = wxEmptyString);
 
     /**
         Add a tool to the tool bar.
@@ -140,11 +140,11 @@ public:
     */
     virtual wxRibbonToolBarToolBase* AddTool(
                 int tool_id,
-                const wxBitmap& bitmap,
-                const wxBitmap& bitmap_disabled = wxNullBitmap,
+                const wxBitmapBundle& bitmap,
+                const wxBitmapBundle& bitmap_disabled = wxBitmapBundle(),
                 const wxString& help_string = wxEmptyString,
                 wxRibbonButtonKind kind = wxRIBBON_BUTTON_NORMAL,
-                wxObject* clientData = NULL);
+                wxObject* clientData = nullptr);
 
     /**
         Add a separator to the tool bar.
@@ -166,7 +166,7 @@ public:
     virtual wxRibbonToolBarToolBase* InsertTool(
                 size_t pos,
                 int tool_id,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string,
                 wxRibbonButtonKind kind = wxRIBBON_BUTTON_NORMAL);
 
@@ -182,7 +182,7 @@ public:
     virtual wxRibbonToolBarToolBase* InsertDropdownTool(
                 size_t pos,
                 int tool_id,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string = wxEmptyString);
 
     /**
@@ -196,7 +196,7 @@ public:
     virtual wxRibbonToolBarToolBase* InsertHybridTool(
                 size_t pos,
                 int tool_id,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string = wxEmptyString);
 
     /**
@@ -210,7 +210,7 @@ public:
     virtual wxRibbonToolBarToolBase* InsertToggleTool(
                 size_t pos,
                 int tool_id,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string = wxEmptyString);
 
     /**
@@ -245,11 +245,11 @@ public:
     virtual wxRibbonToolBarToolBase* InsertTool(
                 size_t pos,
                 int tool_id,
-                const wxBitmap& bitmap,
-                const wxBitmap& bitmap_disabled = wxNullBitmap,
+                const wxBitmapBundle& bitmap,
+                const wxBitmapBundle& bitmap_disabled = wxBitmapBundle(),
                 const wxString& help_string = wxEmptyString,
                 wxRibbonButtonKind kind = wxRIBBON_BUTTON_NORMAL,
-                wxObject* clientData = NULL);
+                wxObject* clientData = nullptr);
 
     /**
         Insert a separator to the tool bar at the specified position.
@@ -301,11 +301,22 @@ public:
     /**
         Return the opaque pointer corresponding to the given tool.
 
-        @return an opaque pointer, NULL if is a separator or not found.
+        @return an opaque pointer, @NULL if is a separator or not found.
 
         @since 2.9.4
     */
-    wxRibbonToolBarToolBase* GetToolByPos(size_t pos)const
+    wxRibbonToolBarToolBase* GetToolByPos(size_t pos)const;
+
+    /**
+        Returns the opaque pointer for the tool at the given coordinates,
+        which are relative to the toolbar's parent.
+
+        @return an opaque pointer, @NULL if is not found.
+
+        @since 3.1.5
+    */
+    virtual wxRibbonToolBarToolBase* GetToolByPos(wxCoord x, wxCoord y)const;
+
 
     /**
         Returns the number of tools in the toolbar.
@@ -322,6 +333,15 @@ public:
         @since 2.9.4
     */
     virtual int GetToolId(const wxRibbonToolBarToolBase* tool)const;
+
+    /**
+        Returns the active item of the tool bar or @NULL if there is none.
+
+        The active tool is the one being clicked.
+
+        @since 3.1.7
+    */
+    virtual wxRibbonToolBarToolBase* GetActiveTool() const;
 
     /**
         Get any client data associated with the tool.
@@ -379,6 +399,18 @@ public:
         @since 2.9.4
     */
     virtual int GetToolPos(int tool_id)const;
+
+    /**
+        Returns the tool's rect with coordinates relative to the toolbar's parent,
+        or a default-constructed rect if the tool is not found.
+
+        @param tool_id
+            ID of the tool in question, as passed to AddTool().
+
+        @since 3.1.5
+    */
+    virtual wxRect GetToolRect(int tool_id)const;
+
 
     /**
         Gets the on/off state of a toggle tool.
@@ -440,7 +472,7 @@ public:
 
         @since 2.9.4
     */
-    virtual void SetToolDisabledBitmap(int tool_id, const wxBitmap &bitmap);
+    virtual void SetToolDisabledBitmap(int tool_id, const wxBitmapBundle &bitmap);
 
     /**
         Sets the help string shown in tooltip for the given tool.
@@ -466,7 +498,7 @@ public:
 
         @since 2.9.4
     */
-    virtual void SetToolNormalBitmap(int tool_id, const wxBitmap &bitmap);
+    virtual void SetToolNormalBitmap(int tool_id, const wxBitmapBundle &bitmap);
 
     /**
         Enable or disable a single tool on the bar.
@@ -492,6 +524,42 @@ public:
         @since 2.9.4
     */
     virtual void ToggleTool(int tool_id, bool checked);
+
+    /**
+        Assigns the KeyTip used to click the given tool.
+
+        Pass an empty string to remove it. The KeyTip is stored uppercased.
+        Disabled tools don't show a KeyTip.
+
+        @see wxRibbonBar::ShowKeyTips()
+
+        @since 3.3.4
+    */
+    void SetKeyTip(wxWindowID tool_id, const wxString& keytip);
+
+    /**
+        Returns the KeyTip of the given tool, or an empty string.
+
+        @since 3.3.4
+    */
+    wxString GetKeyTip(wxWindowID tool_id) const;
+
+    /**
+        Assigns the KeyTip used to open a hybrid tool's dropdown menu.
+
+        This is separate from the KeyTip of the tool's main click area, set by
+        SetKeyTip(), and has no effect on non-hybrid tools.
+
+        @since 3.3.4
+    */
+    void SetDropdownKeyTip(wxWindowID tool_id, const wxString& keytip);
+
+    /**
+        Returns the dropdown KeyTip of the given tool, or an empty string.
+
+        @since 3.3.4
+    */
+    wxString GetDropdownKeyTip(wxWindowID tool_id) const;
 };
 
 
@@ -500,7 +568,7 @@ class wxRibbonToolBarEvent : public wxCommandEvent
 public:
     wxRibbonToolBarEvent(wxEventType command_type = wxEVT_NULL,
                        int win_id = 0,
-                         wxRibbonToolBar* bar = NULL);
+                         wxRibbonToolBar* bar = nullptr);
 
     wxRibbonToolBar* GetBar();
     void SetBar(wxRibbonToolBar* bar);

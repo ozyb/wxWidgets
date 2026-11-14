@@ -185,7 +185,6 @@ public:
     @library{wxcore}
     @category{misc}
 
-    @nativeimpl{wxmsw}
     @onlyfor{wxmsw}
 
     @see wxFrame::MSWGetTaskBarButton()
@@ -366,7 +365,7 @@ public:
         Constructs a jump list item.
 
         @param parentCategory
-            Category that the jump list item belongs to. Can be NULL if the item
+            Category that the jump list item belongs to. Can be @NULL if the item
             is going to be added to the category later.
         @param type
             The type for this item.
@@ -388,7 +387,7 @@ public:
         @param iconIndex
             The index of the icon, which is specified by iconPath.
     */
-    wxTaskBarJumpListItem(wxTaskBarJumpListCategory *parentCategory = NULL,
+    wxTaskBarJumpListItem(wxTaskBarJumpListCategory *parentCategory = nullptr,
         wxTaskBarJumpListItemType type = wxTASKBAR_JUMP_LIST_SEPARATOR,
         const wxString& title = wxEmptyString,
         const wxString& filePath = wxEmptyString,
@@ -468,7 +467,7 @@ public:
     void SetIconIndex(int iconIndex);
 
     /**
-        Returns the category this jump list item is in, or NULL if this jump
+        Returns the category this jump list item is in, or @NULL if this jump
         list item is not attached.
     */
     wxTaskBarJumpListCategory* GetCategory() const;
@@ -509,12 +508,12 @@ public:
         Constructs the jump list category.
 
         @param parent
-            Jump list that the jump list category belongs to. Can be NULL if
+            Jump list that the jump list category belongs to. Can be @NULL if
             the category is going to be added to the jump list later.
         @param title
             The title of the category.
     */
-    wxTaskBarJumpListCategory(wxTaskBarJumpList *parent = NULL,
+    wxTaskBarJumpListCategory(wxTaskBarJumpList *parent = nullptr,
                               const wxString& title = wxEmptyString);
     virtual ~wxTaskBarJumpListCategory();
 
@@ -593,8 +592,8 @@ typedef wxVector<wxTaskBarJumpListCategory*> wxTaskBarJumpListCategories;
 /**
     @class wxTaskBarJumpList
 
-    This class is an transparent wrapper around Windows Jump Lists. Jump
-    Lists, as an new feature since Windows 7, are lists of recently opened
+    This class is a transparent wrapper around Windows Jump Lists. Jump
+    Lists, as a new feature since Windows 7, are lists of recently opened
     items, such as files, folders, or websites, which are organized by the
     program that the user use to open them. Jump Lists don't just show
     shortcuts to files. Sometimes they can also provide quick access to tasks.
@@ -617,13 +616,14 @@ public:
         Constructs the jump list.
 
         @param appID
-            Specifies a unique identifier for the application jump list, can be
-            empty by default.
+            Specifies a unique identifier for the application jump list. If it
+            is empty (default value), the global application user model ID,
+            which can be changed by using wxApp::SetClassName(), is used.
 
-            See <a href="http://msdn.microsoft.com/en-us/library/windows/desktop/dd378459(v=vs.85).aspx">
-            Application User Model IDs</a> on MSDN for further details.
+            See <a href="https://learn.microsoft.com/en-us/windows/win32/shell/appids">
+            Application User Model IDs</a> for further details about app IDs.
     */
-    wxTaskBarJumpList(const wxString& appID = wxEmptyString);
+    explicit wxTaskBarJumpList(const wxString& appID = wxEmptyString);
     virtual ~wxTaskBarJumpList();
 
     /**
@@ -649,7 +649,7 @@ public:
     /**
         Accesses the built in tasks category.
 
-        With the returned tasks category, you can append an new task, remove
+        With the returned tasks category, you can append a new task, remove
         an existing task, modify the task item etc.
     */
     wxTaskBarJumpListCategory& GetTasks() const;
@@ -675,7 +675,7 @@ public:
     const wxTaskBarJumpListCategories& GetCustomCategories() const;
 
     /**
-        Add an new custom category.
+        Add a new custom category.
 
         @param category
             A wxTaskBarJumpListCategory object. It will be owned by the

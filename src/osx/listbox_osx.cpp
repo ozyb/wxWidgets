@@ -2,7 +2,6 @@
 // Name:        src/osx/listbox_osx.cpp
 // Purpose:     wxListBox
 // Author:      Stefan Csomor
-// Modified by:
 // Created:     1998-01-01
 // Copyright:   (c) Stefan Csomor
 // Licence:     wxWindows licence
@@ -73,9 +72,6 @@ bool wxListBox::Create(
     DontCreatePeer();
     m_blockEvents = false;
 
-    if ( ! (style & wxNO_BORDER) )
-        style = (style & ~wxBORDER_MASK) | wxSUNKEN_BORDER ;
-
     wxASSERT_MSG( !(style & wxLB_MULTIPLE) || !(style & wxLB_EXTENDED),
                   wxT("only a single listbox selection mode can be specified") );
 
@@ -108,14 +104,14 @@ wxListBox::~wxListBox()
     m_blockEvents = false;
 
     // make sure no native events get sent to a object in destruction
-    SetPeer(NULL);
+    SetPeer(nullptr);
 
     if ( IsSorted() )
         delete m_strings.sorted;
     else
         delete m_strings.unsorted;
 
-    m_strings.sorted = NULL;
+    m_strings.sorted = nullptr;
 }
 
 void wxListBox::FreeData()
@@ -132,10 +128,10 @@ void wxListBox::FreeData()
 
 void wxListBox::DoSetFirstItem(int n)
 {
-    // osx actually only has an implementation for ensuring the visibility of a row, it does so  
+    // osx actually only has an implementation for ensuring the visibility of a row, it does so
     // by scrolling the minimal amount necessary from the current scrolling position.
-    // in order to get the same behaviour I'd have to make sure first that the last line is visible, 
-    // followed by a scrollRowToVisible for the desired line 
+    // in order to get the same behaviour I'd have to make sure first that the last line is visible,
+    // followed by a scrollRowToVisible for the desired line
     GetListPeer()->ListScrollTo( GetCount()-1 );
     GetListPeer()->ListScrollTo( n );
 }
@@ -191,6 +187,14 @@ void wxListBox::DoSetSelection(int n, bool select)
     wxCHECK_RET( n == wxNOT_FOUND || IsValid(n),
         wxT("invalid index in wxListBox::SetSelection") );
 
+    DoSetSelectionWithoutEnsureVisible(n, select);
+
+    if (select)
+        EnsureVisible(n);
+}
+
+void wxListBox::DoSetSelectionWithoutEnsureVisible(int n, bool select)
+{
     m_blockEvents = true;
 
     if ( n == wxNOT_FOUND )
@@ -201,9 +205,6 @@ void wxListBox::DoSetSelection(int n, bool select)
     m_blockEvents = false;
 
     UpdateOldSelections();
-
-    if (select)
-        EnsureVisible(n);
 }
 
 bool wxListBox::IsSelected(int n) const
@@ -250,32 +251,31 @@ wxSize wxListBox::DoGetBestSize() const
     int lbHeight;
 
     {
-        wxClientDC dc(const_cast<wxListBox*>(this));
-        dc.SetFont(GetFont());
+        wxInfoDC dc(const_cast<wxListBox*>(this));
 
         // Find the widest line
         for (unsigned int i = 0; i < GetCount(); i++)
         {
             wxString str( GetString( i ) );
 
-            wxCoord width, height ;
-            dc.GetTextExtent( str , &width, &height);
+            wxCoord width;
+            dc.GetTextExtent(str, &width, nullptr);
             lbWidth = wxMax( lbWidth, width );
         }
 
         // Add room for the scrollbar
-        lbWidth += wxSystemSettings::GetMetric( wxSYS_VSCROLL_X );
+        lbWidth += GetScrollbarSize( wxVERTICAL );
 
         // And just a bit more
         int cy = 12;
 
-        wxCoord width, height ;
-        dc.GetTextExtent( wxT("XX") , &width, &height);
+        wxCoord width;
+        dc.GetTextExtent(wxT("XX"), &width, nullptr);
         int cx = width ;
         lbWidth += cx;
 
         // don't make the listbox too tall (limit height to around 10 items)
-        // but don't make it too small neither
+        // but don't make it too small either
         lbHeight = wxMax( (cy + 4) * wxMin( wxMax( GetCount(), 3 ), 10 ), 70 );
     }
 
@@ -349,31 +349,64 @@ int wxListBox::DoInsertItems(const wxArrayStringsAdapter& items,
 {
     int idx = wxNOT_FOUND;
     unsigned int startpos = pos;
+    wxArrayInt selections;
+
+    if ( !IsSorted() )
+    {
+        if ( HasMultipleSelection() )
+        {
+            GetSelections(selections);
+        }
+        else
+        {
+            int sel = GetSelection();
+            if ( sel != wxNOT_FOUND )
+            {
+                selections.Add(sel);
+            }
+        }
+    }
 
     const unsigned int numItems = items.GetCount();
     for ( unsigned int i = 0; i < numItems; ++i )
     {
         const wxString& item = items[i];
         idx = IsSorted() ? m_strings.sorted->Add(item)
-                         : (m_strings.unsorted->Insert(item, pos), pos++);
+                         : ((void)m_strings.unsorted->Insert(item, pos), pos++);
 
-        m_itemsClientData.Insert(NULL, idx);
+        m_itemsClientData.Insert(nullptr, idx);
         AssignNewItemClientData(idx, clientData, i, type);
 
-        GetListPeer()->ListInsert(startpos+i);
+        GetListPeer()->ListInsert(idx);
 
         OnItemInserted(idx);
     }
 
     GetListPeer()->UpdateLineToEnd(startpos);
 
-    // Inserting the items may scroll the listbox down to show the last
-    // selected one but we don't want to do it as it could result in e.g. the
-    // first items of a listbox be hidden immediately after its creation so
-    // show the first selected item instead. Ideal would probably be to
-    // preserve the old selection unchanged, in fact, but I don't know how to
-    // get the first visible item so for now do at least this.
-    SetFirstItem(startpos);
+    const size_t numSelections = selections.size();
+    for ( size_t i = 0; i < numSelections; ++i )
+    {
+        if ( int(startpos) <= selections[i] )
+        {
+            if ( HasMultipleSelection() )
+            {
+                size_t j;
+
+                // Do not deselect item if it is to be selected below
+                for ( j = 0; j < numSelections; ++j )
+                {
+                    if ( selections[i] == selections[j] + int(numItems) )
+                        break;
+                }
+
+                if ( j == numSelections )
+                    Deselect(selections[i]);
+            }
+
+            DoSetSelectionWithoutEnsureVisible(selections[i] + numItems, true);
+        }
+    }
 
     InvalidateBestSize();
 

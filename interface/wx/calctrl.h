@@ -20,7 +20,7 @@ enum
     // deprecated
     wxCAL_NO_YEAR_CHANGE             = 0x0004,
 
-    // don't allow changing neither month nor year (implies
+    // don't allow changing either month or year (implies
     // wxCAL_NO_YEAR_CHANGE)
     wxCAL_NO_MONTH_CHANGE            = 0x000c,
 
@@ -296,6 +296,12 @@ enum wxCalendarHitTestResult
     @note Changing the selected date will trigger an EVT_CALENDAR_DAY, MONTH or
           YEAR event as well as an EVT_CALENDAR_SEL_CHANGED event.
 
+    @note In wxMSW this control always uses the default user locale, i.e. the
+        month and weekday names are always displayed in the Windows display
+        language and are not affected by wxUILocale. This is a limitation of
+        the native control and wxGenericCalendarCtrl must be used if this is
+        undesirable.
+
     @library{wxcore}
     @category{ctrl}
     @appearance{calendarctrl}
@@ -350,7 +356,7 @@ public:
         This function should be used instead of changing
         @c wxCAL_NO_MONTH_CHANGE style bit. It allows or disallows the user to
         change the month interactively. Note that if the month cannot be
-        changed, the year cannot be changed neither.
+        changed, the year cannot be changed either.
 
         @return @true if the value of this option really changed or @false if
                 it was already set to the requested value.
@@ -448,8 +454,8 @@ public:
         Not implemented in wxGTK currently.
     */
     virtual wxCalendarHitTestResult HitTest(const wxPoint& pos,
-                                            wxDateTime* date = NULL,
-                                            wxDateTime::WeekDay* wd = NULL);
+                                            wxDateTime* date = nullptr,
+                                            wxDateTime::WeekDay* wd = nullptr);
 
     /**
         Clears any attributes associated with the given day (in the range
@@ -523,7 +529,7 @@ public:
     /**
         @name Date Range Functions
      */
-    //@{
+    ///@{
 
     /**
         Restrict the dates that can be selected in the control to the specified
@@ -553,11 +559,11 @@ public:
         @see SetDateRange()
 
         @param lowerdate
-            If non-@NULL, the value of the low limit for the dates shown by the
+            If non-null, the value of the low limit for the dates shown by the
             control is returned (which may be ::wxDefaultDateTime if no limit
             is set).
         @param upperdate
-            If non-@NULL, the value of the upper limit for the dates shown by
+            If non-null, the value of the upper limit for the dates shown by
             the control is returned (which may be ::wxDefaultDateTime if no
             limit is set).
         @return
@@ -566,6 +572,6 @@ public:
     virtual bool GetDateRange(wxDateTime *lowerdate,
                                 wxDateTime *upperdate) const;
 
-    //@}
+    ///@}
 };
 

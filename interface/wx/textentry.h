@@ -81,7 +81,7 @@ public:
         @since 2.9.2
 
         @param completer
-            The object to be used for generating completions if non-@NULL. If
+            The object to be used for generating completions if non-null. If
             it is @NULL, auto-completion is disabled. The wxTextEntry object
             takes ownership of this pointer and will delete it in any case
             (i.e. even if this method returns @false).
@@ -148,7 +148,7 @@ public:
         Returns @true if the contents of the clipboard can be pasted into the
         text control.
 
-        On some platforms (Motif, GTK) this is an approximation and returns
+        On some platforms (GTK) this is an approximation and returns
         @true if the control is editable, @false otherwise.
     */
     virtual bool CanPaste() const;
@@ -174,7 +174,7 @@ public:
         The insertion point is set to the start of the control (i.e. position
         0) by this function.
 
-        This functions does not generate the @c wxEVT_TEXT
+        This function does not generate the @c wxEVT_TEXT
         event but otherwise is identical to SetValue().
 
         See @ref overview_events_prog for more information.
@@ -410,7 +410,13 @@ public:
         event is sent to notify the program about it (giving it the possibility
         to show an explanatory message, for example) and the extra input is discarded.
 
-        Note that in wxGTK this function may only be used with single line text controls.
+        @note In wxMSW the program may write more than @a len characters into
+        the control programmatically, even if the user is not able to enter
+        more than @a len characters. This is, however, not the case in the
+        other ports and it is recommended not to rely on this behaviour.
+
+        @note This function may be used with single line text controls in all
+        ports but only works for multi-line text controls in wxMSW and wxGTK.
     */
     virtual void SetMaxLength(unsigned long len);
 
@@ -463,8 +469,8 @@ public:
         Notice that hints are known as <em>cue banners</em> under MSW or
         <em>placeholder strings</em> under macOS.
 
-        @remarks Currently implemented natively on Windows (Vista and later
-            only), macOS and GTK+ (3.2 and later).
+        @remarks Currently implemented natively on Windows, macOS and GTK+ (3.2
+            and later).
 
             For the platforms without native hints support, the implementation
             has several known limitations. Notably, the hint display will not
@@ -497,7 +503,7 @@ public:
      */
     virtual wxString GetHint() const;
 
-    //@{
+    ///@{
     /**
         Attempts to set the control margins. When margins are given as wxPoint,
         x indicates the left and y the top margin. Use -1 to indicate that
@@ -510,7 +516,7 @@ public:
     */
     bool SetMargins(const wxPoint& pt);
     bool SetMargins(wxCoord left, wxCoord top = -1);
-    //@}
+    ///@}
 
     /**
         Returns the margins used by the control. The @c x field of the returned

@@ -13,16 +13,18 @@ class QFontDialog;
 class WXDLLIMPEXP_CORE wxFontDialog : public wxFontDialogBase
 {
 public:
-    wxFontDialog() { }
+    wxFontDialog() = default;
     wxFontDialog(wxWindow *parent) { Create(parent); }
     wxFontDialog(wxWindow *parent, const wxFontData& data) { Create(parent, data); }
 
+    // Use Qt's standard font dialog instead of the operating system font dialog.
+    void QtDontUseNativeDialog();
+
 protected:
-    bool DoCreate(wxWindow *parent) wxOVERRIDE;
+    bool DoCreate(wxWindow *parent) override;
 
 private:
-
-    wxFontData m_data;
+    QFontDialog* GetQFontDialog() const;
 
     wxDECLARE_DYNAMIC_CLASS(wxFontDialog);
 };

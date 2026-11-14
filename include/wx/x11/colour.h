@@ -1,8 +1,7 @@
 /////////////////////////////////////////////////////////////////////////////
 // Name:        wx/x11/colour.h
-// Purpose:     wxColour class
+// Purpose:     wxColourImpl class
 // Author:      Julian Smart, Robert Roebling
-// Modified by:
 // Created:     17/09/98
 // Copyright:   (c) Julian Smart, Robert Roebling
 // Licence:     wxWindows licence
@@ -26,27 +25,23 @@ class WXDLLIMPEXP_FWD_CORE wxPaintDC;
 class WXDLLIMPEXP_FWD_CORE wxBitmap;
 class WXDLLIMPEXP_FWD_CORE wxWindow;
 
-class WXDLLIMPEXP_FWD_CORE wxColour;
-
 //-----------------------------------------------------------------------------
-// wxColour
+// wxColourImpl
 //-----------------------------------------------------------------------------
 
-class WXDLLIMPEXP_CORE wxColour : public wxColourBase
+class WXDLLIMPEXP_CORE wxColourImpl : public wxColourBase
 {
 public:
     // constructors
     // ------------
-    DEFINE_STD_WXCOLOUR_CONSTRUCTORS
+    wxColourImpl() = default;
 
-    virtual ~wxColour();
+    bool operator==(const wxColourImpl& col) const;
+    bool operator!=(const wxColourImpl& col) const { return !(*this == col); }
 
-    bool operator==(const wxColour& col) const;
-    bool operator!=(const wxColour& col) const { return !(*this == col); }
-
-    unsigned char Red() const;
-    unsigned char Green() const;
-    unsigned char Blue() const;
+    unsigned char Red() const override;
+    unsigned char Green() const override;
+    unsigned char Blue() const override;
 
     // Implementation part
 
@@ -55,16 +50,13 @@ public:
     WXColor *GetColor() const;
 
 protected:
-    virtual wxGDIRefData *CreateGDIRefData() const;
-    virtual wxGDIRefData *CloneGDIRefData(const wxGDIRefData *data) const;
+    virtual wxGDIRefData *CreateGDIRefData() const override;
+    wxNODISCARD virtual wxGDIRefData *CloneGDIRefData(const wxGDIRefData *data) const override;
 
     virtual void
-    InitRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a);
+    InitRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a) override;
 
-    virtual bool FromString(const wxString& str);
-
-private:
-    wxDECLARE_DYNAMIC_CLASS(wxColour);
+    virtual bool FromString(const wxString& str) override;
 };
 
 #endif // _WX_COLOUR_H_

@@ -39,14 +39,20 @@ public:
         const wxValidator& validator = wxDefaultValidator,
         const wxString& name = wxASCII_STR(wxCollapsibleHeaderCtrlNameStr));
 
-    virtual void SetCollapsed(bool collapsed = true) wxOVERRIDE;
+    virtual void SetCollapsed(bool collapsed = true) override;
 
-    virtual bool IsCollapsed() const wxOVERRIDE
+    virtual bool IsCollapsed() const override
         { return m_collapsed; }
+
+    virtual bool HasTransparentBackground() override { return true; }
+
+#if wxUSE_ACCESSIBILITY
+    virtual wxAccessible* CreateAccessible() override;
+#endif // wxUSE_ACCESSIBILITY
 
 protected:
 
-    virtual wxSize DoGetBestClientSize() const wxOVERRIDE;
+    virtual wxSize DoGetBestClientSize() const override;
 
 private:
     bool m_collapsed;
@@ -75,6 +81,10 @@ private:
     void OnChar(wxKeyEvent& event);
 
     void DoSetCollapsed(bool collapsed);
+
+#if wxUSE_ACCESSIBILITY
+    friend class wxCollapsibleHeaderCtrlAccessible;
+#endif // wxUSE_ACCESSIBILITY
 
     wxDECLARE_NO_COPY_CLASS(wxGenericCollapsibleHeaderCtrl);
 };

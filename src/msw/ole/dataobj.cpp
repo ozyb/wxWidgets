@@ -2,7 +2,6 @@
 // Name:        src/msw/ole/dataobj.cpp
 // Purpose:     implementation of wx[I]DataObject class
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     10.05.98
 // Copyright:   (c) 1998 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 // Licence:     wxWindows licence
@@ -19,13 +18,11 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#if defined(__BORLANDC__)
-    #pragma hdrstop
-#endif
 
 #if wxUSE_DATAOBJ
 
 #ifndef WX_PRECOMP
+    #include "wx/dcmemory.h"
     #include "wx/intl.h"
     #include "wx/log.h"
     #include "wx/utils.h"
@@ -36,6 +33,19 @@
 
 #include "wx/scopedarray.h"
 #include "wx/vector.h"
+
+#if wxUSE_OLE && wxUSE_STREAMS && wxUSE_DATETIME
+    #include "wx/datetime.h"
+    #include "wx/filename.h"
+    #include "wx/mstream.h"
+    #include "wx/scopeguard.h"
+    #include "wx/wfstream.h"
+
+    #include "wx/private/make_unique.h"
+
+    #include <algorithm>
+#endif // wxUSE_OLE && wxUSE_STREAMS && wxUSE_DATETIME
+
 #include "wx/msw/private.h"         // includes <windows.h>
 #include "wx/msw/dib.h"
 #include "wx/msw/wrapshl.h"
@@ -44,6 +54,7 @@
 #include <oleauto.h>
 
 #include "wx/msw/ole/oleutils.h"
+#include "wx/msw/private/comptr.h"
 #endif // wxUSE_OLE
 
 #ifndef CFSTR_SHELLURL
@@ -67,15 +78,15 @@
 namespace
 {
 
-wxDataFormat HtmlFormatFixup(wxDataFormat format)
+wxDataFormat NonStandardFormatsFixup(wxDataFormat format)
 {
-    // Since the HTML format is dynamically registered, the wxDF_HTML
-    // format does not match the native constant in the way other formats do,
+    // Since the HTML and PNG formats are dynamically registered, the wxDF_HTML and wxDF_PNG
+    // formats do not match the native constants in the way other formats do,
     // so for the format checks below to work, we must change the native
-    // id to the wxDF_HTML constant.
+    // id to the wxDF_HTML or wxDF_PNG constant.
     //
     // But skip this for the standard constants which are never going to match
-    // wxDF_HTML anyhow.
+    // wxDF_HTML or wxDF_PNG anyhow.
     if ( !format.IsStandard() )
     {
         wxChar szBuf[256];
@@ -83,6 +94,8 @@ wxDataFormat HtmlFormatFixup(wxDataFormat format)
         {
             if ( wxStrcmp(szBuf, wxT("HTML Format")) == 0 )
                 format = wxDF_HTML;
+            else if ( wxStrcmp(szBuf, wxT("PNG")) == 0 )
+                format = wxDF_PNG;
         }
     }
 
@@ -93,7 +106,7 @@ wxDataFormat HtmlFormatFixup(wxDataFormat format)
 // helper function for wxCopyStgMedium()
 HGLOBAL wxGlobalClone(HGLOBAL hglobIn)
 {
-    HGLOBAL hglobOut = NULL;
+    HGLOBAL hglobOut = nullptr;
 
     GlobalPtrLock ptrIn(hglobIn);
     if (ptrIn)
@@ -119,7 +132,7 @@ HRESULT wxCopyStgMedium(const STGMEDIUM *pmediumIn, STGMEDIUM *pmediumOut)
     HRESULT hres = S_OK;
     STGMEDIUM stgmOut = *pmediumIn;
 
-    if (pmediumIn->pUnkForRelease == NULL &&
+    if (pmediumIn->pUnkForRelease == nullptr &&
         !(pmediumIn->tymed & (TYMED_ISTREAM | TYMED_ISTORAGE)))
     {
         // Object needs to be cloned.
@@ -174,10 +187,10 @@ public:
     virtual ~wxIEnumFORMATETC() { delete [] m_formats; }
 
     // IEnumFORMATETC
-    STDMETHODIMP Next(ULONG celt, FORMATETC *rgelt, ULONG *pceltFetched) wxOVERRIDE;
-    STDMETHODIMP Skip(ULONG celt) wxOVERRIDE;
-    STDMETHODIMP Reset() wxOVERRIDE;
-    STDMETHODIMP Clone(IEnumFORMATETC **ppenum) wxOVERRIDE;
+    STDMETHODIMP Next(ULONG celt, FORMATETC *rgelt, ULONG *pceltFetched) override;
+    STDMETHODIMP Skip(ULONG celt) override;
+    STDMETHODIMP Reset() override;
+    STDMETHODIMP Clone(IEnumFORMATETC **ppenum) override;
 
     DECLARE_IUNKNOWN_METHODS;
 
@@ -205,15 +218,15 @@ public:
     void SetDeleteFlag() { m_mustDelete = true; }
 
     // IDataObject
-    STDMETHODIMP GetData(FORMATETC *pformatetcIn, STGMEDIUM *pmedium) wxOVERRIDE;
-    STDMETHODIMP GetDataHere(FORMATETC *pformatetc, STGMEDIUM *pmedium) wxOVERRIDE;
-    STDMETHODIMP QueryGetData(FORMATETC *pformatetc) wxOVERRIDE;
-    STDMETHODIMP GetCanonicalFormatEtc(FORMATETC *In, FORMATETC *pOut) wxOVERRIDE;
-    STDMETHODIMP SetData(FORMATETC *pfetc, STGMEDIUM *pmedium, BOOL fRelease) wxOVERRIDE;
-    STDMETHODIMP EnumFormatEtc(DWORD dwDirection, IEnumFORMATETC **ppenumFEtc) wxOVERRIDE;
-    STDMETHODIMP DAdvise(FORMATETC *pfetc, DWORD ad, IAdviseSink *p, DWORD *pdw) wxOVERRIDE;
-    STDMETHODIMP DUnadvise(DWORD dwConnection) wxOVERRIDE;
-    STDMETHODIMP EnumDAdvise(IEnumSTATDATA **ppenumAdvise) wxOVERRIDE;
+    STDMETHODIMP GetData(FORMATETC *pformatetcIn, STGMEDIUM *pmedium) override;
+    STDMETHODIMP GetDataHere(FORMATETC *pformatetc, STGMEDIUM *pmedium) override;
+    STDMETHODIMP QueryGetData(FORMATETC *pformatetc) override;
+    STDMETHODIMP GetCanonicalFormatEtc(FORMATETC *In, FORMATETC *pOut) override;
+    STDMETHODIMP SetData(FORMATETC *pfetc, STGMEDIUM *pmedium, BOOL fRelease) override;
+    STDMETHODIMP EnumFormatEtc(DWORD dwDirection, IEnumFORMATETC **ppenumFEtc) override;
+    STDMETHODIMP DAdvise(FORMATETC *pfetc, DWORD ad, IAdviseSink *p, DWORD *pdw) override;
+    STDMETHODIMP DUnadvise(DWORD dwConnection) override;
+    STDMETHODIMP EnumDAdvise(IEnumSTATDATA **ppenumAdvise) override;
 
     DECLARE_IUNKNOWN_METHODS;
 
@@ -299,7 +312,7 @@ wxIDataObject::SaveSystemData(FORMATETC *pformatetc,
                                  STGMEDIUM *pmedium,
                                  BOOL fRelease)
 {
-    if ( pformatetc == NULL || pmedium == NULL )
+    if ( pformatetc == nullptr || pmedium == nullptr )
         return E_INVALIDARG;
 
     // remove entry if already available
@@ -350,7 +363,7 @@ wxIDataObject::SaveSystemData(FORMATETC *pformatetc,
 
 bool wxDataFormat::operator==(wxDataFormatId format) const
 {
-    return HtmlFormatFixup(*this).m_format == (NativeFormat)format;
+    return NonStandardFormatsFixup(*this).m_format == (NativeFormat)format;
 }
 
 bool wxDataFormat::operator!=(wxDataFormatId format) const
@@ -360,7 +373,7 @@ bool wxDataFormat::operator!=(wxDataFormatId format) const
 
 bool wxDataFormat::operator==(const wxDataFormat& format) const
 {
-    return HtmlFormatFixup(*this).m_format == HtmlFormatFixup(format).m_format;
+    return NonStandardFormatsFixup(*this).m_format == NonStandardFormatsFixup(format).m_format;
 }
 
 bool wxDataFormat::operator!=(const wxDataFormat& format) const
@@ -370,7 +383,7 @@ bool wxDataFormat::operator!=(const wxDataFormat& format) const
 
 bool wxDataFormat::operator==(NativeFormat format) const
 {
-    return HtmlFormatFixup(*this).m_format == format;
+    return NonStandardFormatsFixup(*this).m_format == format;
 }
 
 bool wxDataFormat::operator!=(NativeFormat format) const
@@ -425,10 +438,12 @@ wxIEnumFORMATETC::wxIEnumFORMATETC(const wxDataFormat *formats, ULONG nCount)
     m_nCount = nCount;
     m_formats = new CLIPFORMAT[nCount];
     for ( ULONG n = 0; n < nCount; n++ ) {
-        if (formats[n].GetFormatId() != wxDF_HTML)
-            m_formats[n] = formats[n].GetFormatId();
-        else
+        if ( formats[n].GetFormatId() == wxDF_HTML )
             m_formats[n] = ::RegisterClipboardFormat(wxT("HTML Format"));
+        else if ( formats[n].GetFormatId() == wxDF_PNG )
+            m_formats[n] = ::RegisterClipboardFormat(wxT("PNG"));
+        else
+            m_formats[n] = formats[n].GetFormatId();
     }
 }
 
@@ -442,7 +457,7 @@ STDMETHODIMP wxIEnumFORMATETC::Next(ULONG      celt,
     while (m_nCurrent < m_nCount && numFetched < celt) {
         FORMATETC format;
         format.cfFormat = m_formats[m_nCurrent++];
-        format.ptd      = NULL;
+        format.ptd      = nullptr;
         format.dwAspect = DVASPECT_CONTENT;
         format.lindex   = -1;
         format.tymed    = TYMED_HGLOBAL;
@@ -485,7 +500,7 @@ STDMETHODIMP wxIEnumFORMATETC::Clone(IEnumFORMATETC **ppenum)
     wxLogTrace(wxTRACE_OleCalls, wxT("wxIEnumFORMATETC::Clone"));
 
     // unfortunately, we can't reuse the code in ctor - types are different
-    wxIEnumFORMATETC *pNew = new wxIEnumFORMATETC(NULL, 0);
+    wxIEnumFORMATETC *pNew = new wxIEnumFORMATETC(nullptr, 0);
     pNew->m_nCount = m_nCount;
     pNew->m_formats = new CLIPFORMAT[m_nCount];
     for ( ULONG n = 0; n < m_nCount; n++ ) {
@@ -543,7 +558,7 @@ STDMETHODIMP wxIDataObject::GetData(FORMATETC *pformatetcIn, STGMEDIUM *pmedium)
     // for the bitmaps and metafiles we use the handles instead of global memory
     // to pass the data
     wxDataFormat format = (wxDataFormat::NativeFormat)pformatetcIn->cfFormat;
-    format = HtmlFormatFixup(format);
+    format = NonStandardFormatsFixup(format);
 
     // is this system data?
     if ( GetSystemData(format, pmedium) )
@@ -585,7 +600,7 @@ STDMETHODIMP wxIDataObject::GetData(FORMATETC *pformatetcIn, STGMEDIUM *pmedium)
             size += m_pDataObject->GetBufferOffset( format );
 
             HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE | GMEM_SHARE, size);
-            if ( hGlobal == NULL ) {
+            if ( hGlobal == nullptr ) {
                 wxLogLastError(wxT("GlobalAlloc"));
                 return E_OUTOFMEMORY;
             }
@@ -595,7 +610,7 @@ STDMETHODIMP wxIDataObject::GetData(FORMATETC *pformatetcIn, STGMEDIUM *pmedium)
             pmedium->hGlobal = hGlobal;
     }
 
-    pmedium->pUnkForRelease = NULL;
+    pmedium->pUnkForRelease = nullptr;
 
     // do copy the data
     hr = GetDataHere(pformatetcIn, pmedium);
@@ -606,6 +621,21 @@ STDMETHODIMP wxIDataObject::GetData(FORMATETC *pformatetcIn, STGMEDIUM *pmedium)
         }
 
         return hr;
+    }
+
+    if ( (pformatetcIn->tymed & (TYMED_HGLOBAL | TYMED_ISTREAM)) == TYMED_ISTREAM ) {
+        IStream* stream = nullptr;
+        hr = ::CreateStreamOnHGlobal(pmedium->hGlobal,
+                                     TRUE, // delete on release
+                                     &stream);
+        if ( FAILED(hr) ) {
+            GlobalFree(pmedium->hGlobal);
+            return hr;
+        }
+
+        wxZeroMemory(*pmedium);
+        pmedium->tymed = TYMED_ISTREAM;
+        pmedium->pstm = stream;
     }
 
     return S_OK;
@@ -693,7 +723,7 @@ STDMETHODIMP wxIDataObject::SetData(FORMATETC *pformatetc,
             {
                 wxDataFormat format = pformatetc->cfFormat;
 
-                format = HtmlFormatFixup(format);
+                format = NonStandardFormatsFixup(format);
 
                 // check if this format is supported
                 if ( !m_pDataObject->IsSupported(format, wxDataObject::Set) ) {
@@ -718,17 +748,12 @@ STDMETHODIMP wxIDataObject::SetData(FORMATETC *pformatetc,
                     case wxDF_HTML:
                     case CF_TEXT:
                     case CF_OEMTEXT:
-                        size = strlen((const char *)ptr.Get());
+                        // Size must include the trailing NUL.
+                        size = strlen((const char *)ptr.Get()) + 1;
                         break;
-#if !(defined(__BORLANDC__) && (__BORLANDC__ < 0x500))
                     case CF_UNICODETEXT:
-#if ( defined(__BORLANDC__) && (__BORLANDC__ > 0x530) )
-                        size = std::wcslen((const wchar_t *)ptr.Get()) * sizeof(wchar_t);
-#else
-                        size = wxWcslen((const wchar_t *)ptr.Get()) * sizeof(wchar_t);
-#endif
+                        size = (wxWcslen((const wchar_t *)ptr.Get()) + 1) * sizeof(wchar_t);
                         break;
-#endif
                     case CF_BITMAP:
                     case CF_HDROP:
                         // these formats don't use size at all, anyhow (but
@@ -745,6 +770,9 @@ STDMETHODIMP wxIDataObject::SetData(FORMATETC *pformatetc,
                     case CF_METAFILEPICT:
                         size = sizeof(METAFILEPICT);
                         break;
+
+                    case wxDF_PNG:
+                        wxFALLTHROUGH;
 
                     default:
                         size = ptr.GetSize();
@@ -798,15 +826,17 @@ STDMETHODIMP wxIDataObject::SetData(FORMATETC *pformatetc,
 STDMETHODIMP wxIDataObject::QueryGetData(FORMATETC *pformatetc)
 {
     // do we accept data in this format?
-    if ( pformatetc == NULL ) {
+    if ( pformatetc == nullptr ) {
         wxLogTrace(wxTRACE_OleCalls,
                    wxT("wxIDataObject::QueryGetData: invalid ptr."));
 
         return E_INVALIDARG;
     }
 
-    // the only one allowed by current COM implementation
-    if ( pformatetc->lindex != -1 ) {
+    // the only ones allowed by current COM implementation (0 is used for e.g.
+    // CFSTR_FILECONTENTS which is not handled by wx itself, but could be by
+    // the application)
+    if ( pformatetc->lindex != -1 && pformatetc->lindex != 0 ) {
         wxLogTrace(wxTRACE_OleCalls,
                    wxT("wxIDataObject::QueryGetData: bad lindex %ld"),
                    pformatetc->lindex);
@@ -825,7 +855,7 @@ STDMETHODIMP wxIDataObject::QueryGetData(FORMATETC *pformatetc)
 
     // and now check the type of data requested
     wxDataFormat format = pformatetc->cfFormat;
-    format = HtmlFormatFixup(format);
+    format = NonStandardFormatsFixup(format);
 
     if ( m_pDataObject->IsSupportedFormat(format) ) {
         wxLogTrace(wxTRACE_OleCalls, wxT("wxIDataObject::QueryGetData: %s ok"),
@@ -869,8 +899,8 @@ STDMETHODIMP wxIDataObject::GetCanonicalFormatEtc(FORMATETC *WXUNUSED(pFormatetc
     wxLogTrace(wxTRACE_OleCalls, wxT("wxIDataObject::GetCanonicalFormatEtc"));
 
     // TODO we might want something better than this trivial implementation here
-    if ( pFormatetcOut != NULL )
-        pFormatetcOut->ptd = NULL;
+    if ( pFormatetcOut != nullptr )
+        pFormatetcOut->ptd = nullptr;
 
     return DATA_S_SAMEFORMATETC;
 }
@@ -954,7 +984,7 @@ void wxDataObject::SetAutoDelete()
     m_pIDataObject->Release();
 
     // so that the dtor doesn't crash
-    m_pIDataObject = NULL;
+    m_pIDataObject = nullptr;
 }
 
 size_t wxDataObject::GetBufferOffset(const wxDataFormat& format )
@@ -971,7 +1001,7 @@ const void *wxDataObject::GetSizeFromBuffer(const void *buffer,
     if ( !realsz )
     {
         wxLogLastError(wxT("GlobalSize"));
-        return NULL;
+        return nullptr;
     }
 
     *size = realsz;
@@ -1043,10 +1073,42 @@ const wxChar *wxDataObject::GetFormatName(wxDataFormat format)
 // wxBitmapDataObject supports CF_DIB format
 // ----------------------------------------------------------------------------
 
+namespace
+{
+
+// Modify bitmap if necessary, i.e. if it uses 0RGB format in which alpha
+// channel is present but is entirely 0, to make it just plain RGB, i.e.
+// without alpha channel at all, to ensure compatibility with the applications
+// not recognizing the special case of 0RGB and handling such bitmaps as
+// completely transparent, see #17640.
+void RemoveAlphaIfNecessary(wxBitmap& bmp)
+{
+    // Replace 0RGB bitmap with its RGB copy to ensure compatibility with
+    // applications not recognizing bitmaps in 0RGB format, see #17640.
+    if ( bmp.GetDepth() == 32 && !bmp.HasAlpha() )
+    {
+        wxBitmap bmpRGB(bmp.GetSize(), 24);
+        {
+            wxMemoryDC dc(bmpRGB);
+            dc.DrawBitmap(bmp, 0, 0);
+        }
+
+        bmp = bmpRGB;
+    }
+}
+
+} // anonymous namespace
+
 size_t wxBitmapDataObject::GetDataSize() const
 {
 #if wxUSE_WXDIB
-    return wxDIB::ConvertFromBitmap(NULL, GetHbitmapOf(GetBitmap()));
+    wxBitmap& bmp = const_cast<wxBitmapDataObject*>(this)->m_bitmap;
+
+    // Note that we need to do this here too and not just in GetDataHere()
+    // because the size of the bitmap without the alpha channel is different.
+    RemoveAlphaIfNecessary(bmp);
+
+    return wxDIB::ConvertFromBitmap(nullptr, GetHbitmapOf(bmp));
 #else
     return 0;
 #endif
@@ -1055,9 +1117,13 @@ size_t wxBitmapDataObject::GetDataSize() const
 bool wxBitmapDataObject::GetDataHere(void *buf) const
 {
 #if wxUSE_WXDIB
+    wxBitmap& bmp = const_cast<wxBitmapDataObject*>(this)->m_bitmap;
+
+    RemoveAlphaIfNecessary(bmp);
+
     BITMAPINFO * const pbi = (BITMAPINFO *)buf;
 
-    return wxDIB::ConvertFromBitmap(pbi, GetHbitmapOf(GetBitmap())) != 0;
+    return wxDIB::ConvertFromBitmap(pbi, GetHbitmapOf(bmp)) != 0;
 #else
     wxUnusedVar(buf);
     return false;
@@ -1149,9 +1215,9 @@ size_t wxBitmapDataObject::GetDataSize(const wxDataFormat& format) const
         // first get the info
         BITMAPINFO bi;
         if ( !GetDIBits(hdc, (HBITMAP)m_bitmap.GetHBITMAP(), 0, 0,
-                        NULL, &bi, DIB_RGB_COLORS) )
+                        nullptr, &bi, DIB_RGB_COLORS) )
         {
-            wxLogLastError(wxT("GetDIBits(NULL)"));
+            wxLogLastError(wxT("GetDIBits(nullptr)"));
 
             return 0;
         }
@@ -1182,9 +1248,9 @@ bool wxBitmapDataObject::GetDataHere(const wxDataFormat& format,
 
         // first get the info
         BITMAPINFO *pbi = (BITMAPINFO *)pBuf;
-        if ( !GetDIBits(hdc, hbmp, 0, 0, NULL, pbi, DIB_RGB_COLORS) )
+        if ( !GetDIBits(hdc, hbmp, 0, 0, nullptr, pbi, DIB_RGB_COLORS) )
         {
-            wxLogLastError(wxT("GetDIBits(NULL)"));
+            wxLogLastError(wxT("GetDIBits(nullptr)"));
 
             return 0;
         }
@@ -1274,7 +1340,7 @@ bool wxFileDataObject::SetData(size_t WXUNUSED(size),
     HDROP hdrop = static_cast<HDROP>(const_cast<void*>(pData));   // NB: it works, but I'm not sure about it
 
     // get number of files (magic value -1)
-    UINT nFiles = ::DragQueryFile(hdrop, (unsigned)-1, NULL, 0u);
+    UINT nFiles = ::DragQueryFile(hdrop, (unsigned)-1, nullptr, 0u);
 
     wxCHECK_MSG ( nFiles != (UINT)-1, FALSE, wxT("wrong HDROP handle") );
 
@@ -1283,7 +1349,7 @@ bool wxFileDataObject::SetData(size_t WXUNUSED(size),
     UINT len, n;
     for ( n = 0; n < nFiles; n++ ) {
         // +1 for terminating NUL
-        len = ::DragQueryFile(hdrop, n, NULL, 0) + 1;
+        len = ::DragQueryFile(hdrop, n, nullptr, 0) + 1;
 
         UINT len2 = ::DragQueryFile(hdrop, n, wxStringBuffer(str, len), len);
         m_filenames.Add(str);
@@ -1336,7 +1402,7 @@ bool wxFileDataObject::GetDataHere(void *pData) const
     // pData points to an externally allocated memory block
     // created using the size returned by GetDataSize()
 
-    // if pData is NULL, or there are no files, return
+    // if pData is null, or there are no files, return
     if ( !pData || m_filenames.empty() )
         return false;
 
@@ -1346,7 +1412,7 @@ bool wxFileDataObject::GetDataHere(void *pData) const
     // initialize DROPFILES struct
     pDrop->pFiles = sizeof(DROPFILES);
     pDrop->fNC = FALSE;                 // not non-client coords
-    pDrop->fWide = wxUSE_UNICODE;
+    pDrop->fWide = TRUE;
 
     const size_t sizeOfChar = pDrop->fWide ? sizeof(wchar_t) : 1;
 
@@ -1372,12 +1438,662 @@ bool wxFileDataObject::GetDataHere(void *pData) const
     return true;
 }
 
+#if wxUSE_OLE && wxUSE_STREAMS && wxUSE_DATETIME
+
+// ----------------------------------------------------------------------------
+// wxVirtualFileDataObject
+// ----------------------------------------------------------------------------
+
+namespace
+{
+
+// The name in FILEDESCRIPTOR is not guaranteed to be NUL-terminated, so never
+// read beyond the end of the array.
+wxString GetDescriptorName(const FILEDESCRIPTORW& fd)
+{
+    const wchar_t* const end = std::find(fd.cFileName,
+                                         fd.cFileName + WXSIZEOF(fd.cFileName),
+                                         L'\0');
+    return wxString(fd.cFileName, end - fd.cFileName);
+}
+
+// RAII wrapper for STGMEDIUM.
+class StgMedium : public STGMEDIUM
+{
+public:
+    StgMedium()
+    {
+        wxZeroMemory(*this);
+    }
+
+    // Take ownership of the medium, leaving the other object empty.
+    StgMedium(StgMedium&& other)
+        : STGMEDIUM(other)
+    {
+        wxZeroMemory(static_cast<STGMEDIUM&>(other));
+    }
+
+    ~StgMedium()
+    {
+        if ( tymed != TYMED_NULL )
+            ::ReleaseStgMedium(this);
+    }
+
+    wxDECLARE_NO_COPY_CLASS(StgMedium);
+};
+
+// Get the contents of the item with the given index from the data source
+// using one of the given TYMED_XXX media.
+bool
+GetFileContents(IDataObject* source, int index, DWORD tymed, StgMedium& medium)
+{
+    static const CLIPFORMAT
+        s_cfFileContents = static_cast<CLIPFORMAT>(
+                ::RegisterClipboardFormat(CFSTR_FILECONTENTS)
+            );
+
+    FORMATETC fmt;
+    fmt.cfFormat = s_cfFileContents;
+    fmt.ptd = nullptr;
+    fmt.dwAspect = DVASPECT_CONTENT;
+    fmt.lindex = index;
+    fmt.tymed = tymed;
+
+    const HRESULT hr = source->GetData(&fmt, &medium);
+    if ( FAILED(hr) )
+    {
+        wxLogApiError(wxString::Format("IDataObject::GetData(FileContents, %d)",
+                                       index), hr);
+        return false;
+    }
+
+    return true;
+}
+
+// wxInputStream reading from IStream, possibly limited to the given size.
+class wxIStreamInputStream : public wxInputStream
+{
+public:
+    // Keeps its own reference to the stream.
+    wxIStreamInputStream(IStream* stream, wxFileOffset size)
+        : m_stream(stream),
+          m_size(size)
+    {
+    }
+
+    virtual wxFileOffset GetLength() const override
+    {
+        if ( m_size != wxInvalidOffset )
+            return m_size;
+
+        STATSTG stat;
+        if ( SUCCEEDED(m_stream->Stat(&stat, STATFLAG_NONAME)) )
+            return static_cast<wxFileOffset>(stat.cbSize.QuadPart);
+
+        return wxInvalidOffset;
+    }
+
+    virtual bool IsSeekable() const override { return false; }
+
+protected:
+    virtual size_t OnSysRead(void* buffer, size_t size) override
+    {
+        if ( m_size != wxInvalidOffset )
+        {
+            const wxFileOffset left = m_size - m_pos;
+            if ( left <= 0 )
+            {
+                m_lasterror = wxSTREAM_EOF;
+                return 0;
+            }
+
+            if ( static_cast<wxFileOffset>(size) > left )
+                size = static_cast<size_t>(left);
+        }
+
+        const ULONG toRead = size > ULONG_MAX ? ULONG_MAX
+                                              : static_cast<ULONG>(size);
+
+        ULONG read = 0;
+        const HRESULT hr = m_stream->Read(buffer, toRead, &read);
+        if ( FAILED(hr) )
+        {
+            wxLogApiError("IStream::Read", hr);
+            m_lasterror = wxSTREAM_READ_ERROR;
+            return 0;
+        }
+
+        if ( !read )
+        {
+            m_lasterror = wxSTREAM_EOF;
+            return 0;
+        }
+
+        m_pos += read;
+
+        return read;
+    }
+
+    virtual wxFileOffset OnSysTell() const override { return m_pos; }
+
+private:
+    const wxCOMPtr<IStream> m_stream;
+    const wxFileOffset m_size;
+    wxFileOffset m_pos = 0;
+
+    wxDECLARE_NO_COPY_CLASS(wxIStreamInputStream);
+};
+
+// Owner of the medium containing a memory block, keeping it locked while it
+// exists.
+//
+// This is only used as the base class of wxHGlobalInputStream, to ensure that
+// it is initialized before wxMemoryInputStream which uses the locked memory.
+class HGlobalMedium
+{
+protected:
+    HGlobalMedium(StgMedium&& medium, wxFileOffset size)
+        : m_medium(std::move(medium))
+    {
+        m_lock.Init(m_medium.hGlobal);
+        if ( !m_lock )
+            return;
+
+        // The memory block may be bigger than the actual data, so prefer to
+        // use the size from the descriptor, if we have it.
+        m_len = m_lock.GetSize();
+        if ( size != wxInvalidOffset && size < m_len )
+            m_len = size;
+    }
+
+    // Note that the order of these fields matters: the memory must be
+    // unlocked before the medium is released.
+    StgMedium m_medium;
+    GlobalPtrLock m_lock;
+    wxFileOffset m_len = 0;
+};
+
+// wxInputStream reading from the memory block without copying it.
+class wxHGlobalInputStream : private HGlobalMedium,
+                             public wxMemoryInputStream
+{
+public:
+    // Takes ownership of the medium, which must use TYMED_HGLOBAL. Check if
+    // the stream IsOk() after creating it, as locking the memory may fail.
+    wxHGlobalInputStream(StgMedium&& medium, wxFileOffset size)
+        : HGlobalMedium(std::move(medium), size),
+          wxMemoryInputStream(m_lock.Get(), m_len)
+    {
+        if ( !m_lock )
+            m_lasterror = wxSTREAM_READ_ERROR;
+    }
+
+private:
+    wxDECLARE_NO_COPY_CLASS(wxHGlobalInputStream);
+};
+
+// Create a stream for reading the contents of the medium, which must be either
+// a stream or a memory block.
+//
+// The medium shouldn't be used after calling this function, as the returned
+// stream may take ownership of it.
+std::unique_ptr<wxInputStream>
+OpenMediumStream(StgMedium&& medium, wxFileOffset size)
+{
+    switch ( medium.tymed )
+    {
+        case TYMED_ISTREAM:
+            {
+                IStream* const stream = medium.pstm;
+
+                // Some sources return the stream positioned at its end, so
+                // try to rewind it, but this is not supposed to be necessary
+                // and so don't do anything if it fails.
+                LARGE_INTEGER zero;
+                zero.QuadPart = 0;
+                stream->Seek(zero, STREAM_SEEK_SET, nullptr);
+
+                return std::make_unique<wxIStreamInputStream>(stream, size);
+            }
+
+        case TYMED_HGLOBAL:
+            {
+                auto stream =
+                    std::make_unique<wxHGlobalInputStream>(std::move(medium),
+                                                           size);
+                if ( !stream->IsOk() )
+                    return nullptr;
+
+                return stream;
+            }
+
+        default:
+            wxLogDebug("Unexpected file contents medium %s",
+                       GetTymedName(medium.tymed));
+    }
+
+    return nullptr;
+}
+
+// Save the contents of the given storage to a compound file, which is removed
+// if an error occurs after creating it.
+bool SaveStorage(IStorage* storage, const wxString& path)
+{
+    wxCOMPtr<IStorage> file;
+    HRESULT hr = ::StgCreateDocfile(path.wc_str(),
+                                    STGM_CREATE |
+                                    STGM_READWRITE |
+                                    STGM_SHARE_EXCLUSIVE,
+                                    0,
+                                    &file);
+    if ( FAILED(hr) )
+    {
+        wxLogApiError("StgCreateDocfile", hr);
+        return false;
+    }
+
+    hr = storage->CopyTo(0, nullptr, nullptr, file);
+    if ( SUCCEEDED(hr) )
+    {
+        hr = file->Commit(STGC_DEFAULT);
+        if ( FAILED(hr) )
+            wxLogApiError("IStorage::Commit", hr);
+    }
+    else
+    {
+        wxLogApiError("IStorage::CopyTo", hr);
+    }
+
+    if ( FAILED(hr) )
+    {
+        // Close the file before removing it, as this can't be done while it's
+        // still open.
+        file.reset();
+        wxRemoveFile(path);
+        return false;
+    }
+
+    return true;
+}
+
+// Return the topmost path among the given one and its parent directories which
+// doesn't exist yet, i.e. the path which would need to be removed to undo
+// creating the given one, or empty string if it already exists.
+wxString GetTopNonExistingPath(const wxString& path)
+{
+    wxString top;
+    for ( wxString p = path; !p.empty() && !wxFileName::Exists(p); )
+    {
+        top = p;
+
+        const wxString parent = wxFileName(p).GetPath();
+        if ( parent == p )
+            break;
+
+        p = parent;
+    }
+
+    return top;
+}
+
+// Remove the given file or directory with all its contents, if it exists, do
+// nothing if the path is empty.
+void RemovePath(const wxString& path)
+{
+    if ( path.empty() )
+        return;
+
+    if ( wxDirExists(path) )
+        wxFileName::Rmdir(path, wxPATH_RMDIR_RECURSIVE);
+    else if ( wxFileExists(path) )
+        wxRemoveFile(path);
+}
+
+} // anonymous namespace
+
+wxVirtualFileDataObject::wxVirtualFileDataObject()
+    : wxDataObjectSimple(CFSTR_FILEDESCRIPTORW)
+{
+}
+
+wxVirtualFileDataObject::~wxVirtualFileDataObject()
+{
+    ReleaseSource();
+
+    DeleteAllTempFiles();
+}
+
+void wxVirtualFileDataObject::ReleaseSource()
+{
+    if ( m_source )
+    {
+        m_source->Release();
+        m_source = nullptr;
+    }
+}
+
+bool wxVirtualFileDataObject::SetData(size_t len, const void *buf)
+{
+    m_entries.clear();
+    ReleaseSource();
+
+    // The descriptors array follows the items count, see FILEGROUPDESCRIPTORW.
+    const size_t headerLen = sizeof(UINT);
+    if ( len < headerLen )
+        return false;
+
+    const auto* const fgd = static_cast<const FILEGROUPDESCRIPTORW*>(buf);
+    const size_t count = fgd->cItems;
+    if ( count > (len - headerLen) / sizeof(FILEDESCRIPTORW) )
+    {
+        wxLogDebug("Invalid file descriptor: %zu items don't fit in %zu bytes",
+                   count, len);
+        return false;
+    }
+
+    m_entries.reserve(count);
+    for ( size_t n = 0; n < count; n++ )
+    {
+        const FILEDESCRIPTORW& fd = fgd->fgd[n];
+
+        const wxString name = GetDescriptorName(fd);
+
+        Entry entry;
+        entry.name = wxFileName::MakeSafeRelativePath(name);
+        if ( entry.name.empty() )
+        {
+            wxLogDebug("Ignoring virtual file with invalid name \"%s\".",
+                       name);
+            continue;
+        }
+
+        entry.index = static_cast<int>(n);
+
+        if ( fd.dwFlags & FD_ATTRIBUTES )
+            entry.attrs = fd.dwFileAttributes;
+
+        if ( fd.dwFlags & FD_FILESIZE )
+        {
+            ULARGE_INTEGER size;
+            size.LowPart = fd.nFileSizeLow;
+            size.HighPart = fd.nFileSizeHigh;
+            entry.size = static_cast<wxFileOffset>(size.QuadPart);
+        }
+
+        if ( fd.dwFlags & FD_WRITESTIME )
+            entry.mtime.SetFromMSWFileTime(fd.ftLastWriteTime);
+
+        m_entries.push_back(entry);
+    }
+
+    return true;
+}
+
+void
+wxVirtualFileDataObject::MSWSetDataSource(IDataObject* source,
+                                          const wxDataFormat& WXUNUSED(format))
+{
+    ReleaseSource();
+
+    m_source = source;
+    if ( m_source )
+        m_source->AddRef();
+}
+
+wxString wxVirtualFileDataObject::GetName(size_t n) const
+{
+    wxCHECK_MSG( n < m_entries.size(), wxString(), "invalid index" );
+
+    return m_entries[n].name;
+}
+
+bool wxVirtualFileDataObject::Entry::IsDir() const
+{
+    return (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+bool wxVirtualFileDataObject::IsDir(size_t n) const
+{
+    wxCHECK_MSG( n < m_entries.size(), false, "invalid index" );
+
+    return m_entries[n].IsDir();
+}
+
+wxFileOffset wxVirtualFileDataObject::GetSize(size_t n) const
+{
+    wxCHECK_MSG( n < m_entries.size(), wxInvalidOffset, "invalid index" );
+
+    return m_entries[n].size;
+}
+
+wxDateTime wxVirtualFileDataObject::GetModificationTime(size_t n) const
+{
+    wxCHECK_MSG( n < m_entries.size(), wxDateTime(), "invalid index" );
+
+    return m_entries[n].mtime;
+}
+
+std::unique_ptr<wxInputStream>
+wxVirtualFileDataObject::OpenStream(size_t n) const
+{
+    wxCHECK_MSG( n < m_entries.size(), nullptr, "invalid index" );
+
+    const Entry& entry = m_entries[n];
+    if ( entry.IsDir() )
+        return nullptr;
+
+    wxCHECK_MSG( m_source, nullptr, "no data source" );
+
+    // Structured storage can't be read as a stream, so don't ask for it: if
+    // the item is only available in this form, this fails and we return null,
+    // as documented.
+    StgMedium medium;
+    if ( !GetFileContents(m_source, entry.index,
+                          TYMED_ISTREAM | TYMED_HGLOBAL, medium) )
+        return nullptr;
+
+    return OpenMediumStream(std::move(medium), entry.size);
+}
+
+bool wxVirtualFileDataObject::SaveTo(size_t n, const wxString& path) const
+{
+    wxCHECK_MSG( n < m_entries.size(), false, "invalid index" );
+
+    return DoSaveTo(m_entries[n], path);
+}
+
+bool
+wxVirtualFileDataObject::DoSaveTo(const Entry& entry, const wxString& path) const
+{
+    // Don't leave anything behind if saving fails: remove the item itself and
+    // all its parent directories which didn't exist before, unless this guard
+    // is dismissed after saving the item successfully.
+    wxScopeGuard removeOnError = wxMakeGuard(RemovePath,
+                                             GetTopNonExistingPath(path));
+
+    if ( entry.IsDir() )
+    {
+        if ( !wxFileName::Mkdir(path, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL) )
+            return false;
+
+        removeOnError.Dismiss();
+        return true;
+    }
+
+    wxCHECK_MSG( m_source, false, "no data source" );
+
+    const wxString dir = wxFileName(path).GetPath();
+    if ( !dir.empty() )
+    {
+        if ( !wxFileName::Mkdir(dir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL) )
+            return false;
+    }
+
+    StgMedium medium;
+    if ( !GetFileContents(m_source, entry.index,
+                          TYMED_ISTREAM | TYMED_HGLOBAL | TYMED_ISTORAGE,
+                          medium) )
+    {
+        wxLogError(_("Failed to retrieve the contents of \"%s\"."),
+                   entry.name);
+        return false;
+    }
+
+    if ( medium.tymed == TYMED_ISTORAGE )
+    {
+        if ( !SaveStorage(medium.pstg, path) )
+        {
+            // As above, SaveStorage() only logs debug messages.
+            wxLogError(_("Failed to save the contents of \"%s\" to \"%s\"."),
+                       entry.name, path);
+            return false;
+        }
+    }
+    else
+    {
+        const auto in = OpenMediumStream(std::move(medium), entry.size);
+        if ( !in )
+        {
+            wxLogError(_("Failed to retrieve the contents of \"%s\" as stream."),
+                       entry.name);
+            return false;
+        }
+
+        wxFileOutputStream out(path);
+        if ( !out.IsOk() )
+            return false;
+
+        out.Write(*in);
+
+        bool ok = out.IsOk();
+
+        if ( in->GetLastError() != wxSTREAM_EOF )
+        {
+            wxLogError(_("Failed to read the contents of \"%s\"."),
+                       entry.name);
+            ok = false;
+        }
+
+        // Close the file in any case, as it can't be removed while it's open.
+        if ( !out.Close() )
+            ok = false;
+
+        if ( !ok )
+        {
+            // The file contents is invalid, so remove it even if the file had
+            // existed before, as its previous contents is lost anyhow.
+            //
+            // Note that removeOnError might not do it if the file already
+            // existed before, so we need to do it explicitly here.
+            wxRemoveFile(path);
+            return false;
+        }
+    }
+
+    removeOnError.Dismiss();
+
+    if ( entry.mtime.IsValid() )
+        wxFileName(path).SetTimes(nullptr, &entry.mtime, nullptr);
+
+    return true;
+}
+
+std::vector<wxString>
+wxVirtualFileDataObject::SaveAll(const wxString& dir) const
+{
+    wxString base = dir;
+    if ( !base.empty() && !wxIsPathSeparator(base.Last()) )
+        base += wxFILE_SEP_PATH;
+
+    // All the paths which didn't exist before and were created by us, to
+    // remove them if saving any of the items fails.
+    std::vector<wxString> created;
+
+    std::vector<wxString> rootPaths;
+    for ( const auto& entry : m_entries )
+    {
+        const wxString& name = entry.name;
+        const wxString path = base + name;
+
+        const wxString newPath = GetTopNonExistingPath(path);
+        if ( !newPath.empty() )
+            created.push_back(newPath);
+
+        // Stop if saving any of the items fails as they may reference each
+        // other and so it may be wrong to save only some of them. If this is
+        // really needed, the application can call SaveTo() for each item
+        // separately and handle errors on its own
+        if ( !DoSaveTo(entry, path) )
+        {
+            for ( const auto& p : created )
+                RemovePath(p);
+
+            return {};
+        }
+
+        // Add this path to the list of top-level paths if it's not in a
+        // subdirectory of any of the previously added ones.
+        const wxString top = base + name.BeforeFirst(wxFILE_SEP_PATH);
+        bool underExisting = false;
+        for ( const auto& p : rootPaths )
+        {
+            if ( p.CmpNoCase(top) == 0 )
+            {
+                underExisting = true;
+                break;
+            }
+        }
+
+        if ( !underExisting )
+            rootPaths.push_back(top);
+    }
+
+    return rootPaths;
+}
+
+std::vector<wxString> wxVirtualFileDataObject::SaveAllToTempDir()
+{
+    if ( m_entries.empty() )
+        return {};
+
+    const wxString dir = wxFileName::CreateTempDirName("wxtemp-virtual-");
+    if ( dir.empty() )
+        return {};
+
+    // Remember it even if saving fails, as some files could have been saved.
+    m_tempDirs.push_back(dir);
+
+    return SaveAll(dir);
+}
+
+bool wxVirtualFileDataObject::DeleteAllTempFiles()
+{
+    // Don't log errors here, as they're expected to happen if some of the
+    // files are still opened in another program.
+    wxLogNull noLog;
+
+    // Keep the directories which couldn't be removed to allow trying to
+    // remove them again later.
+    std::vector<wxString> remaining;
+    for ( const auto& dir : m_tempDirs )
+    {
+        if ( wxDirExists(dir) && !wxFileName::Rmdir(dir, wxPATH_RMDIR_RECURSIVE) )
+            remaining.push_back(dir);
+    }
+
+    m_tempDirs.swap(remaining);
+
+    return m_tempDirs.empty();
+}
+
+#endif // wxUSE_OLE && wxUSE_STREAMS && wxUSE_DATETIME
+
 // ----------------------------------------------------------------------------
 // wxURLDataObject
 // ----------------------------------------------------------------------------
 
 // Work around bug in Wine headers
-#if defined(__WINE__) && defined(CFSTR_SHELLURL) && wxUSE_UNICODE
+#if defined(__WINE__) && defined(CFSTR_SHELLURL)
 #undef CFSTR_SHELLURL
 #define CFSTR_SHELLURL wxT("CFSTR_SHELLURL")
 #endif
@@ -1387,13 +2103,13 @@ class CFSTR_SHELLURLDataObject : public wxCustomDataObject
 public:
     CFSTR_SHELLURLDataObject() : wxCustomDataObject(CFSTR_SHELLURL) {}
 
-    virtual size_t GetBufferOffset( const wxDataFormat& WXUNUSED(format) ) wxOVERRIDE
+    virtual size_t GetBufferOffset( const wxDataFormat& WXUNUSED(format) ) override
     {
         return 0;
     }
 
     virtual const void* GetSizeFromBuffer( const void* buffer, size_t* size,
-                                           const wxDataFormat& WXUNUSED(format) ) wxOVERRIDE
+                                           const wxDataFormat& WXUNUSED(format) ) override
     {
         // CFSTR_SHELLURL is _always_ ANSI text
         *size = strlen( (const char*)buffer );
@@ -1402,7 +2118,7 @@ public:
     }
 
     virtual void* SetSizeInBuffer( void* buffer, size_t WXUNUSED(size),
-                                   const wxDataFormat& WXUNUSED(format) ) wxOVERRIDE
+                                   const wxDataFormat& WXUNUSED(format) ) override
     {
         return buffer;
     }
@@ -1421,7 +2137,7 @@ wxURLDataObject::wxURLDataObject(const wxString& url)
     Add(new CFSTR_SHELLURLDataObject());
 
     // we don't have any data yet
-    m_dataObjectLast = NULL;
+    m_dataObjectLast = nullptr;
 
     if ( !url.empty() )
         SetURL(url);
@@ -1452,15 +2168,10 @@ wxString wxURLDataObject::GetURL() const
 
         // CFSTR_SHELLURL is always ANSI so we need to convert it from it in
         // Unicode build
-#if wxUSE_UNICODE
         wxCharBuffer buf(len);
 
         if ( m_dataObjectLast->GetDataHere(buf.data()) )
             url = buf;
-#else // !wxUSE_UNICODE
-        // in ANSI build no conversion is necessary
-        m_dataObjectLast->GetDataHere(wxStringBuffer(url, len));
-#endif // wxUSE_UNICODE/!wxUSE_UNICODE
     }
     else // must be wxTextDataObject
     {
@@ -1477,21 +2188,13 @@ void wxURLDataObject::SetURL(const wxString& url)
     {
         const size_t len = strlen(urlMB);
 
-#if !wxUSE_UNICODE
-        // wxTextDataObject takes the number of characters in the string, not
-        // the size of the buffer (which would be len+1)
-        SetData(wxDF_TEXT, len, urlMB);
-#endif // !wxUSE_UNICODE
-
         // however CFSTR_SHELLURLDataObject doesn't append NUL automatically
         // but we probably still want to have it on the clipboard (just to be
         // safe), so do append it
         SetData(wxDataFormat(CFSTR_SHELLURL), len + 1, urlMB);
     }
 
-#if wxUSE_UNICODE
-    SetData(wxDF_UNICODETEXT, url.length()*sizeof(wxChar), url.wc_str());
-#endif
+    SetData(wxDF_UNICODETEXT, (url.length() + 1)*sizeof(wxChar), url.wc_str());
 }
 
 #if wxUSE_OLE
@@ -1540,14 +2243,14 @@ void wxDataObject::SetAutoDelete()
 
 const wxChar *wxDataObject::GetFormatName(wxDataFormat WXUNUSED(format))
 {
-    return NULL;
+    return nullptr;
 }
 
 const void* wxDataObject::GetSizeFromBuffer(const void* WXUNUSED(buffer),
     size_t* size, const wxDataFormat& WXUNUSED(format))
 {
     *size = 0;
-    return NULL;
+    return nullptr;
 }
 
 void* wxDataObject::SetSizeInBuffer(void* buffer, size_t WXUNUSED(size),

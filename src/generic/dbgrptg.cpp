@@ -2,7 +2,6 @@
 // Name:        src/generic/dbgrptg.cpp
 // Purpose:     implementation of wxDebugReportPreviewStd
 // Author:      Vadim Zeitlin, Andrej Putrin
-// Modified by:
 // Created:     2005-01-21
 // Copyright:   (c) 2005 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 // Licence:     wxWindows licence
@@ -18,9 +17,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_DEBUGREPORT && wxUSE_XML
 
@@ -45,7 +41,9 @@
 #endif
 #include "wx/mimetype.h"
 
+#include "wx/statbox.h"
 #include "wx/statline.h"
+#include "wx/textwrapper.h"
 
 #ifdef __WXMSW__
     #include "wx/evtloop.h"     // for SetCriticalWindow()
@@ -130,7 +128,7 @@ class wxDumpOpenExternalDlg : public wxDialog
 public:
     wxDumpOpenExternalDlg(wxWindow *parent, const wxFileName& filename);
 
-    // return the command chosed by user to open this file
+    // return the command chosen by user to open this file
     const wxString& GetCommand() const { return m_command; }
 
     wxString m_command;
@@ -252,8 +250,8 @@ class wxDebugReportDialog : public wxDialog
 public:
     wxDebugReportDialog(wxDebugReport& dbgrpt);
 
-    virtual bool TransferDataToWindow() wxOVERRIDE;
-    virtual bool TransferDataFromWindow() wxOVERRIDE;
+    virtual bool TransferDataToWindow() override;
+    virtual bool TransferDataFromWindow() override;
 
 private:
     void OnView(wxCommandEvent& );
@@ -270,7 +268,7 @@ private:
 
     wxDebugReport& m_dbgrpt;
 
-#if wxUSE_OWNER_DRAWN
+#if wxUSE_CHECKLISTBOX
     wxCheckListBox *m_checklst;
 #else
     wxListBox *m_checklst;
@@ -300,7 +298,7 @@ wxEND_EVENT_TABLE()
 // ----------------------------------------------------------------------------
 
 wxDebugReportDialog::wxDebugReportDialog(wxDebugReport& dbgrpt)
-                   : wxDialog(NULL, wxID_ANY,
+                   : wxDialog(nullptr, wxID_ANY,
                               wxString::Format(_("Debug report \"%s\""),
                               dbgrpt.GetReportName().c_str()),
                               wxDefaultPosition,
@@ -333,23 +331,30 @@ wxDebugReportDialog::wxDebugReportDialog(wxDebugReport& dbgrpt)
     const wxSizerFlags flagsExpand(SizerFlags(1));
     const wxSizerFlags flagsExpand2(SizerFlags(2));
 
-    wxSizer *sizerPreview =
+    // Note that everything inside a wxStaticBoxSizer has to be created as a
+    // child of its wxStaticBox rather than of the dialog: using the box's own
+    // parent still works, for compatibility, but warns in a debug build.
+    wxStaticBoxSizer *sizerPreview =
         new wxStaticBoxSizer(wxVERTICAL, this, _("&Debug report preview:"));
-    sizerPreview->Add(CreateTextSizer(msg), wxSizerFlags().Centre().Border());
+    wxWindow * const boxPreview = sizerPreview->GetStaticBox();
+
+    wxTextSizerWrapper wrapperPreview(boxPreview);
+    sizerPreview->Add(CreateTextSizer(msg, wrapperPreview),
+                      wxSizerFlags().Centre().Border());
 
     // ... and the list of files in this debug report with buttons to view them
     wxSizer *sizerFileBtns = new wxBoxSizer(wxVERTICAL);
-    sizerFileBtns->AddStretchSpacer(1);
-    sizerFileBtns->Add(new wxButton(this, wxID_VIEW_DETAILS, _("&View...")),
+    sizerFileBtns->AddStretchSpacer();
+    sizerFileBtns->Add(new wxButton(boxPreview, wxID_VIEW_DETAILS, _("&View...")),
                         wxSizerFlags().Border(wxBOTTOM));
-    sizerFileBtns->Add(new wxButton(this, wxID_OPEN, _("&Open...")),
+    sizerFileBtns->Add(new wxButton(boxPreview, wxID_OPEN, _("&Open...")),
                         wxSizerFlags().Border(wxTOP));
-    sizerFileBtns->AddStretchSpacer(1);
+    sizerFileBtns->AddStretchSpacer();
 
-#if wxUSE_OWNER_DRAWN
-    m_checklst = new wxCheckListBox(this, wxID_ANY);
+#if wxUSE_CHECKLISTBOX
+    m_checklst = new wxCheckListBox(boxPreview, wxID_ANY);
 #else
-    m_checklst = new wxListBox(this, wxID_ANY);
+    m_checklst = new wxListBox(boxPreview, wxID_ANY);
 #endif
 
     wxSizer *sizerFiles = new wxBoxSizer(wxHORIZONTAL);
@@ -360,15 +365,18 @@ wxDebugReportDialog::wxDebugReportDialog(wxDebugReport& dbgrpt)
 
 
     // lower part of the dialog: notes field
-    wxSizer *sizerNotes = new wxStaticBoxSizer(wxVERTICAL, this, _("&Notes:"));
+    wxStaticBoxSizer *sizerNotes =
+        new wxStaticBoxSizer(wxVERTICAL, this, _("&Notes:"));
+    wxWindow * const boxNotes = sizerNotes->GetStaticBox();
 
     msg = _("If you have any additional information pertaining to this bug\nreport, please enter it here and it will be joined to it:");
 
-    m_notes = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
+    m_notes = new wxTextCtrl(boxNotes, wxID_ANY, wxEmptyString,
                              wxDefaultPosition, wxDefaultSize,
                              wxTE_MULTILINE);
 
-    sizerNotes->Add(CreateTextSizer(msg), flagsFixed);
+    wxTextSizerWrapper wrapperNotes(boxNotes);
+    sizerNotes->Add(CreateTextSizer(msg, wrapperNotes), flagsFixed);
     sizerNotes->Add(m_notes, flagsExpand);
 
 
@@ -398,7 +406,7 @@ bool wxDebugReportDialog::TransferDataToWindow()
         if ( m_dbgrpt.GetFile(n, &name, &desc) )
         {
             m_checklst->Append(name + wxT(" (") + desc + wxT(')'));
-#if wxUSE_OWNER_DRAWN
+#if wxUSE_CHECKLISTBOX
             m_checklst->Check(n);
 #endif
 
@@ -411,7 +419,7 @@ bool wxDebugReportDialog::TransferDataToWindow()
 
 bool wxDebugReportDialog::TransferDataFromWindow()
 {
-#if wxUSE_OWNER_DRAWN
+#if wxUSE_CHECKLISTBOX
     // any unchecked files should be removed from the report
     const size_t count = m_checklst->GetCount();
     for ( size_t n = 0; n < count; n++ )
@@ -538,8 +546,7 @@ bool wxDebugReportPreviewStd::Show(wxDebugReport& dbgrpt) const
     // handling for all other windows as this could result in more crashes
     wxEventLoop::SetCriticalWindow(&dlg);
 
-    wxON_BLOCK_EXIT1( wxEventLoop::SetCriticalWindow,
-                        static_cast<wxWindow *>(NULL) );
+    wxON_BLOCK_EXIT1( wxEventLoop::SetCriticalWindow, nullptr );
 #endif // __WXMSW__
 
     return dlg.ShowModal() == wxID_OK && dbgrpt.GetFilesCount() != 0;

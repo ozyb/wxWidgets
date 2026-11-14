@@ -52,6 +52,7 @@ struct GraphicsBenchmarkOptions
         mapMode = 0;
         penWidth = 0;
         penStyle = wxPENSTYLE_INVALID;
+        penQuality = wxPEN_QUALITY_DEFAULT;
 
         width = 800;
         height = 600;
@@ -87,6 +88,7 @@ struct GraphicsBenchmarkOptions
          numIters;
 
     wxPenStyle penStyle;
+    wxPenQuality penQuality;
 
     bool testBitmaps,
          testImages,
@@ -119,17 +121,17 @@ class GraphicsBenchmarkFrame : public wxFrame
 {
 public:
     GraphicsBenchmarkFrame()
-        : wxFrame(NULL, wxID_ANY, "wxWidgets Graphics Benchmark")
+        : wxFrame(nullptr, wxID_ANY, "wxWidgets Graphics Benchmark")
     {
         SetClientSize(opts.width, opts.height);
 
 #if wxUSE_GLCANVAS
-        m_glCanvas = NULL;
-        m_glContext = NULL;
+        m_glCanvas = nullptr;
+        m_glContext = nullptr;
 
         if ( opts.useGL )
         {
-            m_glCanvas = new wxGLCanvas(this, wxID_ANY, NULL,
+            m_glCanvas = new wxGLCanvas(this, wxID_ANY, nullptr,
                                         wxPoint(0, 0),
                                         wxSize(opts.width, opts.height));
             m_glContext = new wxGLContext(m_glCanvas);
@@ -147,7 +149,7 @@ public:
             m_glCanvas->Connect(
                 wxEVT_PAINT,
                 wxPaintEventHandler(GraphicsBenchmarkFrame::OnGLRender),
-                NULL,
+                nullptr,
                 this
             );
         }
@@ -181,7 +183,7 @@ public:
         m_bitmapRGBwithMask.Create(64, 64, 24);
         m_bitmapRGBwithMask.SetMask(new wxMask(bmpMask));
 
-        m_renderer = NULL;
+        m_renderer = nullptr;
         if ( opts.useGC )
         {
 #ifdef __WXMSW__
@@ -200,7 +202,7 @@ public:
                 if ( !gc )
                 {
                     wxPrintf("Couldn't initialize '%s' graphics renderer.\n", m_renderer->GetName().c_str());
-                    m_renderer = NULL;
+                    m_renderer = nullptr;
                 }
                 delete gc;
             }
@@ -410,16 +412,29 @@ private:
     {
         if ( opts.mapMode != 0 )
             dc.SetMapMode((wxMappingMode)opts.mapMode);
+
+        bool setPen = false;
+        wxPenInfo penInfo(*wxWHITE);
         if ( opts.penWidth != 0 )
-            dc.SetPen(wxPen(*wxWHITE, opts.penWidth));
+        {
+            penInfo.Width(opts.penWidth);
+            setPen = true;
+        }
+
         if ( opts.penStyle != wxPENSTYLE_INVALID )
         {
-            wxPen pen = dc.GetPen();
-            if ( !pen.IsOk() )
-                pen = wxPen(*wxWHITE, 1);
-            pen.SetStyle(opts.penStyle);
-            dc.SetPen(pen);
+            penInfo.Style(opts.penStyle);
+            setPen = true;
         }
+
+        if ( opts.penQuality != wxPEN_QUALITY_DEFAULT )
+        {
+            penInfo.Quality(opts.penQuality);
+            setPen = true;
+        }
+
+        if ( setPen )
+            dc.SetPen(penInfo);
     }
 
     void BenchmarkLines(const wxString& msg, wxDC& dc)
@@ -865,6 +880,7 @@ public:
             { wxCMD_LINE_OPTION, "m", "map-mode", "", wxCMD_LINE_VAL_NUMBER },
             { wxCMD_LINE_OPTION, "p", "pen-width", "", wxCMD_LINE_VAL_NUMBER },
             { wxCMD_LINE_OPTION, "s", "pen-style", "solid | dot | long_dash | short_dash", wxCMD_LINE_VAL_STRING },
+            { wxCMD_LINE_OPTION, "",  "pen-quality", "default | low | high", wxCMD_LINE_VAL_STRING },
             { wxCMD_LINE_OPTION, "w", "width", "", wxCMD_LINE_VAL_NUMBER },
             { wxCMD_LINE_OPTION, "h", "height", "", wxCMD_LINE_VAL_NUMBER },
             { wxCMD_LINE_OPTION, "I", "images", "", wxCMD_LINE_VAL_NUMBER },
@@ -911,6 +927,19 @@ public:
                     wxLogError(wxS("Unsupported pen style."));
                     return false;
                 }
+            }
+        }
+        wxString penQuality;
+        if ( parser.Found("pen-quality", &penQuality) )
+        {
+            if ( penQuality == "low" )
+                opts.penQuality = wxPEN_QUALITY_LOW;
+            else if ( penQuality == "high" )
+                opts.penQuality = wxPEN_QUALITY_HIGH;
+            else if ( penQuality != "default" )
+            {
+                wxLogError("Unsupported pen quality.");
+                return false;
             }
         }
         if ( parser.Found("w", &opts.width) && opts.width < 1 )

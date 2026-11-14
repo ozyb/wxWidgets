@@ -2,7 +2,6 @@
 // Name:        life.h
 // Purpose:     The game of Life, created by J. H. Conway
 // Author:      Guillermo Rodriguez Garcia, <guille@iies.es>
-// Modified by:
 // Created:     Jan/2000
 // Copyright:   (c) 2000, Guillermo Rodriguez Garcia
 // Licence:     wxWindows licence
@@ -37,7 +36,9 @@ public:
 
     // drawing
     void DrawChanged();
-    void DrawCell(wxInt32 i, wxInt32 j, bool alive);
+
+    // mark a cell as needing to be repainted from the Life object
+    void RefreshCell(wxInt32 i, wxInt32 j);
 
 private:
     // any class wishing to process wxWidgets events must use this macro
@@ -45,6 +46,9 @@ private:
 
     // draw a cell (parametrized by DC)
     void DrawCell(wxInt32 i, wxInt32 j, wxDC &dc);
+
+    // the area a cell occupies on screen
+    wxRect CellRect(wxInt32 i, wxInt32 j) const;
 
     // event handlers
     void OnPaint(wxPaintEvent& event);
@@ -153,7 +157,7 @@ private:
 class LifeApp : public wxApp
 {
 public:
-    virtual bool OnInit() wxOVERRIDE;
+    virtual bool OnInit() override;
 };
 
 #endif  // _LIFE_APP_H_

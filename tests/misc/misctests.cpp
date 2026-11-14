@@ -5,6 +5,7 @@
 // Created:     2008-07-10
 // Copyright:   (c) 2008 Peter Most
 //              (c) 2009 Vadim Zeitlin
+//              (c) 2026 wxWidgets development team
 ///////////////////////////////////////////////////////////////////////////////
 
 // ----------------------------------------------------------------------------
@@ -13,50 +14,31 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/defs.h"
 
+#include "wx/iconloc.h"
 #include "wx/math.h"
+#include "wx/mimetype.h"
+#include "wx/versioninfo.h"
+#include "wx/utils.h"
+
+#include "wx/private/wordwrap.h"
 
 // just some classes using wxRTTI for wxStaticCast() test
 #include "wx/tarstrm.h"
 #include "wx/zipstrm.h"
 
+#include <memory>
+
+#ifdef __WINDOWS__
+    // Needed for wxMulDivInt32().
+    #include "wx/msw/wrapwin.h"
+#endif
+
 // ----------------------------------------------------------------------------
-// test class
+// tests
 // ----------------------------------------------------------------------------
-
-class MiscTestCase : public CppUnit::TestCase
-{
-public:
-    MiscTestCase() { }
-
-private:
-    CPPUNIT_TEST_SUITE( MiscTestCase );
-        CPPUNIT_TEST( Assert );
-#ifdef HAVE_VARIADIC_MACROS
-        CPPUNIT_TEST( CallForEach );
-#endif // HAVE_VARIADIC_MACROS
-        CPPUNIT_TEST( Delete );
-        CPPUNIT_TEST( StaticCast );
-    CPPUNIT_TEST_SUITE_END();
-
-    void Assert();
-    void CallForEach();
-    void Delete();
-    void StaticCast();
-
-    wxDECLARE_NO_COPY_CLASS(MiscTestCase);
-};
-
-// register in the unnamed registry so that these tests are run by default
-CPPUNIT_TEST_SUITE_REGISTRATION( MiscTestCase );
-
-// also include in its own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( MiscTestCase, "MiscTestCase" );
 
 namespace
 {
@@ -70,52 +52,50 @@ bool AssertIfOdd(int n)
 
 } // anonymous namespace
 
-void MiscTestCase::Assert()
+TEST_CASE("wxAssertHandler", "[assert]")
 {
     AssertIfOdd(0);
     WX_ASSERT_FAILS_WITH_ASSERT(AssertIfOdd(1));
 
     // doesn't fail any more
-    wxAssertHandler_t oldHandler = wxSetAssertHandler(NULL);
+    wxAssertHandler_t oldHandler = wxSetAssertHandler(nullptr);
     AssertIfOdd(17);
     wxSetAssertHandler(oldHandler);
 }
 
-#ifdef HAVE_VARIADIC_MACROS
-void MiscTestCase::CallForEach()
+TEST_CASE("wxCALL_FOR_EACH", "[misc]")
 {
     #define MY_MACRO(pos, str) s += str;
 
     wxString s;
     wxCALL_FOR_EACH(MY_MACRO, "foo", "bar", "baz");
 
-    CPPUNIT_ASSERT_EQUAL( "foobarbaz", s );
+    CHECK( s == "foobarbaz" );
 
     #undef MY_MACRO
 }
-#endif // HAVE_VARIADIC_MACROS
 
-void MiscTestCase::Delete()
+TEST_CASE("wxDELETE", "[misc]")
 {
     // Allocate some arbitrary memory to get a valid pointer:
     long *pointer = new long;
-    CPPUNIT_ASSERT( pointer != NULL );
+    CHECK( pointer != nullptr );
 
-    // Check that wxDELETE sets the pointer to NULL:
+    // Check that wxDELETE sets the pointer to nullptr:
     wxDELETE( pointer );
-    CPPUNIT_ASSERT( pointer == NULL );
+    CHECK( pointer == nullptr );
 
     // Allocate some arbitrary array to get a valid pointer:
     long *array = new long[ 3 ];
-    CPPUNIT_ASSERT( array != NULL );
+    CHECK( array != nullptr );
 
-    // Check that wxDELETEA sets the pointer to NULL:
+    // Check that wxDELETEA sets the pointer to nullptr:
     wxDELETEA( array );
-    CPPUNIT_ASSERT( array == NULL );
+    CHECK( array == nullptr );
 
     // this results in compilation error, as it should
 #if 0
-    struct SomeUnknownStruct *p = NULL;
+    struct SomeUnknownStruct *p = nullptr;
     wxDELETE(p);
 #endif
 }
@@ -123,33 +103,67 @@ void MiscTestCase::Delete()
 namespace
 {
 
+#ifdef __WXDEBUG__
+
 // helper function used just to avoid warnings about value computed not being
 // used in WX_ASSERT_FAILS_WITH_ASSERT() in StaticCast() below
 bool IsNull(void *p)
 {
-    return p == NULL;
+    return p == nullptr;
 }
+
+#endif // __WXDEBUG__
 
 } // anonymous namespace
 
-void MiscTestCase::StaticCast()
+TEST_CASE("wxStaticCast", "[rtti]")
 {
 #if wxUSE_TARSTREAM
     wxTarEntry tarEntry;
-    CPPUNIT_ASSERT( wxStaticCast(&tarEntry, wxArchiveEntry) );
+    CHECK( wxStaticCast(&tarEntry, wxArchiveEntry) );
 
     wxArchiveEntry *entry = &tarEntry;
-    CPPUNIT_ASSERT( wxStaticCast(entry, wxTarEntry) );
+    CHECK( wxStaticCast(entry, wxTarEntry) );
 
 #if wxUSE_ZIPSTREAM
     wxZipEntry zipEntry;
     entry = &zipEntry;
-    CPPUNIT_ASSERT( wxStaticCast(entry, wxZipEntry) );
+    CHECK( wxStaticCast(entry, wxZipEntry) );
     WX_ASSERT_FAILS_WITH_ASSERT( IsNull(wxStaticCast(&zipEntry, wxTarEntry)) );
 #endif // wxUSE_ZIPSTREAM
 
     WX_ASSERT_FAILS_WITH_ASSERT( IsNull(wxStaticCast(entry, wxTarEntry)) );
 #endif // wxUSE_TARSTREAM
+}
+
+TEST_CASE("RTTI::ClassInfo", "[rtti]")
+{
+    wxObject obj;
+    CHECK( obj.GetClassInfo()->IsKindOf(wxCLASSINFO(wxObject)) );
+    CHECK( !obj.GetClassInfo()->IsKindOf(wxCLASSINFO(wxArchiveEntry)) );
+
+#if wxUSE_ZIPSTREAM
+    wxZipEntry zipEntry;
+    CHECK( zipEntry.GetClassInfo()->IsKindOf(wxCLASSINFO(wxArchiveEntry)) );
+#endif // wxUSE_ZIPSTREAM
+}
+
+TEST_CASE("wxObjectDataPtr", "[ptr]")
+{
+    struct Foo : wxObjectRefData
+    {
+        explicit Foo(int value) : m_value{value} {}
+        int m_value;
+    };
+
+    wxObjectDataPtr<Foo> p1, p2;
+    CHECK( p1 == p2 );
+
+    p1 = new Foo(1);
+    CHECK( p1 != p2 );
+
+    p2 = new Foo(2);
+    CHECK( p1 != p2 );
 }
 
 TEST_CASE("wxCTZ", "[math]")
@@ -160,4 +174,138 @@ TEST_CASE("wxCTZ", "[math]")
     CHECK( wxCTZ(0x80000000) == 31 );
 
     WX_ASSERT_FAILS_WITH_ASSERT( wxCTZ(0) );
+}
+
+TEST_CASE("wxRound", "[math]")
+{
+    CHECK( wxRound(2.3) == 2 );
+    CHECK( wxRound(3.7) == 4 );
+    CHECK( wxRound(-0.5f) == -1 );
+
+    WX_ASSERT_FAILS_WITH_ASSERT( wxRound(2.0*INT_MAX) );
+    WX_ASSERT_FAILS_WITH_ASSERT( wxRound(1.1*INT_MIN) );
+
+    // For compatibility reasons, we allow using wxRound() with integer types
+    // as well, even if this doesn't really make sense/
+#if WXWIN_COMPATIBILITY_3_0
+    wxWARNING_SUPPRESS_DEPRECATED()
+
+    CHECK( wxRound(-9) == -9 );
+    CHECK( wxRound((size_t)17) == 17 );
+    CHECK( wxRound((short)289) == 289 );
+
+    wxWARNING_RESTORE_DEPRECATED()
+#endif // WXWIN_COMPATIBILITY_3_0
+}
+
+TEST_CASE("wxMulDivInt32", "[math]")
+{
+    // Check that it rounds correctly.
+    CHECK( wxMulDivInt32(15, 3, 2) == 23 );
+
+    // Check that it doesn't overflow.
+    CHECK( wxMulDivInt32((INT_MAX - 1)/2, 200, 100) == INT_MAX - 1 );
+}
+
+#if wxUSE_MIMETYPE
+TEST_CASE("wxFileTypeInfo", "[mime]")
+{
+    SECTION("no extensions")
+    {
+        wxFileTypeInfo fti("binary/*", "", wxString{}, L"plain binary");
+        REQUIRE( fti.GetExtensionsCount() == 0 );
+    }
+
+    SECTION("extension without null at the end")
+    {
+        wxFileTypeInfo fti("image/png", "", wxEmptyString, "PNG image", "png");
+        REQUIRE( fti.GetExtensionsCount() == 1 );
+        CHECK( fti.GetExtensions()[0] == "png" );
+    }
+
+    SECTION("two extensions with null at the end")
+    {
+        wxFileTypeInfo fti("image/jpeg", "", "", "JPEG image",
+                           "jpg", L"jpeg", nullptr);
+        REQUIRE( fti.GetExtensionsCount() == 2 );
+        CHECK( fti.GetExtensions()[0] == "jpg" );
+        CHECK( fti.GetExtensions()[1] == "jpeg" );
+    }
+}
+
+TEST_CASE("wxFileType::ExpandCommand", "[mime]")
+{
+    const wxFileType::MessageParameters params("file.txt", "text/plain");
+
+    CHECK( wxFileType::ExpandCommand("view %s", params) == "view file.txt" );
+
+    // A command ending with a bare '%' used to read past the end of the
+    // string; check that the trailing '%' is just copied verbatim instead.
+    CHECK( wxFileType::ExpandCommand("show %s %", params) == "show file.txt %" );
+}
+
+#ifdef __WINDOWS__
+TEST_CASE("wxFileType::ExecutableIcon", "[mime][msw]")
+{
+    std::unique_ptr<wxFileType> fileType(
+        wxTheMimeTypesManager->GetFileTypeFromExtension("exe"));
+    REQUIRE( fileType );
+
+    wxIconLocation iconLoc;
+    REQUIRE( fileType->GetIcon(&iconLoc) );
+
+    CHECK( iconLoc.IsOk() );
+    CHECK( iconLoc.GetFileName() != "%1" );
+    CHECK( iconLoc.GetFileName() != "%L" );
+}
+#endif // __WINDOWS__
+#endif // wxUSE_MIMETYPE
+
+TEST_CASE("wxVersionInfo", "[version]")
+{
+    wxVersionInfo ver120("test", 1, 2);
+    CHECK( ver120.AtLeast(1, 2) );
+    CHECK( ver120.AtLeast(1, 0) );
+    CHECK( ver120.AtLeast(0, 9) );
+
+    CHECK_FALSE( ver120.AtLeast(1, 2, 1) );
+    CHECK_FALSE( ver120.AtLeast(1, 3) );
+    CHECK_FALSE( ver120.AtLeast(2, 0) );
+}
+
+TEST_CASE("wxGetLibraryVersionInfo", "[libraryversion]")
+{
+    // We especially want to ensure that wxGetLibraryVersionInfo()
+    // is available in wxBase, and successfully links, too.
+    wxVersionInfo libver = wxGetLibraryVersionInfo();
+    CHECK( libver.GetNumericVersionString().starts_with("3.") );
+}
+
+TEST_CASE("wxWordWrap", "[wordwrap]")
+{
+    // Use artificially small max width to make the tests shorter and simpler.
+    constexpr int N = 8;
+
+    CHECK( wxWordWrap("", N).empty() );
+
+    CHECK_THAT( wxWordWrap("foo", N),
+                Catch::Equals<wxString>({"foo"}) );
+    CHECK_THAT( wxWordWrap("foo bar", N),
+                Catch::Equals<wxString>({"foo bar"}) );
+    CHECK_THAT( wxWordWrap("foo quux", N),
+                Catch::Equals<wxString>({"foo quux"}) );
+    CHECK_THAT( wxWordWrap("foo bar baz", N),
+                Catch::Equals<wxString>({"foo bar", "baz"}) );
+    CHECK_THAT( wxWordWrap("foo barbaz", N),
+                Catch::Equals<wxString>({"foo", "barbaz"}) );
+    CHECK_THAT( wxWordWrap("foobarbaz", N),
+                Catch::Equals<wxString>({"foobarba", "z"}) );
+
+    CHECK_THAT( wxWordWrap("some more realistic text is wrapped correctly", 15),
+                Catch::Equals<wxString>({
+                    "some more",
+                    "realistic text",
+                    "is wrapped",
+                    "correctly"
+                }) );
 }

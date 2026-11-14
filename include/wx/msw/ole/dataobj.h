@@ -2,7 +2,6 @@
 // Name:        wx/msw/ole/dataobj.h
 // Purpose:     declaration of the wxDataObject class
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     10.05.98
 // Copyright:   (c) 1998 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 // Licence:     wxWindows licence
@@ -50,6 +49,15 @@ public:
     {
         // return false from here only for compatibility with earlier wx versions
         return true;
+    }
+
+    // this function is called after successfully receiving the data in the
+    // given format from the specified source, either during drag and drop or
+    // when pasting from the clipboard, and can be overridden to retrieve more
+    // data from the source later
+    virtual void MSWSetDataSource(IDataObject* WXUNUSED(source),
+                                  const wxDataFormat& WXUNUSED(format))
+    {
     }
 
     // function to return symbolic name of clipboard format (for debug messages)

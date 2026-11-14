@@ -2,7 +2,6 @@
 // Name:        caret.cpp
 // Purpose:     wxCaret sample
 // Author:      Robert Roebling
-// Modified by:
 // Created:     04/01/98
 // Copyright:   (c) wxWindows team
 // Licence:     wxWindows licence
@@ -11,9 +10,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 // for all others, include the necessary headers (this file is usually all you
 // need because it includes almost all <standard< wxWidgets headers
@@ -48,7 +44,7 @@ public:
     // this one is called on application startup and is a good place for the app
     // initialization (doing it here and not in the ctor allows to have an error
     // return: if OnInit() returns false, the application terminates)
-    virtual bool OnInit() wxOVERRIDE;
+    virtual bool OnInit() override;
 };
 
 // MyCanvas is a canvas on which you can type
@@ -80,6 +76,7 @@ public:
     void OnPaint( wxPaintEvent &event );
     void OnSize( wxSizeEvent &event );
     void OnChar( wxKeyEvent &event );
+    void OnScroll(wxScrollWinEvent& event);
 
 private:
     // move the caret to m_xCaret, m_yCaret
@@ -203,7 +200,7 @@ bool MyApp::OnInit()
 
 // frame constructor
 MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
-       : wxFrame((wxFrame *)NULL, wxID_ANY, title, pos, size)
+       : wxFrame(nullptr, wxID_ANY, title, pos, size)
 {
     // set the frame icon
     SetIcon(wxICON(sample));
@@ -300,6 +297,7 @@ wxBEGIN_EVENT_TABLE(MyCanvas, wxScrolledWindow)
     EVT_PAINT(MyCanvas::OnPaint)
     EVT_SIZE(MyCanvas::OnSize)
     EVT_CHAR(MyCanvas::OnChar)
+    EVT_SCROLLWIN(MyCanvas::OnScroll)
 wxEND_EVENT_TABLE()
 
 MyCanvas::MyCanvas( wxWindow *parent )
@@ -307,9 +305,9 @@ MyCanvas::MyCanvas( wxWindow *parent )
                             wxDefaultPosition, wxDefaultSize,
                             wxSUNKEN_BORDER )
 {
-    m_text = (wxChar *)NULL;
+    m_text = nullptr;
 
-    SetBackgroundColour(*wxWHITE);
+    SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
 
     SetFontSize(12);
 
@@ -389,6 +387,9 @@ void MyCanvas::ChangeSize()
     free(m_text);
     m_text = (wxChar *)calloc(m_xChars * m_yChars, sizeof(wxChar));
 
+    // Make the client area scrollable.
+    SetScrollbars(m_widthChar, m_heightChar, m_xChars + 10, m_yChars + 10);
+
 #if wxUSE_STATUSBAR
     wxFrame *frame = wxDynamicCast(GetParent(), wxFrame);
 
@@ -423,7 +424,7 @@ void MyCanvas::OnPaint( wxPaintEvent &WXUNUSED(event) )
             wxChar ch = CharAt(x, y);
             if ( !ch )
                 ch = ' ';
-#ifdef __WXOSX__
+#if defined(__WXOSX__) || defined(__WXQT__)
             dc.DrawText(ch, m_xMargin + x * m_widthChar,
                         m_yMargin + y * m_heightChar );
 #else
@@ -431,9 +432,8 @@ void MyCanvas::OnPaint( wxPaintEvent &WXUNUSED(event) )
 #endif
         }
 
-#ifndef __WXOSX__
-        dc.DrawText( line, m_xMargin, m_yMargin + y * m_heightChar );
-#endif
+        if ( !line.empty() )
+            dc.DrawText( line, m_xMargin, m_yMargin + y * m_heightChar );
     }
 }
 
@@ -476,12 +476,12 @@ void MyCanvas::OnChar( wxKeyEvent &event )
                 wxChar ch = (wxChar)event.GetKeyCode();
                 CharAt(m_xCaret, m_yCaret) = ch;
 
-                wxCaretSuspend cs(this);
-                wxClientDC dc(this);
-                dc.SetFont(m_font);
-                dc.SetBackgroundMode(wxBRUSHSTYLE_SOLID); // overwrite old value
-                dc.DrawText(ch, m_xMargin + m_xCaret * m_widthChar,
-                                m_yMargin + m_yCaret * m_heightChar );
+                wxRect rect(
+                    m_xMargin + m_xCaret * m_widthChar,
+                    m_yMargin + m_yCaret * m_heightChar,
+                    m_widthChar,
+                    m_heightChar);
+                RefreshRect(rect, false /* don't erase background */);
 
                 NextChar();
             }
@@ -494,3 +494,16 @@ void MyCanvas::OnChar( wxKeyEvent &event )
     DoMoveCaret();
 }
 
+void MyCanvas::OnScroll(wxScrollWinEvent &event)
+{
+    // Track the new caret position after the scrolling is finished.
+    CallAfter([this]()
+        {
+            wxPoint pos = GetCaret()->GetPosition();
+            m_xCaret = (pos.x - m_xMargin) / m_widthChar;
+            m_yCaret = (pos.y - m_yMargin) / m_heightChar;
+            wxLogStatus("Caret is at (%d, %d)", m_xCaret, m_yCaret);
+        });
+
+    event.Skip();
+}

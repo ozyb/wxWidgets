@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_HYPERLINKCTRL
 
@@ -44,8 +41,6 @@
 #include "wx/hyperlink.h"
 
 #include "widgets.h"
-
-#include "icons/hyperlnk.xpm"
 
 // ----------------------------------------------------------------------------
 // constants
@@ -76,14 +71,21 @@ enum
 class HyperlinkWidgetsPage : public WidgetsPage
 {
 public:
-    HyperlinkWidgetsPage(WidgetsBookCtrl *book, wxImageList *imaglist);
+    HyperlinkWidgetsPage(WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist);
     virtual ~HyperlinkWidgetsPage() {}
 
-    virtual wxWindow *GetWidget() const wxOVERRIDE { return m_hyperlink; }
-    virtual void RecreateWidget() wxOVERRIDE { CreateHyperlink(); }
+    virtual wxWindow *GetWidget() const override { return m_hyperlink; }
+    virtual Widgets GetWidgets() const override
+    {
+        Widgets widgets(WidgetsPage::GetWidgets());
+        widgets.push_back(m_hyperlinkLong);
+        return widgets;
+    }
+
+    virtual void RecreateWidget() override { CreateHyperlink(); }
 
     // lazy creation of the content
-    virtual void CreateContent() wxOVERRIDE;
+    virtual void CreateContent() override;
 
 protected:
     // event handlers
@@ -147,8 +149,8 @@ IMPLEMENT_WIDGETS_PAGE(HyperlinkWidgetsPage, "Hyperlink",
                        );
 
 HyperlinkWidgetsPage::HyperlinkWidgetsPage(WidgetsBookCtrl *book,
-                                           wxImageList *imaglist)
-                     :WidgetsPage(book, imaglist, hyperlnk_xpm)
+                                           wxVector<wxBitmapBundle>& imaglist)
+                     :WidgetsPage(book, imaglist, WidgetsIcon::Hyperlink)
 {
 }
 
@@ -157,15 +159,14 @@ void HyperlinkWidgetsPage::CreateContent()
     wxSizer *sizerTop = new wxBoxSizer(wxHORIZONTAL);
 
     // left pane
-    wxStaticBox *box = new wxStaticBox(this, wxID_ANY, "Hyperlink details");
+    wxStaticBoxSizer *sizerLeft = new wxStaticBoxSizer(wxVERTICAL, this, "Hyperlink details");
+    wxStaticBox* const sizerLeftBox = sizerLeft->GetStaticBox();
 
-    wxSizer *sizerLeft = new wxStaticBoxSizer(box, wxVERTICAL);
+    sizerLeft->Add( CreateSizerWithTextAndButton( HyperlinkPage_SetLabel , "Set &Label", wxID_ANY, &m_label, sizerLeftBox ),
+                    wxSizerFlags().Right().Border() );
 
-    sizerLeft->Add( CreateSizerWithTextAndButton( HyperlinkPage_SetLabel , "Set &Label", wxID_ANY, &m_label ),
-                    0, wxALL | wxALIGN_RIGHT , 5 );
-
-    sizerLeft->Add( CreateSizerWithTextAndButton( HyperlinkPage_SetURL , "Set &URL", wxID_ANY, &m_url ),
-                    0, wxALL | wxALIGN_RIGHT , 5 );
+    sizerLeft->Add( CreateSizerWithTextAndButton( HyperlinkPage_SetURL , "Set &URL", wxID_ANY, &m_url, sizerLeftBox ),
+                    wxSizerFlags().Right().Border() );
 
     static const wxString alignments[] =
     {
@@ -176,16 +177,16 @@ void HyperlinkWidgetsPage::CreateContent()
     wxCOMPILE_TIME_ASSERT( WXSIZEOF(alignments) == Align_Max,
                            AlignMismatch );
 
-    m_radioAlignMode = new wxRadioBox(this, wxID_ANY, "alignment",
+    m_radioAlignMode = new wxRadioBox(sizerLeftBox, wxID_ANY, "alignment",
                                       wxDefaultPosition, wxDefaultSize,
                                       WXSIZEOF(alignments), alignments);
     m_radioAlignMode->SetSelection(1);  // start with "centre" selected since
                                         // wxHL_DEFAULT_STYLE contains wxHL_ALIGN_CENTRE
-    sizerLeft->Add(m_radioAlignMode, 0, wxALL|wxGROW, 5);
+    sizerLeft->Add(m_radioAlignMode, wxSizerFlags().Expand().Border());
 
-    m_checkGeneric = new wxCheckBox(this, wxID_ANY, "Use generic version",
+    m_checkGeneric = new wxCheckBox(sizerLeftBox, wxID_ANY, "Use generic version",
                                     wxDefaultPosition, wxDefaultSize);
-    sizerLeft->Add(m_checkGeneric, 0, wxALL|wxGROW, 5);
+    sizerLeft->Add(m_checkGeneric, wxSizerFlags().Expand().Border());
 
     // right pane
     wxSizer *szHyperlinkLong = new wxBoxSizer(wxVERTICAL);
@@ -210,12 +211,12 @@ void HyperlinkWidgetsPage::CreateContent()
 
     m_fun = new wxStaticText(this, wxID_ANY, " for fun!");
 
-    szHyperlink->Add(0, 0, 1, wxCENTRE);
-    szHyperlink->Add(m_visit, 0, wxCENTRE);
-    szHyperlink->Add(m_hyperlink, 0, wxCENTRE);
-    szHyperlink->Add(m_fun, 0, wxCENTRE);
-    szHyperlink->Add(0, 0, 1, wxCENTRE);
-    szHyperlink->SetMinSize(150, 0);
+    szHyperlink->AddStretchSpacer();
+    szHyperlink->Add(m_visit, wxSizerFlags().Centre());
+    szHyperlink->Add(m_hyperlink, wxSizerFlags().Centre());
+    szHyperlink->Add(m_fun, wxSizerFlags().Centre());
+    szHyperlink->AddStretchSpacer();
+    szHyperlink->SetMinSize(FromDIP(150), 0);
 
     if (m_checkGeneric->IsChecked())
     {
@@ -232,16 +233,16 @@ void HyperlinkWidgetsPage::CreateContent()
                                               "www.wxwidgets.org");
     }
 
-    szHyperlinkLong->Add(0, 0, 1, wxCENTRE);
-    szHyperlinkLong->Add(szHyperlink, 0, wxCENTRE|wxGROW);
-    szHyperlinkLong->Add(0, 0, 1, wxCENTRE);
-    szHyperlinkLong->Add(m_hyperlinkLong, 0, wxGROW);
-    szHyperlinkLong->Add(0, 0, 1, wxCENTRE);
+    szHyperlinkLong->AddStretchSpacer();
+    szHyperlinkLong->Add(szHyperlink, wxSizerFlags().Centre());
+    szHyperlinkLong->AddStretchSpacer();
+    szHyperlinkLong->Add(m_hyperlinkLong, wxSizerFlags().Expand());
+    szHyperlinkLong->AddStretchSpacer();
 
 
     // the 3 panes panes compose the window
-    sizerTop->Add(sizerLeft, 0, (wxALL & ~wxLEFT), 10);
-    sizerTop->Add(szHyperlinkLong, 1, wxGROW | (wxALL & ~wxRIGHT), 10);
+    sizerTop->Add(sizerLeft, wxSizerFlags().DoubleBorder(wxALL & ~wxLEFT));
+    sizerTop->Add(szHyperlinkLong, wxSizerFlags(1).Expand().DoubleBorder(wxALL & ~wxRIGHT));
 
     // final initializations
     Reset();
@@ -291,6 +292,8 @@ void HyperlinkWidgetsPage::CreateHyperlink()
     // update our pointer
     delete m_hyperlink;
     m_hyperlink = hyp;
+
+    NotifyWidgetRecreation(m_hyperlink);
 
     // relayout the sizer
     GetSizer()->Layout();
@@ -349,13 +352,11 @@ void HyperlinkWidgetsPage::OnButtonReset(wxCommandEvent& WXUNUSED(event))
 void HyperlinkWidgetsPage::OnButtonSetLabel(wxCommandEvent& WXUNUSED(event))
 {
     m_hyperlink->SetLabel(m_label->GetValue());
-    CreateHyperlink();
 }
 
 void HyperlinkWidgetsPage::OnButtonSetURL(wxCommandEvent& WXUNUSED(event))
 {
     m_hyperlink->SetURL(m_url->GetValue());
-    CreateHyperlink();
 }
 
 void HyperlinkWidgetsPage::OnAlignment(wxCommandEvent& WXUNUSED(event))

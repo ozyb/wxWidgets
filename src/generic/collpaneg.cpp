@@ -16,9 +16,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/defs.h"
 
@@ -35,8 +32,27 @@
 #include "wx/collheaderctrl.h"
 
 // ----------------------------------------------------------------------------
-// constants
+// local classes
 // ----------------------------------------------------------------------------
+
+namespace
+{
+
+// The pane window is just a container for the user-defined controls and
+// shouldn't get focus itself, notably when it's completely empty.
+class wxCollapsiblePanePanel : public wxPanel
+{
+public:
+    explicit wxCollapsiblePanePanel(wxWindow* parent)
+        : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                  wxTAB_TRAVERSAL | wxNO_BORDER,
+                  wxS("wxCollapsiblePanePanel"))
+    {
+        m_container.DisableSelfFocus();
+    }
+};
+
+} // anonymous namespace
 
 // ============================================================================
 // implementation
@@ -59,9 +75,9 @@ wxEND_EVENT_TABLE()
 
 void wxGenericCollapsiblePane::Init()
 {
-    m_pButton = NULL;
-    m_pPane = NULL;
-    m_sz = NULL;
+    m_pButton = nullptr;
+    m_pPane = nullptr;
+    m_sz = nullptr;
 }
 
 bool wxGenericCollapsiblePane::Create(wxWindow *parent,
@@ -81,8 +97,7 @@ bool wxGenericCollapsiblePane::Create(wxWindow *parent,
 
     // create children and lay them out using a wxBoxSizer
     // (so that we automatically get RTL features)
-    m_pButton = new wxCollapsibleHeaderCtrl(this, wxID_ANY, label, wxPoint(0, 0),
-                             wxDefaultSize);
+    m_pButton = new wxCollapsibleHeaderCtrl(this, wxID_ANY, label, wxPoint(0, 0));
 
     m_sz->Add(m_pButton, wxSizerFlags().Border(wxALL, GetBorder()));
 
@@ -93,8 +108,7 @@ bool wxGenericCollapsiblePane::Create(wxWindow *parent,
 #endif
 
     // do not set sz as our sizers since we handle the pane window without using sizers
-    m_pPane = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-                          wxTAB_TRAVERSAL|wxNO_BORDER, wxT("wxCollapsiblePanePane") );
+    m_pPane = new wxCollapsiblePanePanel(this);
 
     // start as collapsed:
     m_pPane->Hide();
@@ -105,7 +119,7 @@ bool wxGenericCollapsiblePane::Create(wxWindow *parent,
 wxGenericCollapsiblePane::~wxGenericCollapsiblePane()
 {
     if (m_pButton)
-        m_pButton->SetContainingSizer(NULL);
+        m_pButton->SetContainingSizer(nullptr);
 
     // our sizer is not deleted automatically since we didn't use SetSizer()!
     wxDELETE(m_sz);

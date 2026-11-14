@@ -13,9 +13,6 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_GRAPHICS_CONTEXT
 
@@ -30,33 +27,28 @@
 // test class
 // ----------------------------------------------------------------------------
 
-class GCDCBoundingBoxTestCase : public CppUnit::TestCase
+class GCDCBoundingBoxTestCase
 {
 public:
     GCDCBoundingBoxTestCase()
     {
         m_bmp.Create(100, 100);
         m_dc.SelectObject(m_bmp);
-        m_gcdc = new wxGCDC(m_dc);
+        m_gcdc = wxGCDC(m_dc);
+        m_gcdc.ResetBoundingBox();
     }
 
     ~GCDCBoundingBoxTestCase()
     {
-        delete m_gcdc;
         m_dc.SelectObject(wxNullBitmap);
         m_bmp = wxNullBitmap;
     }
 
-    virtual void setUp() wxOVERRIDE
-    {
-        m_gcdc->ResetBoundingBox();
-    }
-
-private:
+protected:
     wxBitmap m_bmp;
     wxMemoryDC m_dc;
 
-    wxGCDC *m_gcdc;
+    wxGCDC m_gcdc;
 
     void AssertBox(int minX, int minY, int width, int height, int margin = 0)
     {
@@ -68,145 +60,81 @@ private:
         if ( margin )
         {
             #define WX_ASSERT_CLOSE(expected, actual, delta) \
-                WX_ASSERT_MESSAGE(("%d != %d", actual, expected), \
-                                  abs(actual - expected) <= delta)
+                CHECK(actual == Approx(expected).margin(delta))
 
-            WX_ASSERT_CLOSE(minX, m_gcdc->MinX(), margin);
-            WX_ASSERT_CLOSE(minY, m_gcdc->MinY(), margin);
-            WX_ASSERT_CLOSE(maxX, m_gcdc->MaxX(), margin);
-            WX_ASSERT_CLOSE(maxY, m_gcdc->MaxY(), margin);
+            WX_ASSERT_CLOSE(minX, m_gcdc.MinX(), margin);
+            WX_ASSERT_CLOSE(minY, m_gcdc.MinY(), margin);
+            WX_ASSERT_CLOSE(maxX, m_gcdc.MaxX(), margin);
+            WX_ASSERT_CLOSE(maxY, m_gcdc.MaxY(), margin);
 
             #undef WX_ASSERT_CLOSE
         }
         else
         {
-            CPPUNIT_ASSERT_EQUAL(minX, m_gcdc->MinX());
-            CPPUNIT_ASSERT_EQUAL(minY, m_gcdc->MinY());
-            CPPUNIT_ASSERT_EQUAL(maxX, m_gcdc->MaxX());
-            CPPUNIT_ASSERT_EQUAL(maxY, m_gcdc->MaxY());
+            CHECK(m_gcdc.MinX() == minX);
+            CHECK(m_gcdc.MinY() == minY);
+            CHECK(m_gcdc.MaxX() == maxX);
+            CHECK(m_gcdc.MaxY() == maxY);
         }
     }
-
-    CPPUNIT_TEST_SUITE( GCDCBoundingBoxTestCase );
-        CPPUNIT_TEST( DrawBitmap );
-        CPPUNIT_TEST( DrawIcon );
-        CPPUNIT_TEST( DrawLine );
-        CPPUNIT_TEST( CrossHair );
-        CPPUNIT_TEST( DrawArc );
-        CPPUNIT_TEST( DrawEllipticArc );
-        CPPUNIT_TEST( DrawPoint );
-        CPPUNIT_TEST( DrawLines );
-        #if wxUSE_SPLINES
-            CPPUNIT_TEST( DrawSpline );
-        #endif
-        CPPUNIT_TEST( DrawPolygon );
-        CPPUNIT_TEST( DrawPolyPolygon );
-        CPPUNIT_TEST( DrawRectangle );
-        CPPUNIT_TEST( DrawTwoRectangles );
-        CPPUNIT_TEST( DrawRectsOnTransformedDC );
-        CPPUNIT_TEST( DrawRoundedRectangle );
-        CPPUNIT_TEST( DrawRectangleAndReset );
-        CPPUNIT_TEST( DrawEllipse );
-        CPPUNIT_TEST( Blit );
-        CPPUNIT_TEST( StretchBlit );
-        CPPUNIT_TEST( DrawRotatedText );
-        CPPUNIT_TEST( DrawText );
-        CPPUNIT_TEST( GradientFillLinear );
-        CPPUNIT_TEST( GradientFillConcentric );
-        CPPUNIT_TEST( DrawCheckMark );
-    CPPUNIT_TEST_SUITE_END();
-
-    void DrawBitmap();
-    void DrawIcon();
-    void DrawLine();
-    void CrossHair();
-    void DrawArc();
-    void DrawEllipticArc();
-    void DrawPoint();
-    void DrawLines();
-    #if wxUSE_SPLINES
-        void DrawSpline();
-    #endif
-    void DrawPolygon();
-    void DrawPolyPolygon();
-    void DrawRectangle();
-    void DrawTwoRectangles();
-    void DrawRectsOnTransformedDC();
-    void DrawRoundedRectangle();
-    void DrawRectangleAndReset();
-    void DrawEllipse();
-    void Blit();
-    void StretchBlit();
-    void DrawRotatedText();
-    void DrawText();
-    void GradientFillLinear();
-    void GradientFillConcentric();
-    void DrawCheckMark();
 
     wxDECLARE_NO_COPY_CLASS(GCDCBoundingBoxTestCase);
 };
 
-// register in the unnamed registry so that these tests are run by default
-CPPUNIT_TEST_SUITE_REGISTRATION( GCDCBoundingBoxTestCase );
-
-// also include in it's own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( GCDCBoundingBoxTestCase, "GCDCBoundingBoxTestCase" );
-
-
-void GCDCBoundingBoxTestCase::DrawBitmap()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawBitmap", "[boundingbox]")
 {
     wxBitmap bitmap;
     bitmap.Create(12, 12);
 
-    m_gcdc->DrawBitmap(bitmap, 5, 5);
+    m_gcdc.DrawBitmap(bitmap, 5, 5);
     AssertBox(5, 5, 12, 12);
 }
 
-void GCDCBoundingBoxTestCase::DrawIcon()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawIcon", "[boundingbox]")
 {
     wxBitmap bitmap;
     bitmap.Create(16, 16);
     wxIcon icon;
     icon.CopyFromBitmap(bitmap);
 
-    m_gcdc->DrawIcon(icon, 42, 42);
+    m_gcdc.DrawIcon(icon, 42, 42);
     AssertBox(42, 42, 16, 16);
 }
 
-void GCDCBoundingBoxTestCase::DrawLine()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawLine", "[boundingbox]")
 {
-    m_gcdc->DrawLine(10, 10, 20, 15);
+    m_gcdc.DrawLine(10, 10, 20, 15);
     AssertBox(10, 10, 10, 5);
 }
 
-void GCDCBoundingBoxTestCase::CrossHair()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::CrossHair", "[boundingbox]")
 {
     int w, h;
-    m_gcdc->GetSize(&w, &h);
+    m_gcdc.GetSize(&w, &h);
 
-    m_gcdc->CrossHair(33, 33);
+    m_gcdc.CrossHair(33, 33);
     AssertBox(0, 0, w, h);
 }
 
-void GCDCBoundingBoxTestCase::DrawArc()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawArc", "[boundingbox]")
 {
-    m_gcdc->DrawArc(25, 30, 15, 40, 25, 40);  // quarter circle
+    m_gcdc.DrawArc(25, 30, 15, 40, 25, 40);  // quarter circle
     AssertBox(15, 30, 10, 10, 3);
 }
 
-void GCDCBoundingBoxTestCase::DrawEllipticArc()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawEllipticArc", "[boundingbox]")
 {
-    m_gcdc->DrawEllipticArc(40, 50, 30, 20, 0, 180);  // half circle
+    m_gcdc.DrawEllipticArc(40, 50, 30, 20, 0, 180);  // half circle
     AssertBox(40, 50, 30, 10, 3);
 }
 
-void GCDCBoundingBoxTestCase::DrawPoint()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawPoint", "[boundingbox]")
 {
-    m_gcdc->DrawPoint(20, 20);
+    m_gcdc.DrawPoint(20, 20);
     AssertBox(20, 20, 0, 0);
 }
 
-void GCDCBoundingBoxTestCase::DrawLines()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawLines", "[boundingbox]")
 {
     wxPoint points[4];
     points[0] = wxPoint(10, 20);
@@ -214,35 +142,35 @@ void GCDCBoundingBoxTestCase::DrawLines()
     points[2] = wxPoint(30, 20);
     points[3] = wxPoint(20, 30);
 
-    m_gcdc->DrawLines(4, points, 7, 8);
+    m_gcdc.DrawLines(4, points, 7, 8);
     AssertBox(17, 18, 20, 20);
 }
 
 #if wxUSE_SPLINES
-void GCDCBoundingBoxTestCase::DrawSpline()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawSpline", "[boundingbox]")
 {
     wxPoint points[3];
     points[0] = wxPoint(10, 30);
     points[1] = wxPoint(20, 20);
     points[2] = wxPoint(40, 50);
 
-    m_gcdc->DrawSpline(3, points);
+    m_gcdc.DrawSpline(3, points);
     AssertBox(10, 20, 30, 30, 5);
 }
 #endif  // wxUSE_SPLINES
 
-void GCDCBoundingBoxTestCase::DrawPolygon()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawPolygon", "[boundingbox]")
 {
     wxPoint points[3];
     points[0] = wxPoint(10, 30);
     points[1] = wxPoint(20, 10);
     points[2] = wxPoint(30, 30);
 
-    m_gcdc->DrawPolygon(3, points, -5, -7);
+    m_gcdc.DrawPolygon(3, points, -5, -7);
     AssertBox(5, 3, 20, 20);
 }
 
-void GCDCBoundingBoxTestCase::DrawPolyPolygon()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawPolyPolygon", "[boundingbox]")
 {
     int lenghts[2];
     lenghts[0] = 3;
@@ -255,112 +183,112 @@ void GCDCBoundingBoxTestCase::DrawPolyPolygon()
     points[4] = wxPoint(30, 40);
     points[5] = wxPoint(40, 60);
 
-    m_gcdc->DrawPolyPolygon(2, lenghts, points, 12, 5);
+    m_gcdc.DrawPolyPolygon(2, lenghts, points, 12, 5);
     AssertBox(22, 15, 30, 50, 4);
 }
 
-void GCDCBoundingBoxTestCase::DrawRectangle()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawRectangle", "[boundingbox]")
 {
-    m_gcdc->DrawRectangle(2, 2, 12, 12);
+    m_gcdc.DrawRectangle(2, 2, 12, 12);
     AssertBox(2, 2, 12, 12);
 }
 
-void GCDCBoundingBoxTestCase::DrawRoundedRectangle()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawRoundedRectangle", "[boundingbox]")
 {
-    m_gcdc->DrawRoundedRectangle(27, 27, 12, 12, 2);
+    m_gcdc.DrawRoundedRectangle(27, 27, 12, 12, 2);
     AssertBox(27, 27, 12, 12);
 }
 
-void GCDCBoundingBoxTestCase::DrawEllipse()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawEllipse", "[boundingbox]")
 {
-    m_gcdc->DrawEllipse(54, 45, 23, 12);
+    m_gcdc.DrawEllipse(54, 45, 23, 12);
     AssertBox(54, 45, 23, 12);
 }
 
-void GCDCBoundingBoxTestCase::Blit()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::Blit", "[boundingbox]")
 {
     wxBitmap bitmap;
     bitmap.Create(20, 20);
     wxMemoryDC dc(bitmap);
 
-    m_gcdc->Blit(20, 10, 12, 7, &dc, 0, 0);
+    m_gcdc.Blit(20, 10, 12, 7, &dc, 0, 0);
     AssertBox(20, 10, 12, 7);
 
     dc.SelectObject(wxNullBitmap);
 }
 
-void GCDCBoundingBoxTestCase::StretchBlit()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::StretchBlit", "[boundingbox]")
 {
     wxBitmap bitmap;
     bitmap.Create(20, 20);
     wxMemoryDC dc(bitmap);
 
-    m_gcdc->StretchBlit(30, 50, 5, 5, &dc, 0, 0, 12, 4);
+    m_gcdc.StretchBlit(30, 50, 5, 5, &dc, 0, 0, 12, 4);
     AssertBox(30, 50, 5, 5);
 
     dc.SelectObject(wxNullBitmap);
 }
 
-void GCDCBoundingBoxTestCase::DrawRotatedText()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawRotatedText", "[boundingbox]")
 {
     wxString text("vertical");
     wxCoord w, h;
-    m_gcdc->GetTextExtent(text, &w, &h);
+    m_gcdc.GetTextExtent(text, &w, &h);
 
-    m_gcdc->DrawRotatedText(text, 43, 22, -90);
+    m_gcdc.DrawRotatedText(text, 43, 22, -90);
     AssertBox(43 - h, 22, h, w, 3);
 }
 
-void GCDCBoundingBoxTestCase::DrawText()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawText", "[boundingbox]")
 {
     wxString text("H");
     wxCoord w, h;
-    m_gcdc->GetTextExtent(text, &w, &h);
+    m_gcdc.GetTextExtent(text, &w, &h);
 
-    m_gcdc->DrawText(text, 3, 3);
+    m_gcdc.DrawText(text, 3, 3);
     AssertBox(3, 3, w, h, 3);
 }
 
-void GCDCBoundingBoxTestCase::GradientFillLinear()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::GradientFillLinear", "[boundingbox]")
 {
     wxRect rect(16, 16, 30, 40);
-    m_gcdc->GradientFillLinear(rect, *wxWHITE, *wxBLACK, wxNORTH);
+    m_gcdc.GradientFillLinear(rect, *wxWHITE, *wxBLACK, wxNORTH);
     AssertBox(16, 16, 30, 40);
 }
 
-void GCDCBoundingBoxTestCase::GradientFillConcentric()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::GradientFillConcentric", "[boundingbox]")
 {
     wxRect rect(6, 6, 30, 40);
-    m_gcdc->GradientFillConcentric(rect, *wxWHITE, *wxBLACK, wxPoint(10, 10));
+    m_gcdc.GradientFillConcentric(rect, *wxWHITE, *wxBLACK, wxPoint(10, 10));
     AssertBox(6, 6, 30, 40);
 }
 
-void GCDCBoundingBoxTestCase::DrawCheckMark()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawCheckMark", "[boundingbox]")
 {
-    m_gcdc->DrawCheckMark(32, 24, 16, 16);
+    m_gcdc.DrawCheckMark(32, 24, 16, 16);
     AssertBox(32, 24, 16, 16);
 }
 
-void GCDCBoundingBoxTestCase::DrawRectangleAndReset()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawRectangleAndReset", "[boundingbox]")
 {
-    m_gcdc->DrawRectangle(2, 2, 12, 12);
-    m_gcdc->ResetBoundingBox();
+    m_gcdc.DrawRectangle(2, 2, 12, 12);
+    m_gcdc.ResetBoundingBox();
     AssertBox(0, 0, 0, 0);
 }
 
-void GCDCBoundingBoxTestCase::DrawTwoRectangles()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawTwoRectangles", "[boundingbox]")
 {
-    m_gcdc->DrawRectangle(10, 15, 50, 30);
-    m_gcdc->DrawRectangle(15, 20, 55, 35);
+    m_gcdc.DrawRectangle(10, 15, 50, 30);
+    m_gcdc.DrawRectangle(15, 20, 55, 35);
     AssertBox(10, 15, 60, 40);
 }
 
-void GCDCBoundingBoxTestCase::DrawRectsOnTransformedDC()
+TEST_CASE_METHOD(GCDCBoundingBoxTestCase, "BoundingBox::DrawRectsOnTransformedDC", "[boundingbox]")
 {
-    m_gcdc->DrawRectangle(10, 15, 50, 30);
-    m_gcdc->SetDeviceOrigin(15, 20);
-    m_gcdc->DrawRectangle(15, 20, 45, 35);
-    m_gcdc->SetDeviceOrigin(5, 10);
+    m_gcdc.DrawRectangle(10, 15, 50, 30);
+    m_gcdc.SetDeviceOrigin(15, 20);
+    m_gcdc.DrawRectangle(15, 20, 45, 35);
+    m_gcdc.SetDeviceOrigin(5, 10);
     AssertBox(5, 5, 65, 60);
 }
 

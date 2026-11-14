@@ -19,9 +19,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/evtloop.h"
 #include "wx/evtloopsrc.h"
@@ -49,6 +46,13 @@ GdkWindow* wxGetTopLevelGDK();
 wxGUIEventLoop::wxGUIEventLoop()
 {
     m_exitcode = 0;
+    m_lastEvent = new GdkEvent;
+    memset(m_lastEvent, 0, sizeof(GdkEvent));
+}
+
+wxGUIEventLoop::~wxGUIEventLoop()
+{
+    delete m_lastEvent;
 }
 
 int wxGUIEventLoop::DoRun()
@@ -75,8 +79,6 @@ int wxGUIEventLoop::DoRun()
         gtk_main_quit();
     }
 
-    OnExit();
-
 #if wxUSE_EXCEPTIONS
     // Rethrow any exceptions which could have been produced by the handlers
     // ran by the event loop.
@@ -87,13 +89,9 @@ int wxGUIEventLoop::DoRun()
     return m_exitcode;
 }
 
-void wxGUIEventLoop::ScheduleExit(int rc)
+void wxGUIEventLoop::DoStop(int rc)
 {
-    wxCHECK_RET( IsInsideRun(), wxT("can't call ScheduleExit() if not started") );
-
     m_exitcode = rc;
-
-    m_shouldExit = true;
 
     gtk_main_quit();
 }
@@ -106,6 +104,15 @@ void wxGUIEventLoop::WakeUp()
     //       nothing when we don't...
     if ( wxTheApp )
         wxTheApp->WakeUpIdle();
+}
+
+bool wxGUIEventLoop::GTKIsSameAsLastEvent(const GdkEvent* ev, size_t size)
+{
+    if ( memcmp(m_lastEvent, ev, size) == 0 )
+        return true;
+
+    memcpy(m_lastEvent, ev, size);
+    return false;
 }
 
 // ----------------------------------------------------------------------------
@@ -129,24 +136,39 @@ static gboolean wx_on_channel_event(GIOChannel *channel,
     wxEventLoopSourceHandler * const
         handler = static_cast<wxEventLoopSourceHandler *>(data);
 
+    // We may have to call several handler methods for a single notification
+    // here, as GLib reports all the conditions at once. Any of them may delete
+    // the wxEventLoopSource using this handler, and the handler itself with
+    // it, so we must stop as soon as this happens instead of using the handler
+    // again: GLib keeps the source alive until we return, but the conditions
+    // it reported don't apply to it any longer once it has been destroyed.
+    GSource* const source = g_main_current_source();
+
     if ( (condition & G_IO_IN) || (condition & G_IO_PRI) || (condition & G_IO_HUP) )
+    {
         handler->OnReadWaiting();
 
+        if ( g_source_is_destroyed(source) )
+            return TRUE;
+    }
+
     if (condition & G_IO_OUT)
+    {
         handler->OnWriteWaiting();
+
+        if ( g_source_is_destroyed(source) )
+            return TRUE;
+    }
 
     if ( (condition & G_IO_ERR) || (condition & G_IO_NVAL) )
         handler->OnExceptionWaiting();
 
     // we never want to remove source here, so always return true
     //
-    // The source may have been removed by the handler, so it may be
-    // a good idea to return FALSE when the source has already been
-    // removed.  However, that would involve somehow informing this function
-    // that the source was removed, which is not trivial to implement
-    // and handle all cases.  It has been found through testing
-    // that if the source was removed by the handler, that even if we
-    // return TRUE here, the source/callback will not get called again.
+    // Note that the source could have been removed by the handler above, in
+    // which case returning FALSE could seem better, but this is not necessary:
+    // it has been found through testing that the callback is not called again
+    // in this case even if we return TRUE.
     return TRUE;
 }
 }
@@ -155,9 +177,9 @@ class wxGUIEventLoopSourcesManager : public wxEventLoopSourcesManagerBase
 {
 public:
     virtual wxEventLoopSource*
-    AddSourceForFD(int fd, wxEventLoopSourceHandler *handler, int flags) wxOVERRIDE
+    AddSourceForFD(int fd, wxEventLoopSourceHandler *handler, int flags) override
     {
-        wxCHECK_MSG( fd != -1, NULL, "can't monitor invalid fd" );
+        wxCHECK_MSG( fd != -1, nullptr, "can't monitor invalid fd" );
 
         int condition = 0;
         if ( flags & wxEVENT_SOURCE_INPUT )
@@ -179,7 +201,7 @@ public:
         g_io_channel_unref(channel);
 
         if ( !sourceId )
-            return NULL;
+            return nullptr;
 
         wxLogTrace(wxTRACE_EVT_SOURCE,
                    "Adding event loop source for fd=%d with GTK id=%u",
@@ -304,7 +326,7 @@ static void wxgtk_main_do_event(GdkEvent* event, void* data)
         // examine the event itself to distinguish between the two cases but
         // this would be unnecessarily complicated).
         cat2 = wxEVT_CATEGORY_CLIPBOARD;
-        // Fall through.
+        wxFALLTHROUGH;
 
     case GDK_PROXIMITY_IN:
     case GDK_PROXIMITY_OUT:
@@ -377,29 +399,46 @@ void wxGUIEventLoop::DoYieldFor(long eventsToProcess)
     //       and then call gtk_main_do_event()!
     //       In particular in this way we also process input from sources like
     //       GIOChannels (this is needed for e.g. wxGUIAppTraits::WaitForChild).
-    gdk_event_handler_set(wxgtk_main_do_event, this, NULL);
+    gdk_event_handler_set(wxgtk_main_do_event, this, nullptr);
     while (Pending())   // avoid false positives from our idle source
         gtk_main_iteration();
 
-    wxGCC_WARNING_SUPPRESS_CAST_FUNCTION_TYPE()
-    gdk_event_handler_set ((GdkEventFunc)gtk_main_do_event, NULL, NULL);
-    wxGCC_WARNING_RESTORE_CAST_FUNCTION_TYPE()
+    wxWARNING_SUPPRESS_CAST_FUNCTION_TYPE()
+    gdk_event_handler_set ((GdkEventFunc)gtk_main_do_event, nullptr, nullptr);
+    wxWARNING_RESTORE_CAST_FUNCTION_TYPE()
 
     wxEventLoopBase::DoYieldFor(eventsToProcess);
 
     // put any unprocessed GDK events back in the queue
-    if ( !m_arrGdkEvents.IsEmpty() )
+    if ( !m_queuedGdkEvents.empty() )
     {
         GdkDisplay* disp = gdk_window_get_display(wxGetTopLevelGDK());
-        for (size_t i=0; i<m_arrGdkEvents.GetCount(); i++)
+        for ( GdkEvent* ev : m_queuedGdkEvents )
         {
-            GdkEvent* ev = (GdkEvent*)m_arrGdkEvents[i];
+#ifdef __WXGTK3__
+            // Expose events are not queued in GTK 3, but generated by GDK
+            // while painting the window and are only valid during the paint
+            // cycle: dispatching them later from the queue results in a crash
+            // when using GL-based drawing (which happens e.g. when using
+            // WebKitGTK) under Wayland, as the damage region is not available
+            // outside of the paint cycle. So just ask GDK to repaint the
+            // window during the next frame instead.
+            if ( ev->type == GDK_EXPOSE )
+            {
+                gdk_window_invalidate_region(ev->expose.window,
+                                             ev->expose.region,
+                                             TRUE);
+            }
+            else
+#endif // __WXGTK3__
+            {
+                // NOTE: gdk_display_put_event makes a copy of the event
+                gdk_display_put_event(disp, ev);
+            }
 
-            // NOTE: gdk_display_put_event makes a copy of the event passed to it
-            gdk_display_put_event(disp, ev);
             gdk_event_free(ev);
         }
 
-        m_arrGdkEvents.Clear();
+        m_queuedGdkEvents.clear();
     }
 }

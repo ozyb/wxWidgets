@@ -8,10 +8,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-#pragma hdrstop
-#endif
-
 #if wxUSE_BUSYINFO
 
 // for all others, include the necessary headers
@@ -26,16 +22,6 @@
 #endif
 
 #include "wx/busyinfo.h"
-
-// wxStaticText currently supports markup only in wxGTK and wxOSX/Cocoa, so use
-// the generic version for markup support in the other ports.
-#if wxUSE_MARKUP && !(defined(__WXGTK__) || defined(__WXOSX_COCOA__))
-    #include "wx/generic/stattextg.h"
-
-    #define wxStaticTextWithMarkupSupport wxGenericStaticText
-#else
-    #define wxStaticTextWithMarkupSupport wxStaticText
-#endif
 
 void wxBusyInfo::Init(const wxBusyInfoFlags& flags)
 {
@@ -58,11 +44,26 @@ void wxBusyInfo::Init(const wxBusyInfoFlags& flags)
     wxControl* title;
     if ( !flags.m_title.empty() )
     {
-        title = new wxStaticTextWithMarkupSupport(panel, wxID_ANY, wxString(),
-                                                  wxDefaultPosition,
-                                                  wxDefaultSize,
-                                                  wxALIGN_CENTRE);
+        title = new wxStaticText(panel, wxID_ANY, wxString(),
+                                 wxDefaultPosition,
+                                 wxDefaultSize,
+                                 wxALIGN_CENTRE);
         title->SetFont(title->GetFont().Scaled(2));
+
+#ifdef __WXGTK__
+        // This bad hack is needed to fix layout under GTK: the font sent above
+        // is not taken into account for the size calculation until the window
+        // is shown but we need the correct size when computing the best size
+        // below, as otherwise we would make the entire frame too small and
+        // when the correct size is used for the actual layout later, the title
+        // control would take too much space pushing the text below it outside
+        // of the window bounds.
+        //
+        // So preemptively make it about as big as it's going to be to prevent
+        // this from happening.
+        title->SetMinSize(2*title->GetBestSize());
+#endif // __WXGTK__
+
 #if wxUSE_MARKUP
         title->SetLabelMarkup(flags.m_title);
 #else
@@ -73,17 +74,17 @@ void wxBusyInfo::Init(const wxBusyInfoFlags& flags)
     }
     else
     {
-        title = NULL;
+        title = nullptr;
     }
 
     // Vertically center the text in the window.
     sizer->AddStretchSpacer();
 
 #if wxUSE_MARKUP
-    m_text = new wxStaticTextWithMarkupSupport(panel, wxID_ANY, wxString(),
-                                               wxDefaultPosition,
-                                               wxDefaultSize,
-                                               wxALIGN_CENTRE);
+    m_text = new wxStaticText(panel, wxID_ANY, wxString(),
+                              wxDefaultPosition,
+                              wxDefaultSize,
+                              wxALIGN_CENTRE);
     if ( !flags.m_text.empty() )
         m_text->SetLabelMarkup(flags.m_text);
     else
@@ -130,7 +131,11 @@ void wxBusyInfo::Init(const wxBusyInfoFlags& flags)
 
 void wxBusyInfo::UpdateText(const wxString& str)
 {
+#if wxUSE_MARKUP
     m_text->SetLabelMarkup(str);
+#else // !wxUSE_MARKUP
+    m_text->SetLabelText(str);
+#endif // wxUSE_MARKUP/!wxUSE_MARKUP
 }
 
 void wxBusyInfo::UpdateLabel(const wxString& str)

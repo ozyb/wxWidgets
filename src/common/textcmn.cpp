@@ -2,7 +2,6 @@
 // Name:        src/common/textcmn.cpp
 // Purpose:     implementation of platform-independent functions of wxTextCtrl
 // Author:      Julian Smart
-// Modified by:
 // Created:     13.07.99
 // Copyright:   (c) wxWidgets team
 // Licence:     wxWindows licence
@@ -15,9 +14,6 @@
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/event.h"
@@ -33,6 +29,10 @@
 #endif // WX_PRECOMP
 
 #include "wx/ffile.h"
+
+#ifdef wxHAS_TEXTCTRL_RTF
+    #include "wx/filename.h"
+#endif
 
 extern WXDLLEXPORT_DATA(const char) wxTextCtrlNameStr[] = "text";
 
@@ -74,7 +74,6 @@ wxFLAGS_MEMBER(wxBORDER)
 // standard window styles
 wxFLAGS_MEMBER(wxTAB_TRAVERSAL)
 wxFLAGS_MEMBER(wxCLIP_CHILDREN)
-wxFLAGS_MEMBER(wxTRANSPARENT_WINDOW)
 wxFLAGS_MEMBER(wxWANTS_CHARS)
 wxFLAGS_MEMBER(wxFULL_REPAINT_ON_RESIZE)
 wxFLAGS_MEMBER(wxALWAYS_SHOW_SB )
@@ -130,6 +129,17 @@ wxDEFINE_EVENT( wxEVT_TEXT_URL, wxTextUrlEvent );
 wxDEFINE_EVENT( wxEVT_TEXT_MAXLEN, wxCommandEvent );
 
 wxIMPLEMENT_ABSTRACT_CLASS(wxTextCtrlBase, wxControl);
+
+#if wxUSE_ACCEL
+
+bool
+wxTextCtrlBase::ClaimsKeyBeforeAccelerator(const wxKeyEvent& event,
+                                           int WXUNUSED(command)) const
+{
+    return IsUsedForEditing(event);
+}
+
+#endif // wxUSE_ACCEL
 
 // ============================================================================
 // wxTextAttr implementation
@@ -932,12 +942,36 @@ bool wxTextCtrlBase::SetDefaultStyle(const wxTextAttr& style)
     return true;
 }
 
+void wxTextCtrlBase::SetLabel(const wxString& WXUNUSED(label))
+{
+    wxFAIL_MSG("Use SetValue() or ChangeValue() instead.");
+}
+
+wxString wxTextAreaBase::GetRTFValue() const
+{
+    wxFAIL_MSG("Not implemented for the current platform.");
+
+    return wxEmptyString;
+}
+
+void wxTextAreaBase::SetRTFValue(const wxString& WXUNUSED(val))
+{
+    wxFAIL_MSG("Not implemented for the current platform.");
+}
+
 // ----------------------------------------------------------------------------
 // file IO functions
 // ----------------------------------------------------------------------------
 
-bool wxTextAreaBase::DoLoadFile(const wxString& filename, int WXUNUSED(fileType))
+bool wxTextAreaBase::DoLoadFile(const wxString& filename, int fileType)
 {
+#ifndef wxHAS_TEXTCTRL_RTF
+    wxASSERT_MSG(fileType != wxTEXT_TYPE_RTF, "RTF support is only available on macOS.");
+    if (fileType == wxTEXT_TYPE_RTF)
+    {
+        return false;
+    }
+#endif
 #if wxUSE_FFILE
     wxFFile file(filename);
     if ( file.IsOpened() )
@@ -945,7 +979,30 @@ bool wxTextAreaBase::DoLoadFile(const wxString& filename, int WXUNUSED(fileType)
         wxString text;
         if ( file.ReadAll(&text) )
         {
-            SetValue(text);
+            switch ( fileType )
+            {
+                case wxTEXT_TYPE_RTF:
+#ifdef wxHAS_TEXTCTRL_RTF
+                    SetRTFValue(text);
+#else // !wxHAS_TEXTCTRL_RTF
+                    wxFAIL_MSG("RTF support not available under this platform");
+#endif // wxHAS_TEXTCTRL_RTF/!wxHAS_TEXTCTRL_RTF
+                    break;
+
+                case wxTEXT_TYPE_ANY:
+#ifdef wxHAS_TEXTCTRL_RTF
+                    if ( wxFileName(filename).GetExt().CmpNoCase("rtf") == 0 )
+                    {
+                        SetRTFValue(text);
+                        break;
+                    }
+#endif // wxHAS_TEXTCTRL_RTF
+                    wxFALLTHROUGH;
+
+                case wxTEXT_TYPE_PLAIN:
+                    SetValue(text);
+                    break;
+            }
 
             DiscardEdits();
             m_filename = filename;
@@ -962,11 +1019,38 @@ bool wxTextAreaBase::DoLoadFile(const wxString& filename, int WXUNUSED(fileType)
     return false;
 }
 
-bool wxTextAreaBase::DoSaveFile(const wxString& filename, int WXUNUSED(fileType))
+bool wxTextAreaBase::DoSaveFile(const wxString& filename, int fileType)
 {
 #if wxUSE_FFILE
     wxFFile file(filename, wxT("w"));
-    if ( file.IsOpened() && file.Write(GetValue()) )
+
+    wxString value;
+    switch ( fileType )
+    {
+        case wxTEXT_TYPE_RTF:
+#ifdef wxHAS_TEXTCTRL_RTF
+            value = GetRTFValue();
+#else // !wxHAS_TEXTCTRL_RTF
+            wxFAIL_MSG("RTF support not available under this platform");
+#endif // wxHAS_TEXTCTRL_RTF/!wxHAS_TEXTCTRL_RTF
+            break;
+
+        case wxTEXT_TYPE_ANY:
+#ifdef wxHAS_TEXTCTRL_RTF
+            if ( wxFileName(filename).GetExt().CmpNoCase("rtf") == 0 )
+            {
+                value = GetRTFValue();
+                break;
+            }
+#endif // wxHAS_TEXTCTRL_RTF
+            wxFALLTHROUGH;
+
+        case wxTEXT_TYPE_PLAIN:
+            value = GetValue();
+            break;
+    }
+
+    if ( file.IsOpened() && file.Write(value) )
     {
         // if it worked, save for future calls
         m_filename = filename;
@@ -1047,7 +1131,7 @@ bool wxTextCtrlBase::EmulateKeyPress(const wxKeyEvent& event)
     bool handled = false;
     // we have a native implementation for Win32 and so don't need this one
 #ifndef __WIN32__
-    wxChar ch = 0;
+    wxUniChar ch = 0;
     int keycode = event.GetKeyCode();
 
     long from, to;
@@ -1145,14 +1229,11 @@ bool wxTextCtrlBase::EmulateKeyPress(const wxKeyEvent& event)
             break;
 
         default:
-#if wxUSE_UNICODE
-            if ( event.GetUnicodeKey() )
+            if ( event.GetUnicodeChar() )
             {
-                ch = event.GetUnicodeKey();
+                ch = event.GetUnicodeChar();
             }
-            else
-#endif
-            if ( keycode < 256 && keycode >= 0 && wxIsprint(keycode) )
+            else if ( keycode < 256 && keycode >= 0 && wxIsprint(keycode) )
             {
                 // FIXME this is not going to work for non letters...
                 if ( !event.ShiftDown() )

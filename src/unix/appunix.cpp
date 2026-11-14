@@ -9,9 +9,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/app.h"
@@ -19,13 +16,19 @@
 #endif
 
 #include "wx/evtloop.h"
-#include "wx/scopedptr.h"
 #include "wx/unix/private/wakeuppipe.h"
 #include "wx/private/fdiodispatcher.h"
 #include "wx/private/fdioeventloopsourcehandler.h"
 
+#ifdef __DARWIN__
+#include "wx/osx/private.h"
+#endif
+
 #include <signal.h>
 #include <unistd.h>
+
+#include <atomic>
+#include <memory>
 
 #ifndef SA_RESTART
     // don't use for systems which don't define it (at least VMS and QNX)
@@ -53,7 +56,7 @@ public:
                                     );
     }
 
-    virtual void OnReadWaiting() wxOVERRIDE
+    virtual void OnReadWaiting() override
     {
         // The base class wxWakeUpPipe::OnReadWaiting() needs to be called in order
         // to read the data out of the wake up pipe and clear it for next time.
@@ -72,11 +75,24 @@ private:
     wxEventLoopSource* m_source;
 };
 
+// ----------------------------------------------------------------------------
+// Store signals caught by HandleSignal()
+// ----------------------------------------------------------------------------
+
+// Maximal signal number supported by SetSignalHandler(): this is enough for
+// all signals, including the real-time ones, under all the systems we know of.
+constexpr int MAX_SIGNAL = 128;
+
+// Flags set by HandleSignal(), which may run in any thread, and reset by
+// CheckSignal(), so they must be atomic (note that std::atomic<bool> is
+// lock-free everywhere, and so can be used from a signal handler).
+std::atomic<bool> gs_signalsCaught[MAX_SIGNAL + 1];
+
 } // anonymous namespace
 
 wxAppConsole::wxAppConsole()
 {
-    m_signalWakeUpPipe = NULL;
+    m_signalWakeUpPipe = nullptr;
 }
 
 wxAppConsole::~wxAppConsole()
@@ -88,12 +104,15 @@ wxAppConsole::~wxAppConsole()
 // same names
 bool wxAppConsole::Initialize(int& argc_, wxChar** argv_)
 {
-    if ( !wxAppConsoleBase::Initialize(argc_, argv_) )
-        return false;
+#ifdef __DARWIN__
+    // On command line apps on macOS we need to initialize Cocoa framework
+    wxMacAutoreleasePool autoreleasepool;
+#ifdef __WXDARWIN_OSX__
+    wxMacInitCocoa();
+#endif
+#endif // __DARWIN__
 
-    sigemptyset(&m_signalsCaught);
-
-    return true;
+    return wxAppConsoleBase::Initialize(argc_, argv_);
 }
 
 // The actual signal handler. It does as little as possible (because very few
@@ -105,39 +124,41 @@ void wxAppConsole::HandleSignal(int signal)
     if ( !app )
         return;
 
-    // Register the signal that is caught.
-    sigaddset(&(app->m_signalsCaught), signal);
+    // Register the signal that is caught: notice that we can't use sigset_t
+    // here because sigaddset() is not atomic and this function can run
+    // concurrently with CheckSignal() if it's called in another thread.
+    //
+    // Note that the check in SetSignalHandler() ensures that the index is
+    // valid.
+    gs_signalsCaught[signal] = true;
 
     // Wake up the application for handling the signal.
     //
     // Notice that we must have a valid wake up pipe here as we only install
     // our signal handlers after allocating it.
-    app->m_signalWakeUpPipe->WakeUpNoLock();
+    app->m_signalWakeUpPipe->WakeUp();
 }
 
 void wxAppConsole::CheckSignal()
 {
-    for ( SignalHandlerHash::iterator it = m_signalHandlerHash.begin();
-          it != m_signalHandlerHash.end();
-          ++it )
+    for ( const auto& kv : m_signalHandlerHash )
     {
-        int sig = it->first;
-        if ( sigismember(&m_signalsCaught, sig) )
+        int sig = kv.first;
+        if ( gs_signalsCaught[sig].exchange(false) )
         {
-            sigdelset(&m_signalsCaught, sig);
-            (it->second)(sig);
+            (kv.second)(sig);
         }
     }
 }
 
 wxFDIOHandler* wxAppConsole::RegisterSignalWakeUpPipe(wxFDIODispatcher& dispatcher)
 {
-    wxCHECK_MSG( m_signalWakeUpPipe, NULL, "Should be allocated" );
+    wxCHECK_MSG( m_signalWakeUpPipe, nullptr, "Should be allocated" );
 
     // we need a bridge to wxFDIODispatcher
     //
     // TODO: refactor the code so that only wxEventLoopSourceHandler is used
-    wxScopedPtr<wxFDIOHandler>
+    std::unique_ptr<wxFDIOHandler>
         fdioHandler(new wxFDIOEventLoopSourceHandler(m_signalWakeUpPipe));
 
     if ( !dispatcher.RegisterFD
@@ -146,7 +167,7 @@ wxFDIOHandler* wxAppConsole::RegisterSignalWakeUpPipe(wxFDIODispatcher& dispatch
                       fdioHandler.get(),
                       wxFDIO_INPUT
                      ) )
-        return NULL;
+        return nullptr;
 
     return fdioHandler.release();
 }
@@ -162,6 +183,9 @@ extern "C"
 
 bool wxAppConsole::SetSignalHandler(int signal, SignalHandler handler)
 {
+    wxCHECK_MSG( signal > 0 && signal <= MAX_SIGNAL, false,
+                 "Unsupported signal number" );
+
     const bool install = (SignalHandler_t)handler != SIG_DFL &&
                          (SignalHandler_t)handler != SIG_IGN;
 
@@ -176,7 +200,7 @@ bool wxAppConsole::SetSignalHandler(int signal, SignalHandler handler)
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = (SignalHandler_t)&wxAppConsole::HandleSignal;
     sa.sa_flags = SA_RESTART;
-    int res = sigaction(signal, &sa, 0);
+    int res = sigaction(signal, &sa, nullptr);
     if ( res != 0 )
     {
         wxLogSysError(_("Failed to install signal handler"));

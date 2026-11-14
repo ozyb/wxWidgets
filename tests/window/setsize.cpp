@@ -12,9 +12,6 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/app.h"
@@ -22,10 +19,10 @@
     #include "wx/window.h"
 #endif // WX_PRECOMP
 
-#include "wx/scopedptr.h"
+#include <memory>
 
 #include "asserthelper.h"
-#include "waitforpaint.h"
+#include "waitfor.h"
 
 // ----------------------------------------------------------------------------
 // tests helpers
@@ -44,7 +41,7 @@ public:
     }
 
 protected:
-    virtual wxSize DoGetBestSize() const wxOVERRIDE { return wxSize(50, 250); }
+    virtual wxSize DoGetBestSize() const override { return wxSize(50, 250); }
 };
 
 } // anonymous namespace
@@ -55,7 +52,7 @@ protected:
 
 TEST_CASE("wxWindow::SetSize", "[window][size]")
 {
-    wxScopedPtr<wxWindow> w(new MyWindow(wxTheApp->GetTopWindow()));
+    auto w = make_unique<MyWindow>(wxTheApp->GetTopWindow());
 
     SECTION("Simple")
     {
@@ -76,7 +73,7 @@ TEST_CASE("wxWindow::SetSize", "[window][size]")
 
 TEST_CASE("wxWindow::GetBestSize", "[window][size][best-size]")
 {
-    wxScopedPtr<wxWindow> w(new MyWindow(wxTheApp->GetTopWindow()));
+    auto w = make_unique<MyWindow>(wxTheApp->GetTopWindow());
 
     CHECK( wxSize(50, 250) == w->GetBestSize() );
 
@@ -89,8 +86,8 @@ TEST_CASE("wxWindow::GetBestSize", "[window][size][best-size]")
 
 TEST_CASE("wxWindow::MovePreservesSize", "[window][size][move]")
 {
-    wxScopedPtr<wxWindow>
-        w(new wxFrame(wxTheApp->GetTopWindow(), wxID_ANY, "Test child frame"));
+    auto w = make_unique<wxFrame>(wxTheApp->GetTopWindow(), wxID_ANY,
+                                  "Test child frame");
 
     // Unfortunately showing the window is asynchronous, at least when using
     // X11, so we have to wait for some time before retrieving its true
@@ -101,10 +98,7 @@ TEST_CASE("wxWindow::MovePreservesSize", "[window][size][move]")
 
     w->Show();
 
-    if ( !waitForPaint.YieldUntilPainted() )
-    {
-        WARN("Didn't get a paint event until timeout expiration");
-    }
+    waitForPaint.YieldUntilPainted();
 
     const wxRect rectOrig = w->GetRect();
 

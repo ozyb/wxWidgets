@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_COLOURPICKERCTRL
 
@@ -30,6 +27,7 @@
     #include "wx/app.h"
     #include "wx/log.h"
     #include "wx/radiobox.h"
+    #include "wx/statbox.h"
 #endif
 
 #include "wx/artprov.h"
@@ -40,8 +38,6 @@
 
 #include "wx/clrpicker.h"
 #include "widgets.h"
-
-#include "icons/clrpicker.xpm"
 
 // ----------------------------------------------------------------------------
 // constants
@@ -62,13 +58,13 @@ enum
 class ColourPickerWidgetsPage : public WidgetsPage
 {
 public:
-    ColourPickerWidgetsPage(WidgetsBookCtrl *book, wxImageList *imaglist);
+    ColourPickerWidgetsPage(WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist);
 
-    virtual wxWindow *GetWidget() const wxOVERRIDE { return m_clrPicker; }
-    virtual void RecreateWidget() wxOVERRIDE { RecreatePicker(); }
+    virtual wxWindow *GetWidget() const override { return m_clrPicker; }
+    virtual void RecreateWidget() override { RecreatePicker(); }
 
     // lazy creation of the content
-    virtual void CreateContent() wxOVERRIDE;
+    virtual void CreateContent() override;
 
 protected:
 
@@ -124,7 +120,7 @@ wxEND_EVENT_TABLE()
 // implementation
 // ============================================================================
 
-#if defined(__WXGTK20__)
+#if defined(__WXGTK__)
     #define FAMILY_CTRLS NATIVE_CTRLS
 #else
     #define FAMILY_CTRLS GENERIC_CTRLS
@@ -134,8 +130,8 @@ IMPLEMENT_WIDGETS_PAGE(ColourPickerWidgetsPage, "ColourPicker",
                        PICKER_CTRLS | FAMILY_CTRLS);
 
 ColourPickerWidgetsPage::ColourPickerWidgetsPage(WidgetsBookCtrl *book,
-                                     wxImageList *imaglist)
-                  : WidgetsPage(book, imaglist, clrpicker_xpm)
+                                     wxVector<wxBitmapBundle>& imaglist)
+                  : WidgetsPage(book, imaglist, WidgetsIcon::ColourPicker)
 {
 }
 
@@ -144,31 +140,33 @@ void ColourPickerWidgetsPage::CreateContent()
     // left pane
     wxSizer *boxleft = new wxBoxSizer(wxVERTICAL);
 
-    wxStaticBoxSizer *clrbox = new wxStaticBoxSizer(wxVERTICAL, this, "&ColourPicker style");
-    m_chkColourTextCtrl = CreateCheckBoxAndAddToSizer(clrbox, "With textctrl");
-    m_chkColourShowLabel = CreateCheckBoxAndAddToSizer(clrbox, "With label");
-    m_chkColourShowAlpha = CreateCheckBoxAndAddToSizer(clrbox, "With opacity");
-    boxleft->Add(clrbox, 0, wxALL|wxGROW, 5);
+    wxStaticBoxSizer *styleSizer = new wxStaticBoxSizer(wxVERTICAL, this, "&ColourPicker style");
+    wxStaticBox* const styleSizerBox = styleSizer->GetStaticBox();
+
+    m_chkColourTextCtrl = CreateCheckBoxAndAddToSizer(styleSizer, "With textctrl", wxID_ANY, styleSizerBox);
+    m_chkColourShowLabel = CreateCheckBoxAndAddToSizer(styleSizer, "With label", wxID_ANY, styleSizerBox);
+    m_chkColourShowAlpha = CreateCheckBoxAndAddToSizer(styleSizer, "With opacity", wxID_ANY, styleSizerBox);
+    boxleft->Add(styleSizer, wxSizerFlags().Expand().Border());
 
     boxleft->Add(new wxButton(this, PickerPage_Reset, "&Reset"),
-                 0, wxALIGN_CENTRE_HORIZONTAL | wxALL, 15);
+                 wxSizerFlags().CentreHorizontal().TripleBorder());
 
     Reset();    // set checkboxes state
 
     // create pickers
-    m_clrPicker = NULL;
+    m_clrPicker = nullptr;
     CreatePicker();
 
     // right pane
     m_sizer = new wxBoxSizer(wxVERTICAL);
-    m_sizer->Add(1, 1, 1, wxGROW | wxALL, 5); // spacer
-    m_sizer->Add(m_clrPicker, 0, wxALIGN_CENTER|wxALL, 5);
-    m_sizer->Add(1, 1, 1, wxGROW | wxALL, 5); // spacer
+    m_sizer->AddStretchSpacer();
+    m_sizer->Add(m_clrPicker, wxSizerFlags().Centre().Border());
+    m_sizer->AddStretchSpacer();
 
     // global pane
     wxSizer *sz = new wxBoxSizer(wxHORIZONTAL);
-    sz->Add(boxleft, 0, wxGROW|wxALL, 5);
-    sz->Add(m_sizer, 1, wxGROW|wxALL, 5);
+    sz->Add(boxleft, wxSizerFlags().Expand().Border());
+    sz->Add(m_sizer, wxSizerFlags(1).Expand().Border());
 
     SetSizer(sz);
 }
@@ -191,13 +189,15 @@ void ColourPickerWidgetsPage::CreatePicker()
     m_clrPicker = new wxColourPickerCtrl(this, PickerPage_Colour, *wxRED,
                                          wxDefaultPosition, wxDefaultSize,
                                          style);
+
+    NotifyWidgetRecreation(m_clrPicker);
 }
 
 void ColourPickerWidgetsPage::RecreatePicker()
 {
     m_sizer->Remove(1);
     CreatePicker();
-    m_sizer->Insert(1, m_clrPicker, 0, wxALIGN_CENTER|wxALL, 5);
+    m_sizer->Insert(1, m_clrPicker, wxSizerFlags().Centre().Border());
 
     m_sizer->Layout();
 }

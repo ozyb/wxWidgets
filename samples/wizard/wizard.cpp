@@ -19,9 +19,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 // for all others, include the necessary headers
 #ifndef WX_PRECOMP
@@ -39,9 +36,6 @@
 
 #include "wx/textctrl.h"
 #include "wx/wizard.h"
-
-#include "wiztest.xpm"
-#include "wiztest2.xpm"
 
 #include "../sample.xpm"
 
@@ -72,7 +66,7 @@ class MyApp : public wxApp
 {
 public:
     // override base class virtuals
-    virtual bool OnInit() wxOVERRIDE;
+    virtual bool OnInit() override;
 };
 
 class MyFrame : public wxFrame
@@ -125,7 +119,7 @@ class wxValidationPage : public wxWizardPageSimple
 public:
     wxValidationPage(wxWizard *parent) : wxWizardPageSimple(parent)
     {
-        m_bitmap = wxBitmap(wiztest2_xpm);
+        m_bitmap = wxBitmapBundle::FromSVGFile("wiztest2.svg", wxSize(116, 260));
 
         m_checkbox = new wxCheckBox(this, wxID_ANY, "&Check me");
 
@@ -134,9 +128,7 @@ public:
             new wxStaticText(this, wxID_ANY,
                              "You need to check the checkbox\n"
                              "below before going to the next page\n"),
-            0,
-            wxALL,
-            5
+            wxSizerFlags().Border()
         );
 
         mainSizer->Add(
@@ -148,7 +140,7 @@ public:
         SetSizerAndFit(mainSizer);
     }
 
-    virtual bool TransferDataFromWindow() wxOVERRIDE
+    virtual bool TransferDataFromWindow() override
     {
         if ( !m_checkbox->GetValue() )
         {
@@ -309,14 +301,14 @@ public:
 
 
         wxTextCtrl* textCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, textSize, wxTE_MULTILINE);
-        mainSizer->Add(textCtrl, 0, wxALL|wxEXPAND, 5);
+        mainSizer->Add(textCtrl, wxSizerFlags().Expand().Border());
 
         SetSizerAndFit(mainSizer);
     }
 
     // implement wxWizardPage functions
-    virtual wxWizardPage *GetPrev() const wxOVERRIDE { return m_prev; }
-    virtual wxWizardPage *GetNext() const wxOVERRIDE
+    virtual wxWizardPage *GetPrev() const override { return m_prev; }
+    virtual wxWizardPage *GetNext() const override
     {
         return m_checkbox->GetValue() ? m_next->GetNext() : m_next;
     }
@@ -386,7 +378,8 @@ MyWizard::MyWizard(wxFrame *frame, bool useSizer)
     SetExtraStyle(wxWIZARD_EX_HELPBUTTON);
 
     Create(frame,wxID_ANY,"Absolutely Useless Wizard",
-                   wxBitmap(wiztest_xpm),wxDefaultPosition,
+                   wxBitmapBundle::FromSVGFile("wiztest.svg", wxSize(116, 260)),
+                   wxDefaultPosition,
                    wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
     SetIcon(wxICON(sample));
 
@@ -436,7 +429,7 @@ MyWizard::MyWizard(wxFrame *frame, bool useSizer)
 // ----------------------------------------------------------------------------
 
 MyFrame::MyFrame(const wxString& title)
-        :wxFrame((wxFrame *)NULL, wxID_ANY, title,
+        :wxFrame(nullptr, wxID_ANY, title,
                   wxDefaultPosition, wxSize(250, 150))  // small frame
 {
     wxMenu *menuFile = new wxMenu;

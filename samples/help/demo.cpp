@@ -2,7 +2,6 @@
 // Name:        demo.cpp
 // Purpose:     wxHelpController demo
 // Author:      Karsten Ballueder
-// Modified by:
 // Created:     04/01/98
 // Copyright:   (c) Karsten Ballueder, Julian Smart
 // Licence:     wxWindows licence
@@ -18,10 +17,6 @@
 
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
-
-#ifdef __BORLANDC__
-#   pragma hdrstop
-#endif
 
 // for all others, include the necessary headers (this file is usually all you
 // need because it includes almost all "standard" wxWidgets headers
@@ -96,10 +91,10 @@ public:
     // this one is called on application startup and is a good place for the app
     // initialization (doing it here and not in the ctor allows to have an error
     // return: if OnInit() returns false, the application terminates)
-    virtual bool OnInit() wxOVERRIDE;
+    virtual bool OnInit() override;
 
     // do some clean up here
-    virtual int OnExit() wxOVERRIDE;
+    virtual int OnExit() override;
 };
 
 // Define a new frame type: this is going to be our main frame
@@ -377,9 +372,9 @@ bool MyApp::OnInit()
 int MyApp::OnExit()
 {
     // clean up
-    delete wxHelpProvider::Set(NULL);
+    delete wxHelpProvider::Set(nullptr);
 
-    return 0;
+    return wxApp::OnExit();
 }
 
 // ----------------------------------------------------------------------------
@@ -388,7 +383,7 @@ int MyApp::OnExit()
 
 // frame constructor
 MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
-       : wxFrame((wxFrame *)NULL, 300, title, pos, size)
+       : wxFrame(nullptr, 300, title, pos, size)
 #if USE_HTML_HELP
     , m_embeddedHtmlHelp(wxHF_EMBEDDED|wxHF_DEFAULT_STYLE)
 #endif
@@ -694,20 +689,20 @@ MyModalDialog::MyModalDialog(wxWindow *parent)
     wxButton* btnCancel = new wxButton(this, wxID_CANCEL, "&Cancel");
     btnCancel->SetHelpText(_("The Cancel button cancels the dialog."));
 
-    sizerRow->Add(btnOK, 0, wxALIGN_CENTER | wxALL, 5);
-    sizerRow->Add(btnCancel, 0, wxALIGN_CENTER | wxALL, 5);
+    sizerRow->Add(btnOK, wxSizerFlags().Center().Border());
+    sizerRow->Add(btnCancel, wxSizerFlags().Center().Border());
 
     // Add explicit context-sensitive help button for non-MSW
 #ifndef __WXMSW__
-    sizerRow->Add(new wxContextHelpButton(this), 0, wxALIGN_CENTER | wxALL, 5);
+    sizerRow->Add(new wxContextHelpButton(this), wxSizerFlags().Center().Border());
 #endif
 
     wxTextCtrl *text = new wxTextCtrl(this, wxID_ANY, "A demo text control",
                                       wxDefaultPosition, wxSize(300, 100),
                                       wxTE_MULTILINE);
     text->SetHelpText(_("Type text here if you have got nothing more interesting to do"));
-    sizerTop->Add(text, 0, wxEXPAND|wxALL, 5 );
-    sizerTop->Add(sizerRow, 0, wxALIGN_RIGHT|wxALL, 5 );
+    sizerTop->Add(text, wxSizerFlags().Expand().Border());
+    sizerTop->Add(sizerRow, wxSizerFlags().Right().Border());
 
     SetSizerAndFit(sizerTop);
 

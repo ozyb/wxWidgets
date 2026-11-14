@@ -2,7 +2,6 @@
 // Name:        wx/ribbon/gallery.h
 // Purpose:     Ribbon control which displays a gallery of items to choose from
 // Author:      Peter Cawley
-// Modified by:
 // Created:     2009-07-22
 // Copyright:   (C) Peter Cawley
 // Licence:     wxWindows licence
@@ -16,6 +15,7 @@
 
 #include "wx/ribbon/art.h"
 #include "wx/ribbon/control.h"
+#include "wx/bmpbndl.h"
 
 class wxRibbonGalleryItem;
 
@@ -45,12 +45,16 @@ public:
     bool IsEmpty() const;
     unsigned int GetCount() const;
     wxRibbonGalleryItem* GetItem(unsigned int n);
-    wxRibbonGalleryItem* Append(const wxBitmap& bitmap, int id);
-    wxRibbonGalleryItem* Append(const wxBitmap& bitmap, int id, void* clientData);
-    wxRibbonGalleryItem* Append(const wxBitmap& bitmap, int id, wxClientData* clientData);
+    wxRibbonGalleryItem* Append(const wxBitmapBundle& bitmap, int id);
+    wxRibbonGalleryItem* Append(const wxBitmapBundle& bitmap, int id, const wxString& label);
+    wxRibbonGalleryItem* Append(const wxBitmapBundle& bitmap, int id, void* clientData);
+    wxRibbonGalleryItem* Append(const wxBitmapBundle& bitmap, int id, wxClientData* clientData);
 
     void SetItemClientObject(wxRibbonGalleryItem* item, wxClientData* data);
     wxClientData* GetItemClientObject(const wxRibbonGalleryItem* item) const;
+    void SetItemLabel(wxRibbonGalleryItem* item, const wxString& label);
+    wxString GetItemLabel(const wxRibbonGalleryItem* item) const;
+
     void SetItemClientData(wxRibbonGalleryItem* item, void* data);
     void* GetItemClientData(const wxRibbonGalleryItem* item) const;
 
@@ -63,16 +67,37 @@ public:
     wxRibbonGalleryButtonState GetExtensionButtonState() const;
 
     bool IsHovered() const;
-    virtual bool IsSizingContinuous() const wxOVERRIDE;
-    virtual bool Realize() wxOVERRIDE;
-    virtual bool Layout() wxOVERRIDE;
+    virtual bool IsSizingContinuous() const override;
+    virtual bool Realize() override;
+    virtual bool Layout() override;
 
-    virtual bool ScrollLines(int lines) wxOVERRIDE;
+    virtual bool ScrollLines(int lines) override;
     bool ScrollPixels(int pixels);
     void EnsureVisible(const wxRibbonGalleryItem* item);
 
+    // KeyTips (keyboard access mode).
+    void SetKeyTip(const wxString& keytip) { m_keyTip = keytip.Upper(); }
+    wxString GetKeyTip() const { return m_keyTip; }
+
+    // Keyboard navigation
+    bool HasFocusableItems() const override;
+    bool FocusFirstItem() override;
+    bool FocusLastItem() override;
+    bool FocusNextItem(bool forward) override;
+    bool FocusItemInDirection(wxDirection direction) override;
+    void ClearFocusedItem() override;
+    void ActivateFocusedItem(bool dropdown = false) override;
+
+#if wxUSE_ACCESSIBILITY
+    virtual wxAccessible* CreateAccessible() override;
+#endif // wxUSE_ACCESSIBILITY
+
 protected:
-    wxBorder GetDefaultBorder() const wxOVERRIDE { return wxBORDER_NONE; }
+#if wxUSE_ACCESSIBILITY
+    friend class wxRibbonGalleryAccessible;
+#endif // wxUSE_ACCESSIBILITY
+    wxBorder GetDefaultBorder() const override { return wxBORDER_NONE; }
+    void DoNotifySelectionChanged();
     void CommonInit(long style);
     void CalculateMinSize();
     bool TestButtonHover(const wxRect& rect, wxPoint pos,
@@ -87,18 +112,28 @@ protected:
     void OnMouseDClick(wxMouseEvent& evt);
     void OnPaint(wxPaintEvent& evt);
     void OnSize(wxSizeEvent& evt);
+    void OnDPIChanged(wxDPIChangedEvent& evt);
+    void OnSysColourChanged(wxSysColourChangedEvent& evt);
     int GetScrollLineSize() const;
 
-    virtual wxSize DoGetBestSize() const wxOVERRIDE;
+    void DoActivateItem(wxRibbonGalleryItem* item);
+    bool DoFocusItemFrom(int pos, int step);
+    int DoGetFocusedItemIndex() const;
+    bool DoFocusExtensionButton();
+    void DoClearExtensionFocus();
+    void DoActivateExtensionButton();
+
+    virtual wxSize DoGetBestSize() const override;
     virtual wxSize DoGetNextSmallerSize(wxOrientation direction,
-                                        wxSize relative_to) const wxOVERRIDE;
+                                        wxSize relative_to) const override;
     virtual wxSize DoGetNextLargerSize(wxOrientation direction,
-                                       wxSize relative_to) const wxOVERRIDE;
+                                       wxSize relative_to) const override;
 
     wxArrayRibbonGalleryItem m_items;
-    wxRibbonGalleryItem* m_selected_item;
-    wxRibbonGalleryItem* m_hovered_item;
-    wxRibbonGalleryItem* m_active_item;
+    wxRibbonGalleryItem* m_selected_item = nullptr;
+    wxRibbonGalleryItem* m_hovered_item = nullptr;
+    wxRibbonGalleryItem* m_active_item = nullptr;
+    wxRibbonGalleryItem* m_focused_item = nullptr;
     wxSize m_bitmap_size;
     wxSize m_bitmap_padded_size;
     wxSize m_best_size;
@@ -106,15 +141,20 @@ protected:
     wxRect m_scroll_up_button_rect;
     wxRect m_scroll_down_button_rect;
     wxRect m_extension_button_rect;
-    const wxRect* m_mouse_active_rect;
-    int m_item_separation_x;
-    int m_item_separation_y;
-    int m_scroll_amount;
-    int m_scroll_limit;
-    wxRibbonGalleryButtonState m_up_button_state;
-    wxRibbonGalleryButtonState m_down_button_state;
-    wxRibbonGalleryButtonState m_extension_button_state;
-    bool m_hovered;
+    const wxRect* m_mouse_active_rect = nullptr;
+    int m_item_separation_x = 0;
+    int m_item_separation_y = 0;
+    int m_scroll_amount = 0;
+    int m_scroll_limit = 0;
+    wxRibbonGalleryButtonState m_up_button_state = wxRIBBON_GALLERY_BUTTON_DISABLED;
+    wxRibbonGalleryButtonState m_down_button_state = wxRIBBON_GALLERY_BUTTON_NORMAL;
+    wxRibbonGalleryButtonState m_extension_button_state = wxRIBBON_GALLERY_BUTTON_NORMAL;
+    bool m_hovered = false;
+    // True if the keyboard focus is on the extension button, not on an item.
+    bool m_extension_focused = false;
+
+    // Always stored in upper case, to allow case-insensitive matching.
+    wxString m_keyTip;
 
 #ifndef SWIG
     wxDECLARE_CLASS(wxRibbonGallery);
@@ -127,8 +167,8 @@ class WXDLLIMPEXP_RIBBON wxRibbonGalleryEvent : public wxCommandEvent
 public:
     wxRibbonGalleryEvent(wxEventType command_type = wxEVT_NULL,
                        int win_id = 0,
-                       wxRibbonGallery* gallery = NULL,
-                       wxRibbonGalleryItem* item = NULL)
+                       wxRibbonGallery* gallery = nullptr,
+                       wxRibbonGalleryItem* item = nullptr)
         : wxCommandEvent(command_type, win_id)
         , m_gallery(gallery), m_item(item)
     {
@@ -140,7 +180,7 @@ public:
         m_item = e.m_item;
     }
 #endif
-    wxEvent *Clone() const wxOVERRIDE { return new wxRibbonGalleryEvent(*this); }
+    wxNODISCARD wxEvent *Clone() const override { return new wxRibbonGalleryEvent(*this); }
 
     wxRibbonGallery* GetGallery() {return m_gallery;}
     wxRibbonGalleryItem* GetGalleryItem() {return m_item;}
@@ -148,8 +188,8 @@ public:
     void SetGalleryItem(wxRibbonGalleryItem* item) {m_item = item;}
 
 protected:
-    wxRibbonGallery* m_gallery;
-    wxRibbonGalleryItem* m_item;
+    wxRibbonGallery* m_gallery = nullptr;
+    wxRibbonGalleryItem* m_item = nullptr;
 
 #ifndef SWIG
 private:

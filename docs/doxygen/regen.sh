@@ -40,23 +40,35 @@ fi
 #
 # Still allow using incompatible version if explicitly requested.
 if [[ -z $WX_SKIP_DOXYGEN_VERSION_CHECK ]]; then
-    doxygen_version=`$DOXYGEN --version`
-    doxygen_version_required=1.8.8
+    doxygen_version=`$DOXYGEN --version | cut -d ' ' -f 1`
+    doxygen_version_required=1.15.0
     if [[ $doxygen_version != $doxygen_version_required ]]; then
-        echo "Doxygen version $doxygen_version is not supported."
+        echo "Doxygen version $doxygen_version is not officially supported."
         echo "Please use Doxygen $doxygen_version_required or export WX_SKIP_DOXYGEN_VERSION_CHECK."
         exit 1
     fi
 fi
 
+if [[ -z $WX_HTML_OUTPUT_DIR ]]; then
+    WX_HTML_OUTPUT_DIR=out/html
+fi
+
 # prepare folders for the cp commands below
-mkdir -p out/html       # we need to copy files in this folder below
-mkdir -p out/html/generic
+mkdir -p $WX_HTML_OUTPUT_DIR       # we need to copy files in this folder below
+mkdir -p $WX_HTML_OUTPUT_DIR/generic
 
 # These are not automatically copied by Doxygen because they're not
 # used in doxygen documentation, only in our html footer and by our
 # custom aliases
-cp images/generic/*png out/html/generic
+cp images/generic/*png $WX_HTML_OUTPUT_DIR/generic
+
+# These values are always used here, the corresponding options only exist in
+# order to allow not using them when generating CHM in regen.bat.
+export DOT_IMAGE_FORMAT='svg'
+export HTML_HEADER='custom_header.html'
+export CUSTOM_THEME_CSS='doxygen-awesome-css/doxygen-awesome.css'
+export CUSTOM_THEME_JS1='doxygen-awesome-css/doxygen-awesome-darkmode-toggle.js'
+export CUSTOM_THEME_JS2='doxygen-awesome-css/doxygen-awesome-fragment-copy-button.js'
 
 # Defaults for settings controlled by this script
 export GENERATE_DOCSET="NO"
@@ -65,6 +77,7 @@ export GENERATE_HTMLHELP="NO"
 export GENERATE_LATEX="NO"
 export GENERATE_QHP="NO"
 export GENERATE_XML="NO"
+export HTML_CODE_FOLDING="YES"
 export SEARCHENGINE="NO"
 export SERVER_BASED_SEARCH="NO"
 
@@ -78,6 +91,7 @@ case "$1" in
     chm)
         export GENERATE_HTML="YES"
         export GENERATE_HTMLHELP="YES"
+        export HTML_CODE_FOLDING="NO"
         ;;
     docset)
         export GENERATE_DOCSET="YES"
@@ -116,7 +130,7 @@ $DOXYGEN Doxyfile
 
 if [[ "$1" = "qch" ]]; then
     # we need to add missing files to the .qhp
-    cd out/html
+    cd $WX_HTML_OUTPUT_DIR
     qhelpfile="index.qhp"
 
     # remove all <file> and <files> tags
@@ -139,7 +153,7 @@ if [[ "$1" = "qch" ]]; then
     # remove useless files to make the qch slim
     rm temp *map *md5
 
-    # add a <file> tag for _any_ file in out/html folder except the .qhp itself
+    # add a <file> tag for _any_ file in this directory except the .qhp itself
     for f in * */*png; do
         if [[ $f != $qhelpfile ]]; then
             echo "      <file>$f</file>" >>$qhelpfile
@@ -159,7 +173,7 @@ if [[ "$1" = "qch" ]]; then
 
     # last, run qhelpgenerator:
     cd ../..
-    qhelpgenerator out/html/index.qhp -o out/wx.qch
+    qhelpgenerator $WX_HTML_OUTPUT_DIR/index.qhp -o out/wx.qch
 fi
 
 if [[ "$1" = "docset" ]]; then
@@ -175,7 +189,7 @@ if [[ "$1" = "docset" ]]; then
         XCODE_INSTALL=`xcode-select -print-path`
     fi
 
-    cd out/html
+    cd $WX_HTML_OUTPUT_DIR
     DESTINATIONDIR=`pwd`/../docset
 
     mkdir -p $DESTINATIONDIR
@@ -198,7 +212,7 @@ if [[ "$1" = "docset" ]]; then
     $PLIST_WRITE_CMD $DESTINATIONDIR/$DOCSETNAME/Contents/Info DocSetFeedURL $ATOMDIR/$ATOM
     $PLIST_WRITE_CMD $DESTINATIONDIR/$DOCSETNAME/Contents/Info DocSetFallbackURL https://docs.wxwidgets.org
     $PLIST_WRITE_CMD $DESTINATIONDIR/$DOCSETNAME/Contents/Info DocSetDescription "API reference and conceptual documentation for wxWidgets 3.0"
-    $PLIST_WRITE_CMD $DESTINATIONDIR/$DOCSETNAME/Contents/Info NSHumanReadableCopyright "Copyright 1992-2020 wxWidgets team, Portions 1996 Artificial Intelligence Applications Institute"
+    $PLIST_WRITE_CMD $DESTINATIONDIR/$DOCSETNAME/Contents/Info NSHumanReadableCopyright "Copyright 1992-2026 wxWidgets team, Portions 1996 Artificial Intelligence Applications Institute"
     $PLIST_WRITE_CMD $DESTINATIONDIR/$DOCSETNAME/Contents/Info isJavaScriptEnabled true
     $PLIST_WRITE_CMD $DESTINATIONDIR/$DOCSETNAME/Contents/Info dashIndexFilePath index.html
     $PLIST_WRITE_CMD $DESTINATIONDIR/$DOCSETNAME/Contents/Info DocSetPlatformFamily wx
@@ -222,7 +236,12 @@ fi
 # Doxygen has the annoying habit to put the full path of the
 # affected files in the log file; remove it to make the log
 # more readable
-currpath=`pwd`/
-interfacepath=`cd ../../interface && pwd`/
-cat doxygen.log | sed -e "s|$currpath||g" -e "s|$interfacepath||g" > temp
-mv temp doxygen.log
+if [[ -s doxygen.log ]]; then
+    topsrcdir=`cd ../.. && pwd`
+    sed -i'' -e "s|$topsrcdir/||g" doxygen.log
+
+    echo '*** There were warnings during docs generation ***'
+else
+    # Don't leave empty file lying around.
+    rm doxygen.log
+fi

@@ -18,14 +18,11 @@
 #include "wx/gdicmn.h"
 #include "wx/hashmap.h"
 #include "wx/arrstr.h"
+#include "wx/variant.h"
 
 #if wxUSE_STREAMS
 #  include "wx/stream.h"
 #endif
-
-// on some systems (Unixware 7.x) index is defined as a macro in the headers
-// which breaks the compilation below
-#undef index
 
 #define wxIMAGE_OPTION_QUALITY               wxString(wxS("quality"))
 #define wxIMAGE_OPTION_FILENAME              wxString(wxS("FileName"))
@@ -61,16 +58,19 @@ enum wxImageResolution
 enum wxImageResizeQuality
 {
     // different image resizing algorithms used by Scale() and Rescale()
-    wxIMAGE_QUALITY_NEAREST = 0,
+    wxIMAGE_QUALITY_NEAREST = 5,
     wxIMAGE_QUALITY_BILINEAR = 1,
     wxIMAGE_QUALITY_BICUBIC = 2,
     wxIMAGE_QUALITY_BOX_AVERAGE = 3,
 
-    // default quality is low (but fast)
-    wxIMAGE_QUALITY_NORMAL = wxIMAGE_QUALITY_NEAREST,
+    // default quality, suitable for most icons
+    wxIMAGE_QUALITY_NORMAL = 0,
 
-    // highest (but best) quality
-    wxIMAGE_QUALITY_HIGH = 4
+    // "high" quality is not always better, but can be for photos
+    wxIMAGE_QUALITY_HIGH = 4,
+
+    // fastest algorithm, possibly at the expense of quality
+    wxIMAGE_QUALITY_FAST = 6
 };
 
 // Constants for wxImage::Paste() for specifying alpha blending option.
@@ -99,15 +99,6 @@ class WXDLLIMPEXP_FWD_CORE wxImage;
 class WXDLLIMPEXP_FWD_CORE wxPalette;
 
 //-----------------------------------------------------------------------------
-// wxVariant support
-//-----------------------------------------------------------------------------
-
-#if wxUSE_VARIANT
-#include "wx/variant.h"
-DECLARE_VARIANT_OBJECT_EXPORTED(wxImage,WXDLLIMPEXP_CORE)
-#endif
-
-//-----------------------------------------------------------------------------
 // wxImageHandler
 //-----------------------------------------------------------------------------
 
@@ -116,6 +107,12 @@ class WXDLLIMPEXP_CORE wxImageHandler: public wxObject
 public:
     wxImageHandler()
         : m_name(wxEmptyString), m_extension(wxEmptyString), m_mime(), m_type(wxBITMAP_TYPE_INVALID)
+        { }
+    wxImageHandler(const wxString& name,
+                   const wxString& ext,
+                   wxBitmapType type,
+                   const wxString& mime)
+        : m_name(name), m_extension(ext), m_mime(mime), m_type(type)
         { }
 
 #if wxUSE_STREAMS
@@ -145,12 +142,6 @@ public:
     const wxArrayString& GetAltExtensions() const { return m_altExtensions; }
     wxBitmapType GetType() const { return m_type; }
     const wxString& GetMimeType() const { return m_mime; }
-
-#if WXWIN_COMPATIBILITY_2_8
-    wxDEPRECATED(
-        void SetType(long type) { SetType((wxBitmapType)type); }
-    )
-#endif // WXWIN_COMPATIBILITY_2_8
 
 protected:
 #if wxUSE_STREAMS
@@ -210,13 +201,13 @@ public:
                                  unsigned char g,
                                  unsigned char b)
     {
-        return (r << 16) | (g << 8) | b;
+        return ((unsigned)r << 16) | ((unsigned)g << 8) | (unsigned)b;
     }
 
     // find first colour that is not used in the image and has higher
     // RGB values than RGB(startR, startG, startB)
     //
-    // returns true and puts this colour in r, g, b (each of which may be NULL)
+    // returns true and puts this colour in r, g, b (each of which may be null)
     // on success or returns false if there are no more free colours
     bool FindFirstUnusedColour(unsigned char *r,
                                unsigned char *g,
@@ -290,7 +281,7 @@ public:
         double value;
     };
 
-    wxImage() {}
+    wxImage() = default;
     wxImage( int width, int height, bool clear = true )
         { Create( width, height, clear ); }
     wxImage( int width, int height, unsigned char* data, bool static_data = false )
@@ -310,7 +301,7 @@ public:
         { LoadFile( name, type, index ); }
     wxImage( const wxString& name, const wxString& mimetype, int index = -1 )
         { LoadFile( name, mimetype, index ); }
-    wxImage( const char* const* xpmData )
+    explicit wxImage( const char* const* xpmData )
         { Create(xpmData); }
 
 #if wxUSE_STREAMS
@@ -321,11 +312,6 @@ public:
 #endif // wxUSE_STREAMS
 
     bool Create( const char* const* xpmData );
-#ifdef __BORLANDC__
-    // needed for Borland 5.5
-    wxImage( char** xpmData ) { Create(const_cast<const char* const*>(xpmData)); }
-    bool Create( char** xpmData ) { return Create(const_cast<const char* const*>(xpmData)); }
-#endif
 
     bool Create( int width, int height, bool clear = true );
     bool Create( int width, int height, unsigned char* data, bool static_data = false );
@@ -368,6 +354,9 @@ public:
     // return the new image with size width*height
     wxImage Scale( int width, int height,
                    wxImageResizeQuality quality = wxIMAGE_QUALITY_NORMAL ) const;
+    wxImage Scale(const wxSize& size,
+                  wxImageResizeQuality quality = wxIMAGE_QUALITY_NORMAL) const
+        { return Scale(size.GetWidth(), size.GetHeight(), quality); }
 
     // box averager and bicubic filters for up/down sampling
     wxImage ResampleNearest(int width, int height) const;
@@ -386,6 +375,9 @@ public:
     wxImage& Rescale( int width, int height,
                       wxImageResizeQuality quality = wxIMAGE_QUALITY_NORMAL )
         { return *this = Scale(width, height, quality); }
+    wxImage& Rescale( const wxSize& size,
+                      wxImageResizeQuality quality = wxIMAGE_QUALITY_NORMAL )
+        { return *this = Scale(size, quality); }
 
     // resizes the image in place
     wxImage& Resize( const wxSize& size, const wxPoint& pos,
@@ -394,7 +386,7 @@ public:
     // Rotates the image about the given point, 'angle' radians.
     // Returns the rotated image, leaving this image intact.
     wxImage Rotate(double angle, const wxPoint & centre_of_rotation,
-                   bool interpolating = true, wxPoint * offset_after_rotation = NULL) const;
+                   bool interpolating = true, wxPoint * offset_after_rotation = nullptr) const;
 
     wxImage Rotate90( bool clockwise = true ) const;
     wxImage Rotate180() const;
@@ -415,6 +407,9 @@ public:
 
     // Convert to disabled (dimmed) image.
     wxImage ConvertToDisabled(unsigned char brightness = 255) const;
+
+    // Convert the image based on the given lightness.
+    wxImage ChangeLightness(int alpha) const;
 
     // these routines are slow but safe
     void SetRGB( int x, int y, unsigned char r, unsigned char g, unsigned char b );
@@ -446,8 +441,8 @@ public:
     // This method converts an image where the original alpha
     // information is only available as a shades of a colour
     // (actually shades of grey) typically when you draw anti-
-    // aliased text into a bitmap. The DC drawinf routines
-    // draw grey values on the black background although they
+    // aliased text into a bitmap. The DC drawing routines
+    // draw grey values on the black background, although they
     // actually mean to draw white with different alpha values.
     // This method reverses it, assuming a black (!) background
     // and white text (actually only the red channel is read).
@@ -513,10 +508,11 @@ public:
     unsigned char *GetData() const;
     void SetData( unsigned char *data, bool static_data=false );
     void SetData( unsigned char *data, int new_width, int new_height, bool static_data=false );
+    void SetDataRGBA(const unsigned char* data);
 
-    unsigned char *GetAlpha() const;    // may return NULL!
-    bool HasAlpha() const { return GetAlpha() != NULL; }
-    void SetAlpha(unsigned char *alpha = NULL, bool static_data=false);
+    unsigned char *GetAlpha() const;    // may return nullptr!
+    bool HasAlpha() const { return GetAlpha() != nullptr; }
+    void SetAlpha(unsigned char *alpha = nullptr, bool static_data=false);
     void InitAlpha();
     void ClearAlpha();
 
@@ -560,9 +556,29 @@ public:
     // Returned value: # of entries in the histogram
     unsigned long ComputeHistogram( wxImageHistogram &h ) const;
 
-    // Rotates the hue of each pixel of the image. angle is a double in the range
-    // -1.0..1.0 where -1.0 is -360 degrees and 1.0 is 360 degrees
+    // Rotates the hue of each pixel in the image by angle, which is a double in
+    // the range [-1.0..+1.0], where -1.0 corresponds to -360 degrees and +1.0
+    // corresponds to +360 degrees.
     void RotateHue(double angle);
+
+    // Changes the saturation of each pixel in the image. factor is a double in
+    // the range [-1.0..+1.0], where -1.0 corresponds to -100 percent and +1.0
+    // corresponds to +100 percent.
+    void ChangeSaturation(double factor);
+
+    // Changes the brightness (value) of each pixel in the image. factor is a
+    // double in the range [-1.0..+1.0], where -1.0 corresponds to -100 percent
+    // and +1.0 corresponds to +100 percent.
+    void ChangeBrightness(double factor);
+
+    // Changes the hue, the saturation and the brightness (value) of each pixel
+    // in the image. angleH is a double in the range [-1.0..+1.0], where -1.0
+    // corresponds to -360 degrees and +1.0 corresponds to +360 degrees, factorS
+    // is a double in the range [-1.0..+1.0], where -1.0 corresponds to -100
+    // percent and +1.0 corresponds to +100 percent and factorV is a double in
+    // the range [-1.0..+1.0], where -1.0 corresponds to -100 percent and +1.0
+    // corresponds to +100 percent.
+    void ChangeHSV(double angleH, double factorS, double factorV);
 
     static wxList& GetHandlers() { return sm_handlers; }
     static void AddHandler( wxImageHandler *handler );
@@ -582,65 +598,8 @@ public:
     static HSVValue RGBtoHSV(const RGBValue& rgb);
     static RGBValue HSVtoRGB(const HSVValue& hsv);
 
-#if WXWIN_COMPATIBILITY_2_8
-    wxDEPRECATED_CONSTRUCTOR(
-        wxImage(const wxString& name, long type, int index = -1)
-        {
-            LoadFile(name, (wxBitmapType)type, index);
-        }
-    )
-
-#if wxUSE_STREAMS
-    wxDEPRECATED_CONSTRUCTOR(
-        wxImage(wxInputStream& stream, long type, int index = -1)
-        {
-            LoadFile(stream, (wxBitmapType)type, index);
-        }
-    )
-
-    wxDEPRECATED(
-        bool LoadFile(wxInputStream& stream, long type, int index = -1)
-        {
-            return LoadFile(stream, (wxBitmapType)type, index);
-        }
-    )
-
-    wxDEPRECATED(
-        bool SaveFile(wxOutputStream& stream, long type) const
-        {
-            return SaveFile(stream, (wxBitmapType)type);
-        }
-    )
-#endif // wxUSE_STREAMS
-
-    wxDEPRECATED(
-        bool LoadFile(const wxString& name, long type, int index = -1)
-        {
-            return LoadFile(name, (wxBitmapType)type, index);
-        }
-    )
-
-    wxDEPRECATED(
-        bool SaveFile(const wxString& name, long type) const
-        {
-            return SaveFile(name, (wxBitmapType)type);
-        }
-    )
-
-    static wxDEPRECATED(
-        wxImageHandler *FindHandler(const wxString& ext, long type)
-        {
-            return FindHandler(ext, (wxBitmapType)type);
-        }
-    )
-
-    static wxDEPRECATED(
-        wxImageHandler *FindHandler(long imageType)
-        {
-            return FindHandler((wxBitmapType)imageType);
-        }
-    )
-#endif // WXWIN_COMPATIBILITY_2_8
+    // wxVariant support
+    wxDECLARE_VARIANT_OBJECT_EXPORTED(wxImage, WXDLLIMPEXP_CORE);
 
 protected:
     static wxList   sm_handlers;
@@ -651,11 +610,16 @@ protected:
     // note that index must be multiplied by 3 when using it with RGB array
     long XYToIndex(int x, int y) const;
 
-    virtual wxObjectRefData* CreateRefData() const wxOVERRIDE;
-    virtual wxObjectRefData* CloneRefData(const wxObjectRefData* data) const wxOVERRIDE;
+    virtual wxObjectRefData* CreateRefData() const override;
+    wxNODISCARD virtual wxObjectRefData* CloneRefData(const wxObjectRefData* data) const override;
 
 private:
     friend class WXDLLIMPEXP_FWD_CORE wxImageHandler;
+
+    // Helper function used internally by wxImage class only: it applies the
+    // given functor, which is passed the pixel data for each image pixel.
+    template <typename F>
+    void ApplyToAllPixels(const F& func);
 
     // Possible values for MakeEmptyClone() flags.
     enum
@@ -706,6 +670,7 @@ extern WXDLLIMPEXP_DATA_CORE(wxImage)    wxNullImage;
 #include "wx/imagtiff.h"
 #include "wx/imagpnm.h"
 #include "wx/imagxpm.h"
+#include "wx/imagwebp.h"
 #include "wx/imagiff.h"
 
 #endif // wxUSE_IMAGE

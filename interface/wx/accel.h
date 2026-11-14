@@ -57,7 +57,7 @@ public:
             The menu item associated with this accelerator.
     */
     wxAcceleratorEntry(int flags = 0, int keyCode = 0, int cmd = 0,
-                       wxMenuItem *item = NULL);
+                       wxMenuItem *item = nullptr);
 
     /**
         Copy ctor.
@@ -97,12 +97,27 @@ public:
         @param item
             The menu item associated with this accelerator.
     */
-    void Set(int flags, int keyCode, int cmd, wxMenuItem *item = NULL);
+    void Set(int flags, int keyCode, int cmd, wxMenuItem *item = nullptr);
 
     /**
         Returns @true if this object is correctly initialized.
     */
     bool IsOk() const;
+
+    /**
+        Returns @true if the given key event corresponds to this accelerator.
+
+        All the modifiers must match exactly and the key codes are compared
+        case-insensitively for the letters, i.e. an accelerator created from
+        the string @c "Ctrl-a" matches the event for @c Ctrl-A.
+
+        Note that this function should be used with the key press events, i.e.
+        @c wxEVT_KEY_DOWN, @c wxEVT_CHAR_HOOK or @c wxEVT_ACCELERATOR_KEY,
+        but not with @c wxEVT_CHAR whose key codes are different.
+
+        @since 3.3.4
+    */
+    bool MatchesEvent(const wxKeyEvent& event) const;
 
     /**
         Returns a textual representation of this accelerator.
@@ -200,7 +215,8 @@ public:
         Initializes the accelerator table from an array of wxAcceleratorEntry.
 
         @param n
-            Number of accelerator entries.
+            Number of accelerator entries. If this parameter is 0, invalid
+            accelerator table is created, i.e. IsOk() will return @false.
         @param entries
             The array of entries.
 
@@ -222,12 +238,6 @@ public:
             Name of a Windows accelerator.
     */
     wxAcceleratorTable(const wxString& resource);
-
-    /**
-        Destroys the wxAcceleratorTable object.
-        See @ref overview_refcount_destruct for more info.
-    */
-    virtual ~wxAcceleratorTable();
 
     /**
         Returns @true if the accelerator table is valid.

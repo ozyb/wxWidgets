@@ -28,9 +28,11 @@ public:
     /**
         Get the component values of the matrix.
 
+        At least one of the parameters must be non-NULL.
+
         @param mat2D
-            The rotational components of the matrix (upper 2 x 2), must be
-            non-@NULL.
+            The rotational components of the matrix (upper 2 x 2),
+            may be @NULL.
         @param tr
             The translational components of the matrix, may be @NULL.
     */
@@ -81,7 +83,7 @@ public:
     */
     bool IsIdentity() const;
 
-    //@{
+    ///@{
     /**
         Check that this matrix is identical with @a t.
 
@@ -90,7 +92,7 @@ public:
     */
     void IsEqual(const wxAffineMatrix2DBase& t);
     bool operator==(const wxAffineMatrix2DBase& t) const;
-    //@}
+    ///@}
 
     /**
         Check that this matrix differs from @a t.

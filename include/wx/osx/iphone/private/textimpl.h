@@ -2,7 +2,6 @@
 // Name:        wx/osx/iphone/private/textimpl.h
 // Purpose:     textcontrol implementation classes that have to be exposed
 // Author:      Stefan Csomor
-// Modified by:
 // Created:     03/02/99
 // Copyright:   (c) Stefan Csomor
 // Licence:     wxWindows licence
@@ -22,23 +21,27 @@ public :
     wxUITextFieldControl( wxTextCtrl *wxPeer, UITextField* w );
     virtual ~wxUITextFieldControl();
 
-    virtual wxString GetStringValue() const ;
-    virtual void SetStringValue( const wxString &str) ;
-    virtual void Copy() ;
-    virtual void Cut() ;
-    virtual void Paste() ;
-    virtual bool CanPaste() const ;
-    virtual void SetEditable(bool editable) ;
-    virtual void GetSelection( long* from, long* to) const ;
-    virtual void SetSelection( long from , long to );
-    virtual void WriteText(const wxString& str) ;
-    virtual bool HasOwnContextMenu() const { return true; }
+    virtual wxTextSearchResult SearchText(const wxTextSearch &search) const override;
 
-    virtual wxSize GetBestSize() const;
+    virtual wxString GetStringValue() const override;
+    virtual void SetStringValue( const wxString &str) override;
+    virtual wxString GetRTFValue() const override;
+    virtual void SetRTFValue(const wxString& WXUNUSED(str)) override;
+    virtual void Copy() override;
+    virtual void Cut() override;
+    virtual void Paste() override;
+    virtual bool CanPaste() const override;
+    virtual void SetEditable(bool editable) override;
+    virtual void GetSelection( long* from, long* to) const override;
+    virtual void SetSelection( long from , long to ) override;
+    virtual void WriteText(const wxString& str) override;
+    virtual bool HasOwnContextMenu() const override { return true; }
 
-    virtual bool SetHint(const wxString& hint);
+    virtual wxSize GetBestSize() const override;
 
-    virtual void controlAction(WXWidget slf, void* _cmd, void *sender);
+    virtual bool SetHint(const wxString& hint) override;
+
+    virtual void controlAction(wxUint32 controlEvent) override;
 protected :
     UITextField* m_textField;
     NSObject<UITextFieldDelegate>* m_delegate;
@@ -52,8 +55,12 @@ public:
     wxUITextViewControl( wxTextCtrl *wxPeer, UITextView* w );
     virtual ~wxUITextViewControl();
 
+    virtual wxTextSearchResult SearchText(const wxTextSearch &search) const;
+
     virtual wxString GetStringValue() const ;
     virtual void SetStringValue( const wxString &str) ;
+    virtual wxString GetRTFValue() const;
+    virtual void SetRTFValue(const wxString& WXUNUSED(str));
     virtual void Copy() ;
     virtual void Cut() ;
     virtual void Paste() ;
@@ -62,7 +69,7 @@ public:
     virtual void GetSelection( long* from, long* to) const ;
     virtual void SetSelection( long from , long to );
     virtual void WriteText(const wxString& str) ;
-    virtual void SetFont( const wxFont & font , const wxColour& foreground , long windowStyle, bool ignoreBlack = true );
+    virtual void SetFont(const wxFont & font);
 
     virtual bool GetStyle(long position, wxTextAttr& style);
     virtual void SetStyle(long start, long end, const wxTextAttr& style);
@@ -71,7 +78,6 @@ public:
 
     virtual bool HasOwnContextMenu() const { return true; }
 
-    virtual void CheckSpelling(bool check);
     virtual wxSize GetBestSize() const;
 
 protected:

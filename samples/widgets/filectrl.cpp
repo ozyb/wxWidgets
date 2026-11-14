@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-#pragma hdrstop
-#endif
 
 #if wxUSE_FILECTRL
 
@@ -36,9 +33,6 @@
 #include "wx/filename.h"
 
 #include "widgets.h"
-
-// TODO change this
-#include "icons/dirctrl.xpm"
 
 // ----------------------------------------------------------------------------
 // constants
@@ -67,14 +61,14 @@ enum
 class FileCtrlWidgetsPage : public WidgetsPage
 {
 public:
-    FileCtrlWidgetsPage( WidgetsBookCtrl *book, wxImageList *imaglist );
+    FileCtrlWidgetsPage( WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist );
     virtual ~FileCtrlWidgetsPage() {}
 
-    virtual wxWindow *GetWidget() const wxOVERRIDE { return m_fileCtrl; }
-    virtual void RecreateWidget() wxOVERRIDE { CreateFileCtrl(); }
+    virtual wxWindow *GetWidget() const override { return m_fileCtrl; }
+    virtual void RecreateWidget() override { CreateFileCtrl(); }
 
     // lazy creation of the content
-    virtual void CreateContent() wxOVERRIDE;
+    virtual void CreateContent() override;
 
 protected:
     // event handlers
@@ -149,8 +143,8 @@ IMPLEMENT_WIDGETS_PAGE( FileCtrlWidgetsPage, "FileCtrl",
                         FAMILY_CTRLS );
 
 FileCtrlWidgetsPage::FileCtrlWidgetsPage( WidgetsBookCtrl *book,
-        wxImageList *imaglist )
-        : WidgetsPage( book, imaglist, dirctrl_xpm )
+        wxVector<wxBitmapBundle>& imaglist )
+        : WidgetsPage( book, imaglist, WidgetsIcon::DirCtrl )
 {
 }
 
@@ -167,32 +161,33 @@ void FileCtrlWidgetsPage::CreateContent()
                                           WXSIZEOF( mode ), mode );
 
     sizerLeft->Add( m_radioFileCtrlMode,
-                    0, wxALL | wxEXPAND , 5 );
+                    wxSizerFlags().Expand().Border());
 
     sizerLeft->Add( CreateSizerWithTextAndButton( FileCtrlPage_SetDirectory , "Set &directory", wxID_ANY, &m_dir ),
-                    0, wxALL | wxEXPAND , 5 );
+                    wxSizerFlags().Expand().Border());
     sizerLeft->Add( CreateSizerWithTextAndButton( FileCtrlPage_SetPath , "Set &path", wxID_ANY, &m_path ),
-                    0, wxALL | wxEXPAND , 5 );
+                    wxSizerFlags().Expand().Border());
     sizerLeft->Add( CreateSizerWithTextAndButton( FileCtrlPage_SetFilename , "Set &filename", wxID_ANY, &m_filename ),
-                    0, wxALL | wxEXPAND , 5 );
+                    wxSizerFlags().Expand().Border());
 
-    wxSizer *sizerUseFlags =
-        new wxStaticBoxSizer( wxVERTICAL, this, "&Flags");
+    wxStaticBoxSizer *sizerFlags = new wxStaticBoxSizer( wxVERTICAL, this, "&Flags");
+    wxStaticBox* const sizerFlagsBox = sizerFlags->GetStaticBox();
 
-    m_chkMultiple   = CreateCheckBoxAndAddToSizer( sizerUseFlags, "wxFC_MULTIPLE");
-    m_chkNoShowHidden   = CreateCheckBoxAndAddToSizer( sizerUseFlags, "wxFC_NOSHOWHIDDEN");
-    sizerLeft->Add( sizerUseFlags, wxSizerFlags().Expand().Border() );
+    m_chkMultiple   = CreateCheckBoxAndAddToSizer( sizerFlags, "wxFC_MULTIPLE", wxID_ANY, sizerFlagsBox );
+    m_chkNoShowHidden   = CreateCheckBoxAndAddToSizer( sizerFlags, "wxFC_NOSHOWHIDDEN", wxID_ANY, sizerFlagsBox );
+    sizerLeft->Add( sizerFlags, wxSizerFlags().Expand().Border() );
 
-    wxSizer *sizerFilters =
-        new wxStaticBoxSizer( wxVERTICAL, this, "&Filters");
+    wxStaticBoxSizer *sizerFilters = new wxStaticBoxSizer( wxVERTICAL, this, "&Filters");
+    wxStaticBox* const sizerFiltersBox = sizerFilters->GetStaticBox();
+
     m_fltr[0] = CreateCheckBoxAndAddToSizer( sizerFilters, wxString::Format("all files (%s)|%s",
-                wxFileSelectorDefaultWildcardStr, wxFileSelectorDefaultWildcardStr ) );
-    m_fltr[1] = CreateCheckBoxAndAddToSizer( sizerFilters, "C++ files (*.cpp; *.h)|*.cpp;*.h" );
-    m_fltr[2] = CreateCheckBoxAndAddToSizer( sizerFilters, "PNG images (*.png)|*.png");
+                wxFileSelectorDefaultWildcardStr, wxFileSelectorDefaultWildcardStr ), wxID_ANY, sizerFiltersBox );
+    m_fltr[1] = CreateCheckBoxAndAddToSizer( sizerFilters, "C++ files (*.cpp; *.h)|*.cpp;*.h", wxID_ANY, sizerFiltersBox );
+    m_fltr[2] = CreateCheckBoxAndAddToSizer( sizerFilters, "PNG images (*.png)|*.png", wxID_ANY, sizerFiltersBox );
     sizerLeft->Add( sizerFilters, wxSizerFlags().Expand().Border() );
 
     wxButton *btn = new wxButton( this, FileCtrlPage_Reset, "&Reset" );
-    sizerLeft->Add( btn, 0, wxALIGN_CENTRE_HORIZONTAL | wxALL, 15 );
+    sizerLeft->Add( btn, wxSizerFlags().CentreHorizontal().TripleBorder() );
 
     // right pane
     m_fileCtrl = new wxFileCtrl(
@@ -207,8 +202,8 @@ void FileCtrlWidgetsPage::CreateContent()
                  );
 
     // the 3 panes panes compose the window
-    sizerTop->Add( sizerLeft, 0, ( wxALL & ~wxLEFT ), 10 );
-    sizerTop->Add( m_fileCtrl, 1, wxGROW | ( wxALL & ~wxRIGHT ), 10 );
+    sizerTop->Add( sizerLeft, wxSizerFlags().DoubleBorder(wxALL & ~wxLEFT) );
+    sizerTop->Add( m_fileCtrl, wxSizerFlags(1).Expand().DoubleBorder(wxALL & ~wxRIGHT) );
 
     // final initializations
     Reset();
@@ -276,6 +271,8 @@ void FileCtrlWidgetsPage::CreateFileCtrl()
     // update our pointer
     delete m_fileCtrl;
     m_fileCtrl = fileCtrl;
+
+    NotifyWidgetRecreation(m_fileCtrl);
 
     // relayout the sizer
     GetSizer()->Layout();

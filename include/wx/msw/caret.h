@@ -2,7 +2,6 @@
 // Name:        wx/msw/caret.h
 // Purpose:     wxCaret class - the MSW implementation of wxCaret
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     23.05.99
 // Copyright:   (c) wxWidgets team
 // Licence:     wxWindows licence
@@ -14,46 +13,37 @@
 class WXDLLIMPEXP_CORE wxCaret : public wxCaretBase
 {
 public:
-    wxCaret() { Init(); }
+    wxCaret() = default;
+
         // create the caret of given (in pixels) width and height and associate
         // with the given window
     wxCaret(wxWindow *window, int width, int height)
     {
-        Init();
-
         (void)Create(window, width, height);
     }
         // same as above
     wxCaret(wxWindowBase *window, const wxSize& size)
     {
-        Init();
-
         (void)Create(window, size);
     }
 
     // process wxWindow notifications
-    virtual void OnSetFocus() wxOVERRIDE;
-    virtual void OnKillFocus() wxOVERRIDE;
+    virtual void OnSetFocus() override;
+    virtual void OnKillFocus() override;
 
 protected:
-    void Init()
-    {
-        wxCaretBase::Init();
-
-        m_hasCaret = false;
-    }
-
     // override base class virtuals
-    virtual void DoMove() wxOVERRIDE;
-    virtual void DoShow() wxOVERRIDE;
-    virtual void DoHide() wxOVERRIDE;
-    virtual void DoSize() wxOVERRIDE;
+    virtual void DoMove() override;
+    virtual void DoShow() override;
+    virtual void DoHide() override;
+    virtual void DoSize() override;
+    virtual void DoGetPosition(int* x, int* y) const override;
 
     // helper function which creates the system caret
     bool MSWCreateCaret();
 
 private:
-    bool m_hasCaret;
+    bool m_hasCaret = false;
 
     wxDECLARE_NO_COPY_CLASS(wxCaret);
 };

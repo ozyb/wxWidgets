@@ -2,7 +2,6 @@
 // Name:        dnd.cpp
 // Purpose:     Drag and drop sample
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     04/01/98
 // Copyright:
 // Licence:     wxWindows licence
@@ -10,9 +9,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-#pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
 #include "wx/wx.h"
@@ -25,6 +21,8 @@
 #include "wx/colordlg.h"
 #include "wx/metafile.h"
 #include "wx/dirctrl.h"
+#include "wx/datetime.h"
+#include "wx/stream.h"
 
 #ifndef wxHAS_IMAGES_IN_RESOURCES
     #include "../sample.xpm"
@@ -36,6 +34,7 @@
 #endif
 
 #if wxUSE_DRAG_AND_DROP
+class DnDShapeCanvas;
 
 // ----------------------------------------------------------------------------
 // Derive two simple classes which just put in the listbox the strings (text or
@@ -47,22 +46,42 @@ class DnDText : public wxTextDropTarget
 public:
     DnDText(wxListBox *pOwner) { m_pOwner = pOwner; }
 
-    virtual bool OnDropText(wxCoord x, wxCoord y, const wxString& text) wxOVERRIDE;
+    virtual bool OnDropText(wxCoord x, wxCoord y, const wxString& text) override;
 
 private:
     wxListBox *m_pOwner;
 };
 
-class DnDFile : public wxFileDropTarget
+// This one accepts both the usual files and, if supported, virtual files, i.e.
+// files that don't exist on disk, such as files inside ZIP archives opened in
+// Windows Explorer or email attachments.
+class DnDFile : public wxDropTarget
 {
 public:
-    DnDFile(wxListBox *pOwner = NULL) { m_pOwner = pOwner; }
+    DnDFile(wxListBox *pOwner);
 
-    virtual bool OnDropFiles(wxCoord x, wxCoord y,
-                             const wxArrayString& filenames) wxOVERRIDE;
+    // Files can only be copied, as moving them would delete them from their
+    // original location (or archive).
+    virtual wxDragResult OnDragOver(wxCoord WXUNUSED(x), wxCoord WXUNUSED(y),
+                                    wxDragResult WXUNUSED(def)) override
+        { return wxDragCopy; }
+
+    virtual wxDragResult OnData(wxCoord x, wxCoord y,
+                                wxDragResult def) override;
 
 private:
+    void OnDropFiles(const wxArrayString& filenames);
+#ifdef wxHAS_VIRTUAL_FILE_DATA_OBJECT
+    void OnDropVirtualFiles();
+#endif // wxHAS_VIRTUAL_FILE_DATA_OBJECT
+
     wxListBox *m_pOwner;
+
+    wxDataObjectComposite *m_composite;
+    wxFileDataObject *m_fileData;
+#ifdef wxHAS_VIRTUAL_FILE_DATA_OBJECT
+    wxVirtualFileDataObject *m_virtualData;
+#endif // wxHAS_VIRTUAL_FILE_DATA_OBJECT
 };
 
 // ----------------------------------------------------------------------------
@@ -83,14 +102,14 @@ public:
 
     // URLs can't be moved, only copied
     virtual wxDragResult OnDragOver(wxCoord WXUNUSED(x), wxCoord WXUNUSED(y),
-                                    wxDragResult WXUNUSED(def)) wxOVERRIDE
+                                    wxDragResult WXUNUSED(def)) override
         {
             return wxDragLink;  // At least IE 5.x needs wxDragLink, the
                                 // other browsers on MSW seem okay with it too.
         }
 
     // translate this to calls to OnDropURL() just for convenience
-    virtual wxDragResult OnData(wxCoord x, wxCoord y, wxDragResult def) wxOVERRIDE
+    virtual wxDragResult OnData(wxCoord x, wxCoord y, wxDragResult def) override
     {
         if ( !GetData() )
             return wxDragNone;
@@ -110,7 +129,7 @@ public:
 class DnDApp : public wxApp
 {
 public:
-    virtual bool OnInit() wxOVERRIDE;
+    virtual bool OnInit() override;
 };
 
 wxIMPLEMENT_APP(DnDApp);
@@ -378,24 +397,21 @@ public:
         wxLogMessage("DnDTriangularShape is being deleted");
     }
 
-    virtual Kind GetKind() const wxOVERRIDE { return Triangle; }
-    virtual void Draw(wxDC& dc) wxOVERRIDE
+    virtual Kind GetKind() const override { return Triangle; }
+    virtual void Draw(wxDC& dc) override
     {
         DnDShape::Draw(dc);
 
         // well, it's a bit difficult to describe a triangle by position and
         // size, but we're not doing geometry here, do we? ;-)
-        wxPoint p1(m_pos);
-        wxPoint p2(m_pos.x + m_size.x, m_pos.y);
-        wxPoint p3(m_pos.x, m_pos.y + m_size.y);
+        wxPoint p[3] = {
+            { m_pos },
+            { m_pos.x + m_size.x, m_pos.y },
+            { m_pos.x, m_pos.y + m_size.y },
+        };
 
-        dc.DrawLine(p1, p2);
-        dc.DrawLine(p2, p3);
-        dc.DrawLine(p3, p1);
-
-        //works in multicolor modes; on GTK (at least) will fail in 16-bit color
         dc.SetBrush(wxBrush(m_col));
-        dc.FloodFill(GetCentre(), m_col, wxFLOOD_BORDER);
+        dc.DrawPolygon(3, p);
     }
 };
 
@@ -415,23 +431,13 @@ public:
         wxLogMessage("DnDRectangularShape is being deleted");
     }
 
-    virtual Kind GetKind() const wxOVERRIDE { return Rectangle; }
-    virtual void Draw(wxDC& dc) wxOVERRIDE
+    virtual Kind GetKind() const override { return Rectangle; }
+    virtual void Draw(wxDC& dc) override
     {
         DnDShape::Draw(dc);
 
-        wxPoint p1(m_pos);
-        wxPoint p2(p1.x + m_size.x, p1.y);
-        wxPoint p3(p2.x, p2.y + m_size.y);
-        wxPoint p4(p1.x, p3.y);
-
-        dc.DrawLine(p1, p2);
-        dc.DrawLine(p2, p3);
-        dc.DrawLine(p3, p4);
-        dc.DrawLine(p4, p1);
-
         dc.SetBrush(wxBrush(m_col));
-        dc.FloodFill(GetCentre(), m_col, wxFLOOD_BORDER);
+        dc.DrawRectangle(m_pos, m_size);
     }
 };
 
@@ -451,15 +457,13 @@ public:
         wxLogMessage("DnDEllipticShape is being deleted");
     }
 
-    virtual Kind GetKind() const wxOVERRIDE { return Ellipse; }
-    virtual void Draw(wxDC& dc) wxOVERRIDE
+    virtual Kind GetKind() const override { return Ellipse; }
+    virtual void Draw(wxDC& dc) override
     {
         DnDShape::Draw(dc);
 
-        dc.DrawEllipse(m_pos, m_size);
-
         dc.SetBrush(wxBrush(m_col));
-        dc.FloodFill(GetCentre(), m_col, wxFLOOD_BORDER);
+        dc.DrawEllipse(m_pos, m_size);
     }
 };
 
@@ -477,7 +481,7 @@ class DnDShapeDataObject : public wxDataObject
 public:
     // ctor doesn't copy the pointer, so it shouldn't go away while this object
     // is alive
-    DnDShapeDataObject(DnDShape *shape = (DnDShape *)NULL)
+    DnDShapeDataObject(DnDShape *shape = nullptr)
     {
         if ( shape )
         {
@@ -493,7 +497,7 @@ public:
         else
         {
             // nothing to copy
-            m_shape = NULL;
+            m_shape = nullptr;
         }
 
         // this string should uniquely identify our format, but is otherwise
@@ -520,7 +524,7 @@ public:
     {
         DnDShape *shape = m_shape;
 
-        m_shape = (DnDShape *)NULL;
+        m_shape = nullptr;
         m_hasBitmap = false;
 #if wxUSE_METAFILE
         m_hasMetaFile = false;
@@ -532,12 +536,12 @@ public:
     // implement base class pure virtuals
     // ----------------------------------
 
-    virtual wxDataFormat GetPreferredFormat(Direction WXUNUSED(dir)) const wxOVERRIDE
+    virtual wxDataFormat GetPreferredFormat(Direction WXUNUSED(dir)) const override
     {
         return m_formatShape;
     }
 
-    virtual size_t GetFormatCount(Direction dir) const wxOVERRIDE
+    virtual size_t GetFormatCount(Direction dir) const override
     {
         // our custom format is supported by both GetData() and SetData()
         size_t nFormats = 1;
@@ -554,7 +558,7 @@ public:
         return nFormats;
     }
 
-    virtual void GetAllFormats(wxDataFormat *formats, Direction dir) const wxOVERRIDE
+    virtual void GetAllFormats(wxDataFormat *formats, Direction dir) const override
     {
         formats[0] = m_formatShape;
         if ( dir == Get )
@@ -571,7 +575,7 @@ public:
         }
     }
 
-    virtual size_t GetDataSize(const wxDataFormat& format) const wxOVERRIDE
+    virtual size_t GetDataSize(const wxDataFormat& format) const override
     {
         if ( format == m_formatShape )
         {
@@ -598,7 +602,7 @@ public:
         }
     }
 
-    virtual bool GetDataHere(const wxDataFormat& format, void *pBuf) const wxOVERRIDE
+    virtual bool GetDataHere(const wxDataFormat& format, void *pBuf) const override
     {
         if ( format == m_formatShape )
         {
@@ -628,7 +632,7 @@ public:
     }
 
     virtual bool SetData(const wxDataFormat& format,
-                         size_t WXUNUSED(len), const void *buf) wxOVERRIDE
+                         size_t WXUNUSED(len), const void *buf) override
     {
         wxCHECK_MSG( format == m_formatShape, false,
                      "unsupported format");
@@ -673,12 +677,12 @@ private:
 class DnDShapeDialog : public wxDialog
 {
 public:
-    DnDShapeDialog(wxFrame *parent, DnDShape *shape);
+    DnDShapeDialog(wxWindow *parent, DnDShape *shape);
 
     DnDShape *GetShape() const;
 
-    virtual bool TransferDataToWindow() wxOVERRIDE;
-    virtual bool TransferDataFromWindow() wxOVERRIDE;
+    virtual bool TransferDataToWindow() override;
+    virtual bool TransferDataFromWindow() override;
 
     void OnColour(wxCommandEvent& event);
 
@@ -710,13 +714,30 @@ class DnDShapeFrame : public wxFrame
 {
 public:
     DnDShapeFrame(wxFrame *parent);
-    ~DnDShapeFrame();
+
+protected:
+    // The menu and updateUI events are sent to the frame, but
+    // I think implementing their handlers is more natural in
+    // the canvas.  Use TryBefore() to forward those events to
+    // the canvas.
+    bool TryBefore(wxEvent& event) override;
+
+private:
+    DnDShapeCanvas *m_canvas = nullptr;
+};
+
+// ----------------------------------------------------------------------------
+// A canvas for the shapes which can be drag-and-dropped between frames
+// ----------------------------------------------------------------------------
+
+class DnDShapeCanvas : public wxScrolledCanvas
+{
+public:
+    DnDShapeCanvas(DnDShapeFrame *parent);
+
+    DnDShapeFrame *GetParent();
 
     void SetShape(DnDShape *shape);
-    virtual bool SetShape(const wxRegion &region)
-    {
-        return wxFrame::SetShape( region );
-    }
 
     // callbacks
     void OnNewShape(wxCommandEvent& event);
@@ -734,9 +755,9 @@ public:
     void OnDrop(wxCoord x, wxCoord y, DnDShape *shape);
 
 private:
-    DnDShape *m_shape;
+    std::unique_ptr<DnDShape> m_shape;
 
-    static DnDShapeFrame *ms_lastDropTarget;
+    static DnDShapeCanvas *ms_lastDropTarget;
 
     wxDECLARE_EVENT_TABLE();
 };
@@ -748,27 +769,34 @@ private:
 class DnDShapeDropTarget : public wxDropTarget
 {
 public:
-    DnDShapeDropTarget(DnDShapeFrame *frame)
+    DnDShapeDropTarget(DnDShapeCanvas *canvas)
         : wxDropTarget(new DnDShapeDataObject)
     {
-        m_frame = frame;
+        m_canvas = canvas;
     }
 
     // override base class (pure) virtuals
-    virtual wxDragResult OnEnter(wxCoord x, wxCoord y, wxDragResult def) wxOVERRIDE
+    virtual wxDragResult OnEnter(wxCoord x, wxCoord y, wxDragResult def) override
     {
 #if wxUSE_STATUSBAR
-        m_frame->SetStatusText("Mouse entered the frame");
+        m_canvas->GetParent()->SetStatusText("Mouse entered the frame");
 #endif // wxUSE_STATUSBAR
+        m_canvas->EnableAutoscrollWithoutCapture();
         return OnDragOver(x, y, def);
     }
-    virtual void OnLeave() wxOVERRIDE
+    virtual void OnLeave() override
     {
 #if wxUSE_STATUSBAR
-        m_frame->SetStatusText("Mouse left the frame");
+        m_canvas->GetParent()->SetStatusText("Mouse left the frame");
 #endif // wxUSE_STATUSBAR
+        m_canvas->DisableAutoscrollWithoutCapture();
     }
-    virtual wxDragResult OnData(wxCoord x, wxCoord y, wxDragResult def) wxOVERRIDE
+    virtual bool OnDrop(wxCoord x, wxCoord y) override
+    {
+        m_canvas->DisableAutoscrollWithoutCapture();
+        return wxDropTarget::OnDrop(x, y);
+    }
+    virtual wxDragResult OnData(wxCoord x, wxCoord y, wxDragResult def) override
     {
         if ( !GetData() )
         {
@@ -777,14 +805,14 @@ public:
             return wxDragNone;
         }
 
-        m_frame->OnDrop(x, y,
+        m_canvas->OnDrop(x, y,
                         ((DnDShapeDataObject *)GetDataObject())->GetShape());
 
         return def;
     }
 
 private:
-    DnDShapeFrame *m_frame;
+    DnDShapeCanvas *m_canvas;
 };
 
 #endif // wxUSE_DRAG_AND_DROP
@@ -864,20 +892,20 @@ wxEND_EVENT_TABLE()
 
 #if wxUSE_DRAG_AND_DROP
 
-wxBEGIN_EVENT_TABLE(DnDShapeFrame, wxFrame)
-    EVT_MENU(Menu_Shape_New,    DnDShapeFrame::OnNewShape)
-    EVT_MENU(Menu_Shape_Edit,   DnDShapeFrame::OnEditShape)
-    EVT_MENU(Menu_Shape_Clear,  DnDShapeFrame::OnClearShape)
+wxBEGIN_EVENT_TABLE(DnDShapeCanvas, wxScrolledCanvas)
+    EVT_MENU(Menu_Shape_New,    DnDShapeCanvas::OnNewShape)
+    EVT_MENU(Menu_Shape_Edit,   DnDShapeCanvas::OnEditShape)
+    EVT_MENU(Menu_Shape_Clear,  DnDShapeCanvas::OnClearShape)
 
-    EVT_MENU(Menu_ShapeClipboard_Copy,  DnDShapeFrame::OnCopyShape)
-    EVT_MENU(Menu_ShapeClipboard_Paste, DnDShapeFrame::OnPasteShape)
+    EVT_MENU(Menu_ShapeClipboard_Copy,  DnDShapeCanvas::OnCopyShape)
+    EVT_MENU(Menu_ShapeClipboard_Paste, DnDShapeCanvas::OnPasteShape)
 
-    EVT_UPDATE_UI(Menu_ShapeClipboard_Copy,  DnDShapeFrame::OnUpdateUICopy)
-    EVT_UPDATE_UI(Menu_ShapeClipboard_Paste, DnDShapeFrame::OnUpdateUIPaste)
+    EVT_UPDATE_UI(Menu_ShapeClipboard_Copy,  DnDShapeCanvas::OnUpdateUICopy)
+    EVT_UPDATE_UI(Menu_ShapeClipboard_Paste, DnDShapeCanvas::OnUpdateUIPaste)
 
-    EVT_LEFT_DOWN(DnDShapeFrame::OnDrag)
+    EVT_LEFT_DOWN(DnDShapeCanvas::OnDrag)
 
-    EVT_PAINT(DnDShapeFrame::OnPaint)
+    EVT_PAINT(DnDShapeCanvas::OnPaint)
 wxEND_EVENT_TABLE()
 
 wxBEGIN_EVENT_TABLE(DnDShapeDialog, wxDialog)
@@ -935,7 +963,7 @@ bool DnDApp::OnInit()
 #if wxUSE_DRAG_AND_DROP || wxUSE_CLIPBOARD
 
 DnDFrame::DnDFrame()
-        : wxFrame(NULL, wxID_ANY, "Drag-and-Drop/Clipboard wxWidgets Sample",
+        : wxFrame(nullptr, wxID_ANY, "Drag-and-Drop/Clipboard wxWidgets Sample",
                   wxPoint(10, 100)),
           m_strText("wxWidgets drag & drop works :-)")
 
@@ -1030,23 +1058,23 @@ DnDFrame::DnDFrame()
 #endif // wxUSE_DRAG_AND_DROP
 
     wxBoxSizer *sizer_top = new wxBoxSizer( wxHORIZONTAL );
-    sizer_top->Add(m_ctrlFile, 1, wxEXPAND );
-    sizer_top->Add(m_ctrlText, 1, wxEXPAND );
+    sizer_top->Add(m_ctrlFile, wxSizerFlags(1).Expand());
+    sizer_top->Add(m_ctrlText, wxSizerFlags(1).Expand());
 
     wxBoxSizer *sizerDirCtrl = new wxBoxSizer(wxVERTICAL);
     sizerDirCtrl->Add(new wxStaticText(this, wxID_ANY, "Drag files from here"),
                       wxSizerFlags().Centre().Border());
     sizerDirCtrl->Add(m_ctrlDir, wxSizerFlags(1).Expand());
-    sizer_top->Add(sizerDirCtrl, 1, wxEXPAND );
+    sizer_top->Add(sizerDirCtrl, wxSizerFlags(1).Expand());
 
     // make all columns of reasonable minimal size
     for ( unsigned n = 0; n < sizer_top->GetChildren().size(); n++ )
         sizer_top->SetItemMinSize(n, 200, 300);
 
     wxBoxSizer *sizer = new wxBoxSizer( wxVERTICAL );
-    sizer->Add(sizer_top, 1, wxEXPAND );
+    sizer->Add(sizer_top, wxSizerFlags(1).Expand());
 #if wxUSE_LOG
-    sizer->Add(m_ctrlLog, 1, wxEXPAND);
+    sizer->Add(m_ctrlLog, wxSizerFlags(1).Expand());
     sizer->SetItemMinSize(m_ctrlLog, 450, 200);
 #endif // wxUSE_LOG
     sizer->AddSpacer(50);
@@ -1081,6 +1109,7 @@ void DnDFrame::OnPaint(wxPaintEvent& WXUNUSED(event))
 
     wxPaintDC dc(this);
     dc.SetFont( wxFontInfo(24).Family(wxFONTFAMILY_DECORATIVE).FaceName("charter") );
+    dc.SetTextForeground( *wxBLUE );
     dc.DrawText( "Drag text from here!", 100, h-50 );
 }
 
@@ -1255,7 +1284,7 @@ void DnDFrame::OnRightDown(wxMouseEvent &event )
 DnDFrame::~DnDFrame()
 {
 #if wxUSE_LOG
-    if ( m_pLog != NULL ) {
+    if ( m_pLog != nullptr ) {
         if ( wxLog::SetActiveTarget(m_pLogPrev) == m_pLog )
             delete m_pLog;
     }
@@ -1273,10 +1302,10 @@ void DnDFrame::OnUsePrimary(wxCommandEvent& event)
 
 #if wxUSE_DRAG_AND_DROP
 
-void DnDFrame::OnBeginDrag(wxTreeEvent& WXUNUSED(event))
+void DnDFrame::OnBeginDrag(wxTreeEvent& event)
 {
     wxFileDataObject data;
-    data.AddFile(m_ctrlDir->GetPath());
+    data.AddFile(m_ctrlDir->GetPath(event.GetItem()));
 
     wxDropSource dragSource(this);
     dragSource.SetData(data);
@@ -1573,27 +1602,121 @@ bool DnDText::OnDropText(wxCoord, wxCoord, const wxString& text)
     return true;
 }
 
-bool DnDFile::OnDropFiles(wxCoord, wxCoord, const wxArrayString& filenames)
+DnDFile::DnDFile(wxListBox *pOwner)
+{
+    m_pOwner = pOwner;
+
+    m_composite = new wxDataObjectComposite;
+
+    // Physical files are preferred, if the source provides both.
+    m_fileData = new wxFileDataObject;
+    m_composite->Add(m_fileData, true);
+
+#ifdef wxHAS_VIRTUAL_FILE_DATA_OBJECT
+    m_virtualData = new wxVirtualFileDataObject;
+    m_composite->Add(m_virtualData);
+#endif // wxHAS_VIRTUAL_FILE_DATA_OBJECT
+
+    SetDataObject(m_composite);
+}
+
+wxDragResult DnDFile::OnData(wxCoord, wxCoord, wxDragResult)
+{
+    if ( !GetData() )
+        return wxDragNone;
+
+#ifdef wxHAS_VIRTUAL_FILE_DATA_OBJECT
+    if ( m_composite->GetReceivedFormat() != m_fileData->GetFormat() )
+        OnDropVirtualFiles();
+    else
+#endif // wxHAS_VIRTUAL_FILE_DATA_OBJECT
+        OnDropFiles(m_fileData->GetFilenames());
+
+    // Don't use the default action, it could be wxDragMove.
+    return wxDragCopy;
+}
+
+void DnDFile::OnDropFiles(const wxArrayString& filenames)
 {
     size_t nFiles = filenames.GetCount();
     wxString str;
     str.Printf( "%d files dropped", (int)nFiles);
 
-    if (m_pOwner != NULL)
+    m_pOwner->Append(str);
+    for ( size_t n = 0; n < nFiles; n++ )
+        m_pOwner->Append(filenames[n]);
+}
+
+#ifdef wxHAS_VIRTUAL_FILE_DATA_OBJECT
+
+void DnDFile::OnDropVirtualFiles()
+{
+    const size_t count = m_virtualData->GetCount();
+    m_pOwner->Append(wxString::Format("%zu virtual files dropped", count));
+
+    for ( size_t n = 0; n < count; n++ )
     {
-        m_pOwner->Append(str);
-        for ( size_t n = 0; n < nFiles; n++ )
-            m_pOwner->Append(filenames[n]);
+        const wxString name = m_virtualData->GetName(n);
+        if ( m_virtualData->IsDir(n) )
+        {
+            m_pOwner->Append(name + " (directory)");
+            continue;
+        }
+
+        // Read the file contents just to show how it can be done without
+        // saving the file to disk.
+        wxString info;
+        std::unique_ptr<wxInputStream> stream = m_virtualData->OpenStream(n);
+        if ( stream )
+        {
+            wxCountingOutputStream counter;
+            counter.Write(*stream);
+            info.Printf("%" wxFileOffsetFmtSpec "d bytes read",
+                        counter.GetLength());
+        }
+        else
+        {
+            info = "couldn't be read";
+        }
+
+        const wxFileOffset size = m_virtualData->GetSize(n);
+        if ( size != wxInvalidOffset )
+            info += wxString::Format(", size %" wxFileOffsetFmtSpec "d", size);
+
+        const wxDateTime mtime = m_virtualData->GetModificationTime(n);
+        if ( mtime.IsValid() )
+            info += ", modified " + mtime.FormatISOCombined(' ');
+
+        m_pOwner->Append(wxString::Format("%s (%s)", name, info));
     }
 
-    return true;
+    // This can happen if all items had invalid names and were ignored.
+    if ( !count )
+        return;
+
+    // Real programs would let the user choose where to save the files or use
+    // their contents directly, but here we just save them to a new temporary
+    // directory, which is removed when the data object is destroyed, i.e.
+    // when the program exits.
+    const std::vector<wxString> paths = m_virtualData->SaveAllToTempDir();
+    if ( paths.empty() )
+    {
+        wxLogError("Failed to save virtual files.");
+        return;
+    }
+
+    m_pOwner->Append("Saved to:");
+    for ( const auto& path : paths )
+        m_pOwner->Append(path);
 }
+
+#endif // wxHAS_VIRTUAL_FILE_DATA_OBJECT
 
 // ----------------------------------------------------------------------------
 // DnDShapeDialog
 // ----------------------------------------------------------------------------
 
-DnDShapeDialog::DnDShapeDialog(wxFrame *parent, DnDShape *shape)
+DnDShapeDialog::DnDShapeDialog(wxWindow *parent, DnDShape *shape)
   :wxDialog( parent, 6001, "Choose Shape", wxPoint( 10, 10 ),
              wxSize( 40, 40 ),
              wxDEFAULT_DIALOG_STYLE | wxRAISED_BORDER | wxRESIZE_BORDER )
@@ -1609,8 +1732,8 @@ DnDShapeDialog::DnDShapeDialog(wxFrame *parent, DnDShape *shape)
     m_radio = new wxRadioBox( this, wxID_ANY, "&Shape",
                               wxDefaultPosition, wxDefaultSize, 4, choices, 4,
                               wxRA_SPECIFY_COLS );
-    shapesSizer->Add( m_radio, 0, wxGROW|wxALL, 5 );
-    topSizer->Add( shapesSizer, 0, wxALL, 2 );
+    shapesSizer->Add( m_radio, wxSizerFlags().Expand().Border());
+    topSizer->Add( shapesSizer, wxSizerFlags().Border(wxALL, FromDIP(2)) );
 
     // attributes
     wxStaticBox* box = new wxStaticBox( this, wxID_ANY, "&Attributes" );
@@ -1622,40 +1745,40 @@ DnDShapeDialog::DnDShapeDialog(wxFrame *parent, DnDShape *shape)
     st = new wxStaticText( this, wxID_ANY, "Position &X:" );
     m_textX = new wxTextCtrl( this, wxID_ANY, wxEmptyString, wxDefaultPosition,
                               wxSize( 30, 20 ) );
-    xywhSizer->Add( st, 1, wxGROW|wxALL, 2 );
-    xywhSizer->Add( m_textX, 1, wxGROW|wxALL, 2 );
+    xywhSizer->Add( st, wxSizerFlags(1).Expand().Border(wxALL, FromDIP(2)) );
+    xywhSizer->Add( m_textX, wxSizerFlags(1).Expand().Border(wxALL, FromDIP(2)) );
 
     st = new wxStaticText( this, wxID_ANY, "Size &width:" );
     m_textW = new wxTextCtrl( this, wxID_ANY, wxEmptyString, wxDefaultPosition,
                               wxSize( 30, 20 ) );
-    xywhSizer->Add( st, 1, wxGROW|wxALL, 2 );
-    xywhSizer->Add( m_textW, 1, wxGROW|wxALL, 2 );
+    xywhSizer->Add( st, wxSizerFlags(1).Expand().Border(wxALL, FromDIP(2)) );
+    xywhSizer->Add( m_textW, wxSizerFlags(1).Expand().Border(wxALL, FromDIP(2)) );
 
     st = new wxStaticText( this, wxID_ANY, "&Y:" );
     m_textY = new wxTextCtrl( this, wxID_ANY, wxEmptyString, wxDefaultPosition,
                               wxSize( 30, 20 ) );
-    xywhSizer->Add( st, 1, wxALL|wxALIGN_RIGHT, 2 );
-    xywhSizer->Add( m_textY, 1, wxGROW|wxALL, 2 );
+    xywhSizer->Add( st, wxSizerFlags(1).Right().Border(wxALL, FromDIP(2)) );
+    xywhSizer->Add( m_textY, wxSizerFlags(1).Expand().Border(wxALL, FromDIP(2)) );
 
     st = new wxStaticText( this, wxID_ANY, "&height:" );
     m_textH = new wxTextCtrl( this, wxID_ANY, wxEmptyString, wxDefaultPosition,
                               wxSize( 30, 20 ) );
-    xywhSizer->Add( st, 1, wxALL|wxALIGN_RIGHT, 2 );
-    xywhSizer->Add( m_textH, 1, wxGROW|wxALL, 2 );
+    xywhSizer->Add( st, wxSizerFlags(1).Right().Border(wxALL, FromDIP(2)) );
+    xywhSizer->Add( m_textH, wxSizerFlags(1).Expand().Border(wxALL, FromDIP(2)) );
 
     wxButton* col = new wxButton( this, Button_Colour, "&Colour..." );
-    attrSizer->Add( xywhSizer, 1, wxGROW );
-    attrSizer->Add( col, 0, wxALL|wxALIGN_CENTRE_VERTICAL, 2 );
-    topSizer->Add( attrSizer, 0, wxGROW|wxALL, 5 );
+    attrSizer->Add( xywhSizer, wxSizerFlags(1).Expand());
+    attrSizer->Add( col, wxSizerFlags().CenterVertical().Border(wxALL, FromDIP(2)) );
+    topSizer->Add( attrSizer, wxSizerFlags().Expand().Border());
 
     // buttons
     wxBoxSizer* buttonSizer = new wxBoxSizer( wxHORIZONTAL );
     wxButton* bt;
     bt = new wxButton( this, wxID_OK, "Ok" );
-    buttonSizer->Add( bt, 0, wxALL, 2 );
+    buttonSizer->Add( bt, wxSizerFlags().Border(wxALL, FromDIP(2)) );
     bt = new wxButton( this, wxID_CANCEL, "Cancel" );
-    buttonSizer->Add( bt, 0, wxALL, 2 );
-    topSizer->Add( buttonSizer, 0, wxALL|wxALIGN_RIGHT, 2 );
+    buttonSizer->Add( bt, wxSizerFlags().Border(wxALL, FromDIP(2)) );
+    topSizer->Add( buttonSizer, wxSizerFlags().Right().Border(wxALL, FromDIP(2)));
 
     SetSizerAndFit( topSizer );
 }
@@ -1665,7 +1788,7 @@ DnDShape *DnDShapeDialog::GetShape() const
     switch ( m_shapeKind )
     {
         default:
-        case DnDShape::None:      return NULL;
+        case DnDShape::None:      return nullptr;
         case DnDShape::Triangle:  return new DnDTriangularShape(m_pos, m_size, m_col);
         case DnDShape::Rectangle: return new DnDRectangularShape(m_pos, m_size, m_col);
         case DnDShape::Ellipse:   return new DnDEllipticShape(m_pos, m_size, m_col);
@@ -1738,14 +1861,14 @@ void DnDShapeDialog::OnColour(wxCommandEvent& WXUNUSED(event))
 // DnDShapeFrame
 // ----------------------------------------------------------------------------
 
-DnDShapeFrame *DnDShapeFrame::ms_lastDropTarget = NULL;
-
 DnDShapeFrame::DnDShapeFrame(wxFrame *parent)
              : wxFrame(parent, wxID_ANY, "Shape Frame")
 {
 #if wxUSE_STATUSBAR
     CreateStatusBar();
 #endif // wxUSE_STATUSBAR
+
+    m_canvas = new DnDShapeCanvas(this);
 
     wxMenu *menuShape = new wxMenu;
     menuShape->Append(Menu_Shape_New, "&New default shape\tCtrl-S");
@@ -1766,30 +1889,53 @@ DnDShapeFrame::DnDShapeFrame(wxFrame *parent)
 #if wxUSE_STATUSBAR
     SetStatusText("Press Ctrl-S to create a new shape");
 #endif // wxUSE_STATUSBAR
+}
+
+bool DnDShapeFrame::TryBefore(wxEvent& event)
+{
+    if (event.GetEventType() == wxEVT_MENU ||
+        event.GetEventType() == wxEVT_UPDATE_UI)
+    {
+        wxPropagationDisabler disablePropagation(event);
+        if (m_canvas && m_canvas->ProcessWindowEvent(event))
+        {
+            return true;
+        }
+    }
+
+    return wxFrame::TryBefore(event);
+}
+
+DnDShapeCanvas *DnDShapeCanvas::ms_lastDropTarget = nullptr;
+
+DnDShapeCanvas::DnDShapeCanvas(DnDShapeFrame *parent)
+             : wxScrolledCanvas(parent)
+{
+    // this is completely arbitrary and is done just for illustration purposes
+    SetVirtualSize(1000, 1000);
+    SetScrollRate(20, 20);
+    EnableAutoScrollInside(20);
+    DisableAutoScrollOutside();
 
     SetDropTarget(new DnDShapeDropTarget(this));
-
-    m_shape = NULL;
 
     SetBackgroundColour(*wxWHITE);
 }
 
-DnDShapeFrame::~DnDShapeFrame()
+DnDShapeFrame *DnDShapeCanvas::GetParent()
 {
-    if (m_shape)
-        delete m_shape;
+    wxWindow *parent = wxScrolledCanvas::GetParent();
+    return wxCheckCast<DnDShapeFrame>(parent);
 }
 
-void DnDShapeFrame::SetShape(DnDShape *shape)
+void DnDShapeCanvas::SetShape(DnDShape *shape)
 {
-    if (m_shape)
-        delete m_shape;
-    m_shape = shape;
+    m_shape.reset(shape);
     Refresh();
 }
 
 // callbacks
-void DnDShapeFrame::OnDrag(wxMouseEvent& event)
+void DnDShapeCanvas::OnDrag(wxMouseEvent& event)
 {
     if ( !m_shape )
     {
@@ -1799,7 +1945,7 @@ void DnDShapeFrame::OnDrag(wxMouseEvent& event)
     }
 
     // start drag operation
-    DnDShapeDataObject shapeData(m_shape);
+    DnDShapeDataObject shapeData(m_shape.get());
     wxDropSource source(shapeData, this);
 
     wxString msg;
@@ -1812,7 +1958,7 @@ void DnDShapeFrame::OnDrag(wxMouseEvent& event)
 
         case wxDragNone:
 #if wxUSE_STATUSBAR
-            SetStatusText("Nothing happened");
+            GetParent()->SetStatusText("Nothing happened");
 #endif // wxUSE_STATUSBAR
             break;
 
@@ -1825,13 +1971,13 @@ void DnDShapeFrame::OnDrag(wxMouseEvent& event)
             if ( ms_lastDropTarget != this )
             {
                 // don't delete the shape if we dropped it on ourselves!
-                SetShape(NULL);
+                SetShape(nullptr);
             }
             break;
 
         case wxDragCancel:
 #if wxUSE_STATUSBAR
-            SetStatusText("Drag and drop operation cancelled");
+            GetParent()->SetStatusText("Drag and drop operation cancelled");
 #endif // wxUSE_STATUSBAR
             break;
     }
@@ -1839,31 +1985,32 @@ void DnDShapeFrame::OnDrag(wxMouseEvent& event)
     if (msg.length() )
     {
 #if wxUSE_STATUSBAR
-        SetStatusText(wxString("Shape successfully ") + msg);
+        GetParent()->SetStatusText(wxString("Shape successfully ") + msg);
 #endif // wxUSE_STATUSBAR
     }
     //else: status text already set
 }
 
-void DnDShapeFrame::OnDrop(wxCoord x, wxCoord y, DnDShape *shape)
+void DnDShapeCanvas::OnDrop(wxCoord x, wxCoord y, DnDShape *shape)
 {
     ms_lastDropTarget = this;
 
     wxPoint pt(x, y);
+    pt = CalcUnscrolledPosition(pt);
 
 #if wxUSE_STATUSBAR
     wxString s;
     s.Printf("Shape dropped at (%d, %d)", pt.x, pt.y);
-    SetStatusText(s);
+    GetParent()->SetStatusText(s);
 #endif // wxUSE_STATUSBAR
 
     shape->Move(pt);
     SetShape(shape);
 }
 
-void DnDShapeFrame::OnEditShape(wxCommandEvent& WXUNUSED(event))
+void DnDShapeCanvas::OnEditShape(wxCommandEvent& WXUNUSED(event))
 {
-    DnDShapeDialog dlg(this, m_shape);
+    DnDShapeDialog dlg(this, m_shape.get());
     if ( dlg.ShowModal() == wxID_OK )
     {
         SetShape(dlg.GetShape());
@@ -1871,27 +2018,27 @@ void DnDShapeFrame::OnEditShape(wxCommandEvent& WXUNUSED(event))
 #if wxUSE_STATUSBAR
         if ( m_shape )
         {
-            SetStatusText("You can now drag the shape to another frame");
+            GetParent()->SetStatusText("You can now drag the shape to another frame");
         }
 #endif // wxUSE_STATUSBAR
     }
 }
 
-void DnDShapeFrame::OnNewShape(wxCommandEvent& WXUNUSED(event))
+void DnDShapeCanvas::OnNewShape(wxCommandEvent& WXUNUSED(event))
 {
     SetShape(new DnDEllipticShape(wxPoint(10, 10), wxSize(80, 60), *wxRED));
 
 #if wxUSE_STATUSBAR
-    SetStatusText("You can now drag the shape to another frame");
+    GetParent()->SetStatusText("You can now drag the shape to another frame");
 #endif // wxUSE_STATUSBAR
 }
 
-void DnDShapeFrame::OnClearShape(wxCommandEvent& WXUNUSED(event))
+void DnDShapeCanvas::OnClearShape(wxCommandEvent& WXUNUSED(event))
 {
-    SetShape(NULL);
+    SetShape(nullptr);
 }
 
-void DnDShapeFrame::OnCopyShape(wxCommandEvent& WXUNUSED(event))
+void DnDShapeCanvas::OnCopyShape(wxCommandEvent& WXUNUSED(event))
 {
     if ( m_shape )
     {
@@ -1903,11 +2050,11 @@ void DnDShapeFrame::OnCopyShape(wxCommandEvent& WXUNUSED(event))
             return;
         }
 
-        wxTheClipboard->AddData(new DnDShapeDataObject(m_shape));
+        wxTheClipboard->AddData(new DnDShapeDataObject(m_shape.get()));
     }
 }
 
-void DnDShapeFrame::OnPasteShape(wxCommandEvent& WXUNUSED(event))
+void DnDShapeCanvas::OnPasteShape(wxCommandEvent& WXUNUSED(event))
 {
     wxClipboardLocker clipLocker;
     if ( !clipLocker )
@@ -1917,7 +2064,7 @@ void DnDShapeFrame::OnPasteShape(wxCommandEvent& WXUNUSED(event))
         return;
     }
 
-    DnDShapeDataObject shapeDataObject(NULL);
+    DnDShapeDataObject shapeDataObject(nullptr);
     if ( wxTheClipboard->GetData(shapeDataObject) )
     {
         SetShape(shapeDataObject.GetShape());
@@ -1928,27 +2075,25 @@ void DnDShapeFrame::OnPasteShape(wxCommandEvent& WXUNUSED(event))
     }
 }
 
-void DnDShapeFrame::OnUpdateUICopy(wxUpdateUIEvent& event)
+void DnDShapeCanvas::OnUpdateUICopy(wxUpdateUIEvent& event)
 {
-    event.Enable( m_shape != NULL );
+    event.Enable( m_shape != nullptr );
 }
 
-void DnDShapeFrame::OnUpdateUIPaste(wxUpdateUIEvent& event)
+void DnDShapeCanvas::OnUpdateUIPaste(wxUpdateUIEvent& event)
 {
     event.Enable( wxTheClipboard->IsSupported(wxDataFormat(ShapeFormatId())) );
 }
 
-void DnDShapeFrame::OnPaint(wxPaintEvent& event)
+void DnDShapeCanvas::OnPaint(wxPaintEvent& WXUNUSED(event))
 {
+    wxPaintDC dc(this);
+    DoPrepareDC(dc);
+    dc.Clear();
+
     if ( m_shape )
     {
-        wxPaintDC dc(this);
-
         m_shape->Draw(dc);
-    }
-    else
-    {
-        event.Skip();
     }
 }
 
@@ -1978,7 +2123,7 @@ DnDShape *DnDShape::New(const void *buf)
 
         default:
             wxFAIL_MSG("invalid shape!");
-            return NULL;
+            return nullptr;
     }
 }
 
@@ -1999,7 +2144,7 @@ void DnDShapeDataObject::CreateMetaFile() const
 
     wxMetafile *mf = dcMF.Close();
 
-    DnDShapeDataObject *self = (DnDShapeDataObject *)this; // const_cast
+    DnDShapeDataObject* self = const_cast<DnDShapeDataObject*>(this);
     self->m_dobjMetaFile.SetMetafile(*mf);
     self->m_hasMetaFile = true;
 
@@ -2035,7 +2180,7 @@ void DnDShapeDataObject::CreateBitmap() const
 
 static void ShowBitmap(const wxBitmap& bitmap)
 {
-    wxFrame *frame = new wxFrame(NULL, wxID_ANY, "Bitmap view");
+    wxFrame *frame = new wxFrame(nullptr, wxID_ANY, "Bitmap view");
 #if wxUSE_STATUSBAR
     frame->CreateStatusBar();
 #endif // wxUSE_STATUSBAR
@@ -2056,7 +2201,7 @@ static void ShowBitmap(const wxBitmap& bitmap)
 
 static void ShowMetaFile(const wxMetaFile& metafile)
 {
-    wxFrame *frame = new wxFrame(NULL, wxID_ANY, "Metafile view");
+    wxFrame *frame = new wxFrame(nullptr, wxID_ANY, "Metafile view");
     frame->CreateStatusBar();
     DnDCanvasMetafile *canvas = new DnDCanvasMetafile(frame);
     canvas->SetMetafile(metafile);

@@ -2,7 +2,6 @@
 // Name:        wx/private/filename.h
 // Purpose:     Internal declarations for src/common/filename.cpp
 // Author:      Mike Wetherell
-// Modified by:
 // Created:     2006-10-22
 // Copyright:   (c) 2006 Mike Wetherell
 // Licence:     wxWindows licence
@@ -27,13 +26,13 @@
 #if wxUSE_FILE
 wxString wxCreateTempFileName(const wxString& prefix,
                               wxFile *fileTemp,
-                              bool *deleteOnClose = NULL);
+                              bool *deleteOnClose = nullptr);
 #endif
 
 #if wxUSE_FFILE
 wxString wxCreateTempFileName(const wxString& prefix,
                               wxFFile *fileTemp,
-                              bool *deleteOnClose = NULL);
+                              bool *deleteOnClose = nullptr);
 #endif
 
 // Returns an open temp file, if possible either an unlinked open file or one
@@ -51,5 +50,14 @@ bool wxCreateTempFile(const wxString& prefix,
                       wxFFile *fileTemp,
                       wxString *name);
 #endif
+
+// Set up the newly created temporary file strTemp which is going to replace
+// the existing file strName: this notably copies the attributes of the latter
+// to the former, so that they're preserved when the file is replaced.
+//
+// This is used to implement both wxTempFile and wxTempFFile.
+#if wxUSE_FILE || wxUSE_FFILE
+void wxInitTempFile(const wxString& strTemp, const wxString& strName);
+#endif // wxUSE_FILE || wxUSE_FFILE
 
 #endif // _WX_PRIVATE_FILENAME_H_

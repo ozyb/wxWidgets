@@ -10,9 +10,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_FSWATCHER
 
@@ -39,12 +36,12 @@ public:
     void SendEvent(wxFileSystemWatcherEvent& evt);
 
 protected:
-    bool Init() wxOVERRIDE;
+    bool Init() override;
 
     // adds watch to be monitored for file system changes
-    virtual bool DoAdd(wxSharedPtr<wxFSWatchEntryMSW> watch) wxOVERRIDE;
+    virtual bool DoAdd(wxSharedPtr<wxFSWatchEntryMSW> watch) override;
 
-    virtual bool DoRemove(wxSharedPtr<wxFSWatchEntryMSW> watch) wxOVERRIDE;
+    virtual bool DoRemove(wxSharedPtr<wxFSWatchEntryMSW> watch) override;
 
 private:
     bool DoSetUpWatch(wxFSWatchEntryMSW& watch);
@@ -65,7 +62,7 @@ wxFSWatcherImplMSW::~wxFSWatcherImplMSW()
 {
     // order the worker thread to finish & wait
     m_workerThread.Finish();
-    if (m_workerThread.Wait() != 0)
+    if (m_workerThread.Wait())
     {
         wxLogError(_("Ungraceful worker thread termination"));
     }
@@ -98,12 +95,20 @@ bool wxFSWatcherImplMSW::Init()
 // adds watch to be monitored for file system changes
 bool wxFSWatcherImplMSW::DoAdd(wxSharedPtr<wxFSWatchEntryMSW> watch)
 {
-    // setting up wait for directory changes
-    if (!DoSetUpWatch(*watch))
+    // Associate the handle with the completion port and register the watch
+    // before starting to wait for directory changes: otherwise the worker
+    // thread could get a completion for a watch it doesn't know about yet and
+    // would never start a new read for it.
+    if ( !m_iocp.Add(watch) )
         return false;
 
-    // associating handle with completion port
-    return m_iocp.Add(watch);
+    if ( !DoSetUpWatch(*watch) )
+    {
+        m_iocp.CancelAdd(watch);
+        return false;
+    }
+
+    return true;
 }
 
 bool
@@ -112,18 +117,21 @@ wxFSWatcherImplMSW::DoRemove(wxSharedPtr<wxFSWatchEntryMSW> watch)
     return m_iocp.ScheduleForRemoval(watch);
 }
 
-// TODO ensuring that we have not already set watch for this handle/dir?
+// This is called from the worker thread, so it must not use m_watches, which is
+// only used by the main thread, and asks wxIOCPService instead.
 bool wxFSWatcherImplMSW::SetUpWatch(wxFSWatchEntryMSW& watch)
 {
     wxCHECK_MSG( watch.IsOk(), false, "Invalid watch" );
-    if (m_watches.find(watch.GetPath()) == m_watches.end())
-    {
-        wxLogTrace(wxTRACE_FSWATCHER, "Path '%s' is not watched",
-                   watch.GetPath());
+
+    // Don't let the watch be removed between checking for it and starting a
+    // new read. CompleteRemoval() locks the same recursive critical section.
+    wxCriticalSectionLocker lock(m_iocp.m_critsect);
+
+    if ( m_iocp.CompleteRemoval(&watch) )
         return false;
-    }
 
     wxLogTrace(wxTRACE_FSWATCHER, "Setting up watch for file system changes...");
+
     return DoSetUpWatch(watch);
 }
 
@@ -158,11 +166,12 @@ bool wxFSWatcherImplMSW::DoSetUpWatch(wxFSWatchEntryMSW& watch)
     }
 
     int flags = Watcher2NativeFlags(watch.GetFlags());
+    ::ResetEvent(watch.GetOverlapped()->hEvent);
     int ret = ReadDirectoryChangesW(watch.GetHandle(), watch.GetBuffer(),
                                     wxFSWatchEntryMSW::BUFFER_SIZE,
                                     bWatchSubtree,
-                                    flags, NULL,
-                                    watch.GetOverlapped(), NULL);
+                                    flags, nullptr,
+                                    watch.GetOverlapped(), nullptr);
     if (!ret)
     {
         wxLogSysError(_("Unable to set up watch for '%s'"),
@@ -213,7 +222,7 @@ wxThread::ExitCode wxIOCPThread::Entry()
     while ( ReadEvents() );
 
     wxLogTrace(wxTRACE_FSWATCHER, "[iocp] Ended IOCP thread");
-    return (ExitCode)0;
+    return nullptr;
 }
 
 // wait for events to occur, read them and send to interested parties
@@ -222,8 +231,8 @@ wxThread::ExitCode wxIOCPThread::Entry()
 bool wxIOCPThread::ReadEvents()
 {
     DWORD count = 0;
-    wxFSWatchEntryMSW* watch = NULL;
-    OVERLAPPED* overlapped = NULL;
+    wxFSWatchEntryMSW* watch = nullptr;
+    OVERLAPPED* overlapped = nullptr;
     switch ( m_iocp->GetStatus(&count, &watch, &overlapped) )
     {
         case wxIOCPService::Status_OK:
@@ -233,6 +242,9 @@ bool wxIOCPThread::ReadEvents()
             return true; // error was logged already, we don't want to exit
 
         case wxIOCPService::Status_Deleted:
+            if ( m_iocp->CompleteRemoval(watch) )
+                return true;
+
             {
                 wxFileSystemWatcherEvent
                     removeEvent(wxFSW_EVENT_DELETE,
@@ -244,12 +256,18 @@ bool wxIOCPThread::ReadEvents()
             // It isn't useful to continue watching this directory as it
             // doesn't exist any more -- and even recreating a directory with
             // the same name still wouldn't resume generating events for the
-            // existing wxIOCPService, so it's useless to continue.
-            return false;
+            // existing wxIOCPService, so don't start a new read for it. But
+            // keep reading the events for all the other watches, if any.
+            return true;
 
         case wxIOCPService::Status_Exit:
             return false; // stop reading events
     }
+
+    // First check if we're still interested in this watch, we could have
+    // removed it in the meanwhile.
+    if ( watch && m_iocp->CompleteRemoval(watch) )
+        return true;
 
     // if the thread got woken up but we got an empty packet it means that
     // there was an overflow, too many events and not all could fit in
@@ -281,11 +299,6 @@ bool wxIOCPThread::ReadEvents()
     wxLogTrace( wxTRACE_FSWATCHER, "[iocp] Read entry: path='%s'",
                 watch->GetPath());
 
-    // First check if we're still interested in this watch, we could have
-    // removed it in the meanwhile.
-    if ( m_iocp->CompleteRemoval(watch) )
-        return true;
-
     // extract events from buffer info our vector container
     wxVector<wxEventProcessingData> events;
     const char* memory = static_cast<const char*>(watch->GetBuffer());
@@ -305,7 +318,9 @@ bool wxIOCPThread::ReadEvents()
     // process events
     ProcessNativeEvents(events);
 
-    // reissue the watch. ignore possible errors, we will return true anyway
+    // reissue the watch unless it was removed while processing the events, in
+    // which case this completes its removal. ignore possible errors, we will
+    // return true anyway
     (void) m_service->SetUpWatch(*watch);
 
     return true;
@@ -322,24 +337,15 @@ void wxIOCPThread::ProcessNativeEvents(wxVector<wxEventProcessingData>& events)
         wxLogTrace( wxTRACE_FSWATCHER, "[iocp] %s",
                     FileNotifyInformationToString(e));
 
-        int nativeFlags = e.Action;
-        int flags = Native2WatcherFlags(nativeFlags);
-        if (flags & wxFSW_EVENT_WARNING || flags & wxFSW_EVENT_ERROR)
-        {
-            wxFileSystemWatcherEvent
-                event(flags,
-                      flags & wxFSW_EVENT_ERROR ? wxFSW_WARNING_NONE
-                                                : wxFSW_WARNING_GENERAL);
-            SendEvent(event);
-        }
-        // filter out ignored events and those not asked for.
-        // we never filter out warnings or exceptions
-        else if ((flags == 0) || !(flags & watch->GetFlags()))
+        const int flags = Native2WatcherFlags(e.Action);
+        // filter out ignored events (with flags == 0) and those not asked for.
+        if (!(flags & watch->GetFlags()))
         {
             return;
         }
+
         // rename case
-        else if (nativeFlags == FILE_ACTION_RENAMED_OLD_NAME)
+        if (e.Action == FILE_ACTION_RENAMED_OLD_NAME)
         {
             wxFileName oldpath = GetEventPath(*watch, e);
             wxFileName newpath;
@@ -352,6 +358,8 @@ void wxIOCPThread::ProcessNativeEvents(wxVector<wxEventProcessingData>& events)
             }
             wxFileSystemWatcherEvent event(flags, oldpath, newpath);
             SendEvent(event);
+            if ( it == events.end() )
+                break;
         }
         // all other events
         else
@@ -395,9 +403,9 @@ int wxIOCPThread::Native2WatcherFlags(int flags)
             return flag_mapping[i][1];
     }
 
-    // never reached
-    wxFAIL_MSG(wxString::Format("Unknown file notify change %u", flags));
-    return -1;
+    // We can get unknown values here, see #18953, just ignore them because we
+    // don't know what else to do with them.
+    return 0;
 }
 
 wxString wxIOCPThread::FileNotifyInformationToString(

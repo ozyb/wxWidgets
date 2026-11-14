@@ -10,24 +10,21 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_IMAGE && wxUSE_PCX
 
 #ifndef WX_PRECOMP
     #include "wx/object.h"
-    #include "wx/list.h"
     #include "wx/log.h"
     #include "wx/intl.h"
     #include "wx/palette.h"
-    #include "wx/hash.h"
     #include "wx/module.h"
 #endif
 
 #include "wx/imagpcx.h"
 #include "wx/wfstream.h"
+
+#include <vector>
 
 //-----------------------------------------------------------------------------
 // wxPCXHandler
@@ -178,6 +175,8 @@ int ReadPCX(wxImage *image, wxInputStream& stream)
     // be at least 5 or higher for 8 bit and 24 bit images).
 
     stream.Read(hdr, 128);
+    if (stream.LastRead() != 128)
+        return wxPCX_INVFORMAT;
 
     if (hdr[HDR_VERSION] < 5) return wxPCX_VERERR;
 
@@ -202,6 +201,13 @@ int ReadPCX(wxImage *image, wxInputStream& stream)
     else
         return wxPCX_INVFORMAT;
 
+    // Sanity-check the dimensions. The decode loops below read width
+    // bytes per plane out of a buffer sized bytesperline * nplanes, and
+    // for 24-bit images additionally read p[i + 2 * bytesperline], so
+    // bytesperline must not be smaller than width.
+    if (width <= 0 || height <= 0 || bytesperline <= 0 || width > bytesperline)
+        return wxPCX_INVFORMAT;
+
     // If the image is of type wxPCX_8BIT, then there is
     // a palette at the end of the image data. If we were
     // working with a file, we could seek at the end to the
@@ -220,8 +226,8 @@ int ReadPCX(wxImage *image, wxInputStream& stream)
     if (!image->IsOk())
         return wxPCX_MEMERR;
 
-    if ((p = (unsigned char *) malloc(bytesperline * nplanes)) == NULL)
-        return wxPCX_MEMERR;
+    std::vector<unsigned char> scanline(bytesperline * nplanes);
+    p = scanline.data();
 
     // Now start reading the file, line by line, and store
     // the data in the format required by wxImage.
@@ -233,7 +239,11 @@ int ReadPCX(wxImage *image, wxInputStream& stream)
         if (encoding)
             RLEdecode(p, bytesperline * nplanes, stream);
         else
+        {
             stream.Read(p, bytesperline * nplanes);
+            if (stream.LastRead() != bytesperline * nplanes)
+                return wxPCX_INVFORMAT;
+        }
 
         switch (format)
         {
@@ -260,8 +270,6 @@ int ReadPCX(wxImage *image, wxInputStream& stream)
         }
     }
 
-    free(p);
-
     // For 8 bit images, we read the palette, and then do a second
     // pass replacing indexes with their RGB values;
 
@@ -271,6 +279,8 @@ int ReadPCX(wxImage *image, wxInputStream& stream)
             return wxPCX_INVFORMAT;
 
         stream.Read(pal, 768);
+        if (stream.LastRead() != 768)
+            return wxPCX_INVFORMAT;
 
         p = image->GetData();
         for (unsigned long k = height * width; k; k--)
@@ -342,7 +352,7 @@ int SavePCX(wxImage *image, wxOutputStream& stream)
     if (bytesperline % 2)
         bytesperline++;
 
-    if ((p = (unsigned char *) malloc(bytesperline * nplanes)) == NULL)
+    if ((p = (unsigned char *) malloc(bytesperline * nplanes)) == nullptr)
         return wxPCX_MEMERR;
 
     // Build header data and write it to the stream. Initially,
@@ -411,12 +421,11 @@ int SavePCX(wxImage *image, wxOutputStream& stream)
         // zero unused colours
         memset(pal, 0, sizeof(pal));
 
-        for (wxImageHistogram::iterator entry = histogram.begin();
-             entry != histogram.end(); ++entry )
+        for ( const auto& entry : histogram )
         {
-            key = entry->first;
+            key = entry.first;
             unsigned long index;
-            index = entry->second.index;
+            index = entry.second.index;
             pal[3 * index]     = (unsigned char)(key >> 16);
             pal[3 * index + 1] = (unsigned char)(key >> 8);
             pal[3 * index + 2] = (unsigned char)(key);

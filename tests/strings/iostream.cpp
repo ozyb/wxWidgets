@@ -12,9 +12,6 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/string.h"
@@ -24,38 +21,20 @@
 
 #include <sstream>
 
-#define ASSERT_OSTREAM_EQUAL(p, s) CPPUNIT_ASSERT_EQUAL(std::string(p), s.str())
-#define ASSERT_WOSTREAM_EQUAL(p, s) CPPUNIT_ASSERT_EQUAL(std::wstring(p), s.str())
+#define ASSERT_OSTREAM_EQUAL(p, s) CHECK(s.str() == std::string(p))
+#define ASSERT_WOSTREAM_EQUAL(p, s) CHECK(s.str() == std::wstring(p))
 
 // ----------------------------------------------------------------------------
-// test class
+// tests
 // ----------------------------------------------------------------------------
 
-class StringIostreamTestCase : public CppUnit::TestCase
-{
-public:
-    StringIostreamTestCase() { }
-
-private:
-    CPPUNIT_TEST_SUITE( StringIostreamTestCase );
-        CPPUNIT_TEST( Out );
-    CPPUNIT_TEST_SUITE_END();
-
-    void Out();
-};
-
-CPPUNIT_TEST_SUITE_REGISTRATION( StringIostreamTestCase );
-
-// also include in its own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( StringIostreamTestCase, "StringIostream" );
-
-void StringIostreamTestCase::Out()
+TEST_CASE("StringIostream::Out", "[wxString][iostream]")
 {
     std::ostringstream s;
     s << wxString("hello");
     ASSERT_OSTREAM_EQUAL("hello", s);
 
-#if wxUSE_UNICODE && defined(HAVE_WOSTREAM)
+#if defined(HAVE_WOSTREAM)
     std::wostringstream ws;
     ws << wxString("bye");
     ASSERT_WOSTREAM_EQUAL(L"bye", ws);

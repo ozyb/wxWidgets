@@ -480,7 +480,7 @@ protected:
     the need to specify class scope in your wxHVScrolledWindow derived class
     when using wxVarScrollHelperBase functionality.
 
-    Like all three of it's scroll helper base classes, this class is mostly
+    Like all three of its scroll helper base classes, this class is mostly
     only useful to those classes built into wxWidgets deriving from here, and
     this documentation is mostly only provided for referencing the functions
     provided by this class. You will likely want to derive your window from
@@ -539,25 +539,25 @@ public:
     */
     wxPosition GetVisibleEnd() const;
 
-    //@{
+    ///@{
     /**
         Returns @true if both the given row and column are currently visible
         (even if only partially visible) or @false otherwise.
     */
     bool IsVisible(size_t row, size_t column) const;
     bool IsVisible(const wxPosition& pos) const;
-    //@}
+    ///@}
 
-    //@{
+    ///@{
     /**
         Triggers a refresh for just the area shared between the given row and
         column of the window if it is visible.
     */
     virtual void RefreshRowColumn(size_t row, size_t column);
     virtual void RefreshRowColumn(const wxPosition& pos);
-    //@}
+    ///@}
 
-    //@{
+    ///@{
     /**
         Triggers a refresh for the visible area shared between all given rows
         and columns (inclusive) of the window. If the target window for both
@@ -569,9 +569,9 @@ public:
                                     size_t fromColumn, size_t toColumn);
     virtual void RefreshRowsColumns(const wxPosition& from,
                                     const wxPosition& to);
-    //@}
+    ///@}
 
-    //@{
+    ///@{
     /**
         Scroll to the specified row and column. It will become the first
         visible row and column in the window. Returns @true if we scrolled the
@@ -579,7 +579,7 @@ public:
     */
     bool ScrollToRowColumn(size_t row, size_t column);
     bool ScrollToRowColumn(const wxPosition& pos);
-    //@}
+    ///@}
 
     /**
         Set the number of rows and columns the target window will contain. The
@@ -591,7 +591,7 @@ public:
     */
     void SetRowColumnCount(size_t rowCount, size_t columnCount);
 
-    //@{
+    ///@{
     /**
         Returns the virtual scroll unit under the device unit given accounting
         for scroll position or @c wxNOT_FOUND (for the row, column, or possibly
@@ -599,13 +599,13 @@ public:
     */
     wxPosition VirtualHitTest(wxCoord x, wxCoord y) const;
     wxPosition VirtualHitTest(const wxPoint& pos) const;
-    //@}
+    ///@}
 };
 
 
 
 /**
-    @class wxVScrolledWindow
+    @class wxVScrolled
 
     In the name of this class, "V" may stand for "variable" because it can be
     used for scrolling rows of variable heights; "virtual", because it is not
@@ -621,72 +621,30 @@ public:
     To use this class, you need to derive from it and implement the
     OnGetRowHeight() pure virtual method. You also must call SetRowCount() to
     let the base class know how many rows it should display, but from that
-    moment on the scrolling is handled entirely by wxVScrolledWindow. You only
+    moment on the scrolling is handled entirely by wxVScrolled. You only
     need to draw the visible part of contents in your @c OnPaint() method as
     usual. You should use GetVisibleRowsBegin() and GetVisibleRowsEnd() to
     select the lines to display. Note that the device context origin is not
     shifted so the first visible row always appears at the point (0, 0) in
     physical as well as logical coordinates.
 
-    @section vscrolledwindow_compat wxWidgets 2.8 Compatibility Functions
-
-    The following functions provide backwards compatibility for applications
-    originally built using wxVScrolledWindow in 2.6 or 2.8. Originally,
-    wxVScrolledWindow referred to scrolling "lines". We now use "units" in
-    wxVarScrollHelperBase to avoid implying any orientation (since the
-    functions are used for both horizontal and vertical scrolling in derived
-    classes). And in the new wxVScrolledWindow and wxHScrolledWindow classes,
-    we refer to them as "rows" and "columns", respectively. This is to help
-    clear some confusion in not only those classes, but also in
-    wxHVScrolledWindow where functions are inherited from both.
-
-    You are encouraged to update any existing code using these function to use
-    the new replacements mentioned below, and avoid using these functions for
-    any new code as they are deprecated.
-
-    @beginTable
-    @row2col{ <tt>size_t %GetFirstVisibleLine() const</tt>,
-        Deprecated for GetVisibleRowsBegin(). }
-    @row2col{ <tt>size_t %GetLastVisibleLine() const</tt>,
-        Deprecated for GetVisibleRowsEnd(). This function originally had a
-        slight design flaw in that it was possible to return
-        <tt>(size_t)-1</tt> (ie: a large positive number) if the scroll
-        position was 0 and the first line wasn't completely visible. }
-    @row2col{ <tt>size_t %GetLineCount() const</tt>,
-        Deprecated for GetRowCount(). }
-    @row2col{ <tt>int %HitTest(wxCoord x\, wxCoord y) const
-              @n  int %HitTest(const wxPoint& pt) const</tt>,
-        Deprecated for VirtualHitTest(). }
-    @row2col{ <tt>virtual wxCoord %OnGetLineHeight(size_t line) const</tt>,
-        Deprecated for OnGetRowHeight(). }
-    @row2col{ <tt>virtual void %OnGetLinesHint(size_t lineMin\, size_t lineMax) const</tt>,
-        Deprecated for OnGetRowsHeightHint(). }
-    @row2col{ <tt>virtual void %RefreshLine(size_t line)</tt>,
-        Deprecated for RefreshRow(). }
-    @row2col{ <tt>virtual void %RefreshLines(size_t from\, size_t to)</tt>,
-        Deprecated for RefreshRows(). }
-    @row2col{ <tt>virtual bool %ScrollLines(int lines)</tt>,
-        Deprecated for ScrollRows(). }
-    @row2col{ <tt>virtual bool %ScrollPages(int pages)</tt>,
-        Deprecated for ScrollRowPages(). }
-    @row2col{ <tt>bool %ScrollToLine(size_t line)</tt>,
-        Deprecated for ScrollToRow(). }
-    @row2col{ <tt>void %SetLineCount(size_t count)</tt>,
-        Deprecated for SetRowCount(). }
-    @endTable
+    Note that this template class is available since wxWidgets 3.3.1, only
+    wxVScrolledWindow was available in the earlier versions.
 
     @library{wxcore}
     @category{miscwnd}
 
+    @see wxVScrolledWindow, wxVScrolledCanvas
     @see wxHScrolledWindow, wxHVScrolledWindow
 */
-class wxVScrolledWindow : public wxPanel, public wxVarVScrollHelper
+template<class T>
+class wxVScrolled : public T, public wxVarVScrollHelper
 {
 public:
     /**
         Default constructor, you must call Create() later.
     */
-    wxVScrolledWindow();
+    wxVScrolled();
     /**
         This is the normal constructor, no need to call Create() after using
         this constructor.
@@ -708,7 +666,7 @@ public:
         @param name
             The name for this window; usually not used.
     */
-    wxVScrolledWindow(wxWindow* parent, wxWindowID id = wxID_ANY,
+    wxVScrolled(wxWindow* parent, wxWindowID id = wxID_ANY,
                       const wxPoint& pos = wxDefaultPosition,
                       const wxSize& size = wxDefaultSize, long style = 0,
                       const wxString& name = wxPanelNameStr);
@@ -725,6 +683,47 @@ public:
                 const wxSize& size = wxDefaultSize, long style = 0,
                 const wxString& name = wxPanelNameStr);
 };
+
+
+
+/**
+    VScrolled window derived from wxPanel.
+
+    See wxVScrolled for a detailed description.
+
+    @note Note that because this class derives from wxPanel, it shares its
+          behaviour with regard to TAB traversal and focus handling (in
+          particular, it forwards focus to its children). If you don't want
+          this behaviour, use ::wxScrolledCanvas instead.
+
+    @note ::wxVScrolledWindow is an alias for wxVScrolled<wxPanel> since version
+          3.3.1. In older versions, it was a standalone class.
+
+    @library{wxcore}
+    @category{miscwnd}
+
+    @see wxVScrolled, ::wxVScrolledCanvas
+*/
+typedef wxVScrolled<wxPanel> wxVScrolledWindow;
+
+
+
+/**
+    @class wxVScrolledCanvas
+
+    Alias for wxVScrolled<wxWindow>. VScrolled window that doesn't have children
+    and so doesn't need or want special handling of TAB traversal.
+
+    See wxVScrolled for a detailed description.
+
+    @since 3.3.1
+
+    @library{wxcore}
+    @category{miscwnd}
+
+    @see wxVScrolled
+*/
+typedef wxVScrolled<wxWindow> wxVScrolledCanvas;
 
 
 

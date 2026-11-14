@@ -14,6 +14,7 @@
 #include "wx/private/eventloopsourcesmanager.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QEvent>
 #include <QtCore/QAbstractEventDispatcher>
 #include <QtCore/QSocketNotifier>
 #include <QtCore/QTimer>
@@ -27,7 +28,7 @@ class wxQtIdleTimer : public QTimer, public wxRefCounter
 public:
     wxQtIdleTimer();
     ~wxQtIdleTimer();
-    virtual bool eventFilter( QObject * watched, QEvent * event  ) wxOVERRIDE;
+    virtual bool eventFilter( QObject * watched, QEvent * event  ) override;
 
 private:
     void idle();
@@ -105,34 +106,41 @@ wxQtEventLoopBase::~wxQtEventLoopBase()
 {
     //Clear the shared timer if this is the only external reference to it
     if ( gs_idleTimer->GetRefCount() <= 2 )
-        gs_idleTimer.reset(NULL);
+        gs_idleTimer.reset(nullptr);
 
     delete m_qtEventLoop;
 }
 
-void wxQtEventLoopBase::ScheduleExit(int rc)
+void wxQtEventLoopBase::DoStop(int rc)
 {
-    wxCHECK_RET( IsInsideRun(), wxT("can't call ScheduleExit() if not started") );
-    m_shouldExit = true;
     m_qtEventLoop->exit(rc);
 }
 
 int wxQtEventLoopBase::DoRun()
 {
-    const int ret = m_qtEventLoop->exec();
-    OnExit();
-    return ret;
+    return m_qtEventLoop->exec();
 }
 
 bool wxQtEventLoopBase::Pending() const
 {
-    QAbstractEventDispatcher *instance = QAbstractEventDispatcher::instance();
-    return instance->hasPendingEvents();
+    // Note that we are not using any of the QAbstractEventDispatcher::hasPendingEvents()
+    // or QCoreApplication::hasPendingEvents() functions here to check for pending events,
+    // as the functions were deprecated in Qt5.3 and removed entirely in Qt6 due to their
+    // unreliable way to check for pending events according to the Qt developers.
+    //
+    // So, in the absence of a replacement for these functions, this function is useless
+    // under wxQt as it just returns false.
+
+    return false;
 }
 
 bool wxQtEventLoopBase::Dispatch()
 {
-    m_qtEventLoop->processEvents();
+    if ( m_qtEventLoop->processEvents(QEventLoop::WaitForMoreEvents) )
+    {
+        return !m_qtEventLoop->isRunning();
+    }
+
     return true;
 }
 
@@ -142,10 +150,34 @@ int wxQtEventLoopBase::DispatchTimeout(unsigned long timeout)
     return true;
 }
 
+bool wxQtEventLoopBase::QtDispatch() const
+{
+    return m_qtEventLoop->processEvents();
+}
+
 void wxQtEventLoopBase::WakeUp()
 {
-    QAbstractEventDispatcher *instance = QAbstractEventDispatcher::instance();
-    if ( instance )
+    // Post a no-op Qt event to the (main-thread) idle timer rather than only
+    // calling QAbstractEventDispatcher::wakeUp().
+    //
+    // wx pending events queued via wxEvtHandler::CallAfter() (including the
+    // cross-thread marshalling used by e.g. wxIPC worker threads) are processed
+    // by wxQtIdleTimer::idle() -> ProcessPendingEvents(), and that idle timer is
+    // (re)scheduled by the application-wide event filter, which only runs when a
+    // real Qt *event* is dispatched. Merely waking the dispatcher returns the
+    // blocked event loop from its wait but posts no event, so the filter never
+    // runs, the idle timer is never rescheduled, and the queued pending events
+    // are not processed until some unrelated Qt event happens to arrive. This
+    // stalled cross-thread CallAfter() indefinitely under wxQt.
+    //
+    // QCoreApplication::postEvent() is documented to be thread-safe; posting to
+    // the idle timer (which lives in the main thread) both wakes the loop and
+    // drives the event filter so the idle check, and thus the pending events,
+    // run promptly.
+    if ( m_qtIdleTimer )
+        QCoreApplication::postEvent(m_qtIdleTimer.get(), new QEvent(QEvent::User));
+    else if ( QAbstractEventDispatcher *instance =
+                  QAbstractEventDispatcher::instance() )
         instance->wakeUp();
 }
 
@@ -202,25 +234,25 @@ public:
     wxQtSocketNotifier<&wxEventLoopSourceHandler::OnExceptionWaiting> * m_exception;
 
     wxQtEventLoopSource(int fd, wxEventLoopSourceHandler *handler, int flags)
-        : wxEventLoopSource(handler, fd)
+        : wxEventLoopSource(handler, flags)
     {
         if ( flags & wxEVENT_SOURCE_INPUT )
             m_reader = new wxQtSocketNotifier<&wxEventLoopSourceHandler::OnReadWaiting>
                 (fd, QSocketNotifier::Read, handler);
         else
-            m_reader = NULL;
+            m_reader = nullptr;
 
         if ( flags & wxEVENT_SOURCE_OUTPUT )
             m_writer = new wxQtSocketNotifier<&wxEventLoopSourceHandler::OnWriteWaiting>
                 (fd, QSocketNotifier::Write, handler);
         else
-            m_writer = NULL;
+            m_writer = nullptr;
 
         if ( flags & wxEVENT_SOURCE_EXCEPTION )
             m_exception = new wxQtSocketNotifier<&wxEventLoopSourceHandler::OnExceptionWaiting>
                 (fd, QSocketNotifier::Exception, handler);
         else
-            m_exception = NULL;
+            m_exception = nullptr;
     }
 
     virtual ~wxQtEventLoopSource()
@@ -239,7 +271,7 @@ class wxQtEventLoopSourcesManager : public wxEventLoopSourcesManagerBase
 {
 public:
     wxEventLoopSource*
-    AddSourceForFD(int fd, wxEventLoopSourceHandler* handler, int flags) wxOVERRIDE
+    AddSourceForFD(int fd, wxEventLoopSourceHandler* handler, int flags) override
     {
         return new wxQtEventLoopSource(fd, handler, flags);
     }

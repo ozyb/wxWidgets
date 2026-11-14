@@ -10,9 +10,6 @@
 
 #if wxUSE_LISTCTRL
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/app.h"
@@ -20,51 +17,37 @@
 
 #include "wx/listctrl.h"
 #include "listbasetest.h"
+#include "testableframe.h"
 
-class ListViewTestCase : public ListBaseTestCase, public CppUnit::TestCase
+class ListViewTestCase : public ListBaseTestCase
 {
 public:
-    ListViewTestCase() { }
+    ListViewTestCase();
+    virtual ~ListViewTestCase() override;
 
-    virtual void setUp() wxOVERRIDE;
-    virtual void tearDown() wxOVERRIDE;
+    virtual wxListCtrl *GetList() const override { return m_list; }
 
-    virtual wxListCtrl *GetList() const wxOVERRIDE { return m_list; }
-
-private:
-    CPPUNIT_TEST_SUITE( ListViewTestCase );
-        wxLIST_BASE_TESTS();
-        CPPUNIT_TEST( Selection );
-        CPPUNIT_TEST( Focus );
-    CPPUNIT_TEST_SUITE_END();
-
-    void Selection();
-    void Focus();
-
+protected:
     wxListView *m_list;
 
     wxDECLARE_NO_COPY_CLASS(ListViewTestCase);
 };
 
-// register in the unnamed registry so that these tests are run by default
-CPPUNIT_TEST_SUITE_REGISTRATION( ListViewTestCase );
-
-// also include in its own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( ListViewTestCase, "ListViewTestCase" );
-
-void ListViewTestCase::setUp()
+ListViewTestCase::ListViewTestCase()
 {
     m_list = new wxListView(wxTheApp->GetTopWindow());
     m_list->SetWindowStyle(wxLC_REPORT);
     m_list->SetSize(400, 200);
 }
 
-void ListViewTestCase::tearDown()
+ListViewTestCase::~ListViewTestCase()
 {
-    wxDELETE(m_list);
+    DeleteTestWindow(m_list);
 }
 
-void ListViewTestCase::Selection()
+wxLIST_BASE_TESTS(ListView, "[listctrl][listview]")
+
+TEST_CASE_METHOD(ListViewTestCase, "ListView::Selection", "[listctrl][listview]")
 {
     m_list->InsertColumn(0, "Column 0");
 
@@ -77,33 +60,35 @@ void ListViewTestCase::Selection()
     m_list->Select(2);
     m_list->Select(3);
 
-    CPPUNIT_ASSERT(m_list->IsSelected(0));
-    CPPUNIT_ASSERT(!m_list->IsSelected(1));
+    CHECK(m_list->IsSelected(0));
+    CHECK(!m_list->IsSelected(1));
 
     long sel = m_list->GetFirstSelected();
 
-    CPPUNIT_ASSERT_EQUAL(0, sel);
+    CHECK( sel == 0 );
 
     sel = m_list->GetNextSelected(sel);
 
-    CPPUNIT_ASSERT_EQUAL(2, sel);
+    CHECK( sel == 2 );
 
     sel = m_list->GetNextSelected(sel);
 
-    CPPUNIT_ASSERT_EQUAL(3, sel);
+    CHECK( sel == 3 );
 
     sel = m_list->GetNextSelected(sel);
 
-    CPPUNIT_ASSERT_EQUAL(-1, sel);
+    CHECK( sel == -1 );
 
     m_list->Select(0, false);
 
-    CPPUNIT_ASSERT(!m_list->IsSelected(0));
-    CPPUNIT_ASSERT_EQUAL(2, m_list->GetFirstSelected());
+    CHECK(!m_list->IsSelected(0));
+    CHECK( m_list->GetFirstSelected() == 2 );
 }
 
-void ListViewTestCase::Focus()
+TEST_CASE_METHOD(ListViewTestCase, "ListView::Focus", "[listctrl][listview]")
 {
+    EventCounter focused(m_list, wxEVT_LIST_ITEM_FOCUSED);
+
     m_list->InsertColumn(0, "Column 0");
 
     m_list->InsertItem(0, "Item 0");
@@ -111,11 +96,28 @@ void ListViewTestCase::Focus()
     m_list->InsertItem(2, "Item 2");
     m_list->InsertItem(3, "Item 3");
 
-    CPPUNIT_ASSERT_EQUAL(-1, m_list->GetFocusedItem());
+    CHECK( focused.GetCount() == 0 );
+    CHECK( m_list->GetFocusedItem() == -1 );
 
     m_list->Focus(0);
 
-    CPPUNIT_ASSERT_EQUAL(0, m_list->GetFocusedItem());
+    CHECK( focused.GetCount() == 1 );
+    CHECK( m_list->GetFocusedItem() == 0 );
+}
+
+TEST_CASE_METHOD(ListViewTestCase, "ListView::AppendColumn", "[listctrl][listview]")
+{
+    m_list->AppendColumn("Column 0");
+    m_list->AppendColumn("Column 1");
+
+    m_list->InsertItem(0, "First item");
+    m_list->SetItem(0, 1, "First subitem");
+
+    // Appending a column shouldn't change the existing items.
+    m_list->AppendColumn("Column 2");
+
+    CHECK( m_list->GetItemText(0) == "First item" );
+    CHECK( m_list->GetItemText(0, 1) == "First subitem" );
 }
 
 #endif

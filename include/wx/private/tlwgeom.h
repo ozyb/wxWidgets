@@ -13,6 +13,12 @@
 #include "wx/display.h"
 #include "wx/toplevel.h"
 
+#include "wx/private/rescale.h"
+
+// Name of the entry storing the DPI at which the geometry was saved: it's the
+// same as wxPERSIST_DPI in wx/persist.h, but avoid including it just for this.
+#define wxPERSIST_TLW_DPI "DPI"
+
 // ----------------------------------------------------------------------------
 // wxTLWGeometryBase: abstract base class for platform-specific classes
 // ----------------------------------------------------------------------------
@@ -27,10 +33,10 @@
 class wxTLWGeometryBase
 {
 public:
-    typedef wxTopLevelWindow::GeometrySerializer Serializer;
+    typedef wxTopLevelWindow::GeometryStore Store;
 
-    wxTLWGeometryBase() {}
-    virtual ~wxTLWGeometryBase() {}
+    wxTLWGeometryBase() = default;
+    virtual ~wxTLWGeometryBase() = default;
 
     // Initialize from the given window.
     virtual bool GetFrom(const wxTopLevelWindow* tlw) = 0;
@@ -40,8 +46,88 @@ public:
 
     // Serialize or deserialize the object by using the provided object for
     // writing/reading the values of the different fields of this object.
-    virtual bool Save(const Serializer& ser) const = 0;
-    virtual bool Restore(Serializer& ser) = 0;
+    virtual bool Save(Store& store) const = 0;
+    virtual bool Restore(const Store& store) = 0;
+
+protected:
+#ifdef wxHAS_DPI_INDEPENDENT_PIXELS
+    // The geometry doesn't change with the DPI under these platforms, so we
+    // don't need to save DPI at all but still provide stubs for the functions
+    // below to avoid having to use #ifdefs when calling them.
+
+    bool SaveDPI(Store& WXUNUSED(store)) const
+    {
+        return true;
+    }
+
+    void RestoreDPI(const Store& WXUNUSED(store))
+    {
+    }
+
+    void SetDPIFrom(const wxTopLevelWindow* WXUNUSED(tlw))
+    {
+    }
+
+    wxSize RescaleSize(const wxSize& size, const wxSize& WXUNUSED(dpi)) const
+    {
+        return size;
+    }
+#else // !wxHAS_DPI_INDEPENDENT_PIXELS
+    // Helpers for the derived classes Save() and Restore() implementations:
+    // they must be used to save and restore the DPI at which the geometry was
+    // taken, as it is needed by RescaleSize() below.
+    bool SaveDPI(Store& store) const
+    {
+        wxASSERT_MSG( m_dpi != wxDefaultSize, "forgot to call SetDPIFrom()?" );
+
+        return store.SaveValue(wxPERSIST_TLW_DPI, m_dpi.y);
+    }
+
+    void RestoreDPI(const Store& store)
+    {
+        int dpi;
+        if ( store.RestoreValue(wxPERSIST_TLW_DPI, &dpi) )
+        {
+            if ( dpi <= 0 )
+            {
+                // Probably not worth logging this, just ignore.
+                return;
+            }
+
+            m_dpi = wxSize(dpi, dpi);
+        }
+        //else: leave it as wxDefaultSize, which means that we don't know the
+        //      DPI at which the geometry was saved and so shouldn't rescale it.
+    }
+
+    // Return the size to use for a window which had the given size when its
+    // geometry was saved if it is going to be used with the given DPI now.
+    //
+    // Note that this function only deals with the size because the position of
+    // the window doesn't need to be changed, screen resolution doesn't depend
+    // on the DPI on the platforms without DPI-independent pixels, where this
+    // really matters.
+    wxSize RescaleSize(const wxSize& size, const wxSize& dpi) const
+    {
+        if ( m_dpi == wxDefaultSize || dpi == m_dpi || !dpi.x || !dpi.y )
+            return size;
+
+        return wxRescaleCoord(size).From(m_dpi).To(dpi);
+    }
+
+    // Set the DPI to save together with the geometry of the given window, must
+    // be called from GetFrom().
+    void SetDPIFrom(const wxTopLevelWindow* tlw)
+    {
+        m_dpi = tlw->GetDPI();
+    }
+
+private:
+    // The DPI at which the geometry was saved or wxDefaultSize if it is not
+    // known, which is the case when restoring the geometry saved by a previous
+    // version of the library which didn't store it.
+    wxSize m_dpi = wxDefaultSize;
+#endif // wxHAS_DPI_INDEPENDENT_PIXELS
 };
 
 // ----------------------------------------------------------------------------
@@ -71,47 +157,53 @@ public:
         m_maximized = false;
     }
 
-    virtual bool Save(const Serializer& ser) const wxOVERRIDE
+    virtual bool Save(Store& store) const override
     {
-        if ( !ser.SaveField(wxPERSIST_TLW_X, m_rectScreen.x) ||
-             !ser.SaveField(wxPERSIST_TLW_Y, m_rectScreen.y) )
+        if ( !store.SaveValue(wxPERSIST_TLW_X, m_rectScreen.x) ||
+             !store.SaveValue(wxPERSIST_TLW_Y, m_rectScreen.y) )
             return false;
 
-        if ( !ser.SaveField(wxPERSIST_TLW_W, m_rectScreen.width) ||
-             !ser.SaveField(wxPERSIST_TLW_H, m_rectScreen.height) )
+        if ( !store.SaveValue(wxPERSIST_TLW_W, m_rectScreen.width) ||
+             !store.SaveValue(wxPERSIST_TLW_H, m_rectScreen.height) )
             return false;
 
-        if ( !ser.SaveField(wxPERSIST_TLW_MAXIMIZED, m_maximized) )
+        if ( !store.SaveValue(wxPERSIST_TLW_MAXIMIZED, m_maximized) )
             return false;
 
-        if ( !ser.SaveField(wxPERSIST_TLW_ICONIZED, m_iconized) )
+        if ( !store.SaveValue(wxPERSIST_TLW_ICONIZED, m_iconized) )
+            return false;
+
+        if ( !SaveDPI(store) )
             return false;
 
         return true;
     }
 
-    virtual bool Restore(Serializer& ser) wxOVERRIDE
+    virtual bool Restore(const Store& store) override
     {
-        m_hasPos = ser.RestoreField(wxPERSIST_TLW_X, &m_rectScreen.x) &&
-                   ser.RestoreField(wxPERSIST_TLW_Y, &m_rectScreen.y);
+        m_hasPos = store.RestoreValue(wxPERSIST_TLW_X, &m_rectScreen.x) &&
+                   store.RestoreValue(wxPERSIST_TLW_Y, &m_rectScreen.y);
 
-        m_hasSize = ser.RestoreField(wxPERSIST_TLW_W, &m_rectScreen.width) &&
-                    ser.RestoreField(wxPERSIST_TLW_H, &m_rectScreen.height);
+        m_hasSize = store.RestoreValue(wxPERSIST_TLW_W, &m_rectScreen.width) &&
+                    store.RestoreValue(wxPERSIST_TLW_H, &m_rectScreen.height);
 
         int tmp;
-        if ( ser.RestoreField(wxPERSIST_TLW_MAXIMIZED, &tmp) )
+        if ( store.RestoreValue(wxPERSIST_TLW_MAXIMIZED, &tmp) )
             m_maximized = tmp != 0;
 
-        if ( ser.RestoreField(wxPERSIST_TLW_ICONIZED, &tmp) )
+        if ( store.RestoreValue(wxPERSIST_TLW_ICONIZED, &tmp) )
             m_iconized = tmp != 0;
+
+        RestoreDPI(store);
 
         // If we restored at least something, return true.
         return m_hasPos || m_hasSize || m_maximized || m_iconized;
     }
 
-    virtual bool GetFrom(const wxTopLevelWindow* tlw) wxOVERRIDE
+    virtual bool GetFrom(const wxTopLevelWindow* tlw) override
     {
         m_rectScreen = tlw->GetScreenRect();
+        SetDPIFrom(tlw);
         m_hasPos =
         m_hasSize = true;
         m_iconized = tlw->IsIconized();
@@ -120,7 +212,7 @@ public:
         return true;
     }
 
-    virtual bool ApplyTo(wxTopLevelWindow* tlw) wxOVERRIDE
+    virtual bool ApplyTo(wxTopLevelWindow* tlw) override
     {
         if ( m_hasPos )
         {
@@ -142,11 +234,13 @@ public:
 
         if ( m_hasSize )
         {
+            // Adjust the size to the currently used DPI if necessary.
+            wxSize size = RescaleSize(m_rectScreen.GetSize(), tlw->GetDPI());
+
             // a previous version of the program could have saved the window
             // size which used to be big enough, but which is not big enough
             // any more for the new version, so check that the size we restore
             // doesn't cut off parts of the window
-            wxSize size = m_rectScreen.GetSize();
             size.IncTo(tlw->GetBestSize());
             tlw->SetSize(size);
         }
@@ -171,7 +265,7 @@ private:
 
 #endif // !__WXMSW__
 
-#ifdef __WXGTK20__
+#ifdef __WXGTK__
     #include "wx/gtk/private/tlwgeom.h"
 #elif defined(__WXMSW__)
     #include "wx/msw/private/tlwgeom.h"

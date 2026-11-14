@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_TOGGLEBTN
 
@@ -42,8 +39,6 @@
 #include "wx/dcmemory.h"
 #include "wx/log.h"
 #include "wx/sizer.h"
-
-#include "icons/toggle.xpm"
 
 // ----------------------------------------------------------------------------
 // constants
@@ -87,13 +82,13 @@ enum
 class ToggleWidgetsPage : public WidgetsPage
 {
 public:
-    ToggleWidgetsPage(WidgetsBookCtrl *book, wxImageList *imaglist);
+    ToggleWidgetsPage(WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist);
 
-    virtual wxWindow *GetWidget() const wxOVERRIDE { return m_toggle; }
-    virtual void RecreateWidget() wxOVERRIDE { CreateToggle(); }
+    virtual wxWindow *GetWidget() const override { return m_toggle; }
+    virtual void RecreateWidget() override { CreateToggle(); }
 
     // lazy creation of the content
-    virtual void CreateContent() wxOVERRIDE;
+    virtual void CreateContent() override;
 
 protected:
     // event handlers
@@ -187,14 +182,14 @@ IMPLEMENT_WIDGETS_PAGE(ToggleWidgetsPage, "ToggleButton",
                        );
 
 ToggleWidgetsPage::ToggleWidgetsPage(WidgetsBookCtrl *book,
-                                     wxImageList *imaglist)
-                      :WidgetsPage(book, imaglist, toggle_xpm)
+                                     wxVector<wxBitmapBundle>& imaglist)
+                      :WidgetsPage(book, imaglist, WidgetsIcon::ToggleButton)
 {
     m_chkFit =
-    m_chkDisable = (wxCheckBox *)NULL;
+    m_chkDisable = nullptr;
 
 #if wxUSE_MARKUP
-    m_chkUseMarkup = (wxCheckBox *)NULL;
+    m_chkUseMarkup = nullptr;
 #endif // wxUSE_MARKUP
 
 #ifdef wxHAS_BITMAPTOGGLEBUTTON
@@ -205,17 +200,17 @@ ToggleWidgetsPage::ToggleWidgetsPage(WidgetsBookCtrl *book,
     m_chkUsePressed =
     m_chkUseFocused =
     m_chkUseCurrent =
-    m_chkUseDisabled = (wxCheckBox *)NULL;
+    m_chkUseDisabled = nullptr;
 
     m_radioImagePos =
     m_radioHAlign =
-    m_radioVAlign = (wxRadioBox *)NULL;
+    m_radioVAlign = nullptr;
 #endif // wxHAS_BITMAPTOGGLEBUTTON
 
-    m_textLabel = (wxTextCtrl *)NULL;
+    m_textLabel = nullptr;
 
-    m_toggle = (wxToggleButton *)NULL;
-    m_sizerToggle = (wxSizer *)NULL;
+    m_toggle = nullptr;
+    m_sizerToggle = nullptr;
 }
 
 void ToggleWidgetsPage::CreateContent()
@@ -223,54 +218,55 @@ void ToggleWidgetsPage::CreateContent()
     wxSizer *sizerTop = new wxBoxSizer(wxHORIZONTAL);
 
     // left pane
-    wxStaticBox *box = new wxStaticBox(this, wxID_ANY, "Styles");
-
-    wxSizer *sizerLeft = new wxStaticBoxSizer(box, wxVERTICAL);
+    wxStaticBoxSizer *sizerLeft = new wxStaticBoxSizer(wxVERTICAL, this, "Styles");
+    wxStaticBox* const sizerLeftBox = sizerLeft->GetStaticBox();
 
 #ifdef wxHAS_BITMAPTOGGLEBUTTON
-    m_chkBitmapOnly = CreateCheckBoxAndAddToSizer(sizerLeft, "&Bitmap only");
-    m_chkTextAndBitmap = CreateCheckBoxAndAddToSizer(sizerLeft, "Text &and bitmap");
+    m_chkBitmapOnly = CreateCheckBoxAndAddToSizer(sizerLeft, "&Bitmap only", wxID_ANY, sizerLeftBox);
+    m_chkTextAndBitmap = CreateCheckBoxAndAddToSizer(sizerLeft, "Text &and bitmap", wxID_ANY, sizerLeftBox);
 #endif // wxHAS_BITMAPTOGGLEBUTTON
 
 #if wxUSE_MARKUP
-    m_chkUseMarkup = CreateCheckBoxAndAddToSizer(sizerLeft, "Interpret &markup");
+    m_chkUseMarkup = CreateCheckBoxAndAddToSizer(sizerLeft, "Interpret &markup", wxID_ANY, sizerLeftBox);
 #endif // wxUSE_MARKUP
 
-    m_chkFit = CreateCheckBoxAndAddToSizer(sizerLeft, "&Fit exactly");
-    m_chkDisable = CreateCheckBoxAndAddToSizer(sizerLeft, "Disable");
+    m_chkFit = CreateCheckBoxAndAddToSizer(sizerLeft, "&Fit exactly", wxID_ANY, sizerLeftBox);
+    m_chkDisable = CreateCheckBoxAndAddToSizer(sizerLeft, "Disable", wxID_ANY, sizerLeftBox);
 
 #ifdef wxHAS_BITMAPTOGGLEBUTTON
     m_chkUseBitmapClass = CreateCheckBoxAndAddToSizer(sizerLeft,
-        "Use wxBitmapToggleButton");
+        "Use wxBitmapToggleButton", wxID_ANY, sizerLeftBox);
     m_chkUseBitmapClass->SetValue(true);
 
 
-    sizerLeft->AddSpacer(5);
+    sizerLeft->AddSpacer(FromDIP(5));
 
-    wxSizer *sizerUseLabels =
-        new wxStaticBoxSizer(wxVERTICAL, this,
+    wxStaticBoxSizer *sizerUseLabels =
+        new wxStaticBoxSizer(wxVERTICAL, sizerLeftBox,
                 "&Use the following bitmaps in addition to the normal one?");
+    wxStaticBox* const sizerUseLabelsBox = sizerUseLabels->GetStaticBox();
+
     m_chkUsePressed = CreateCheckBoxAndAddToSizer(sizerUseLabels,
-        "&Pressed (small help icon)");
+        "&Pressed (small help icon)", wxID_ANY, sizerUseLabelsBox);
     m_chkUseFocused = CreateCheckBoxAndAddToSizer(sizerUseLabels,
-        "&Focused (small error icon)");
+        "&Focused (small error icon)", wxID_ANY, sizerUseLabelsBox);
     m_chkUseCurrent = CreateCheckBoxAndAddToSizer(sizerUseLabels,
-        "&Current (small warning icon)");
+        "&Current (small warning icon)", wxID_ANY, sizerUseLabelsBox);
     m_chkUseDisabled = CreateCheckBoxAndAddToSizer(sizerUseLabels,
-        "&Disabled (broken image icon)");
+        "&Disabled (broken image icon)", wxID_ANY, sizerUseLabelsBox);
     sizerLeft->Add(sizerUseLabels, wxSizerFlags().Expand().Border());
 
-    sizerLeft->AddSpacer(10);
+    sizerLeft->AddSpacer(FromDIP(10));
 
     static const wxString dirs[] =
     {
         "left", "right", "top", "bottom",
     };
-    m_radioImagePos = new wxRadioBox(this, wxID_ANY, "Image &position",
+    m_radioImagePos = new wxRadioBox(sizerLeftBox, wxID_ANY, "Image &position",
                                      wxDefaultPosition, wxDefaultSize,
                                      WXSIZEOF(dirs), dirs);
     sizerLeft->Add(m_radioImagePos, wxSizerFlags().Expand().Border());
-    sizerLeft->AddSpacer(15);
+    sizerLeft->AddSpacer(FromDIP(15));
 
     // should be in sync with enums Toggle[HV]Align!
     static const wxString halign[] =
@@ -287,10 +283,10 @@ void ToggleWidgetsPage::CreateContent()
         "bottom",
     };
 
-    m_radioHAlign = new wxRadioBox(this, wxID_ANY, "&Horz alignment",
+    m_radioHAlign = new wxRadioBox(sizerLeftBox, wxID_ANY, "&Horz alignment",
                                    wxDefaultPosition, wxDefaultSize,
                                    WXSIZEOF(halign), halign);
-    m_radioVAlign = new wxRadioBox(this, wxID_ANY, "&Vert alignment",
+    m_radioVAlign = new wxRadioBox(sizerLeftBox, wxID_ANY, "&Vert alignment",
                                    wxDefaultPosition, wxDefaultSize,
                                    WXSIZEOF(valign), valign);
 
@@ -298,34 +294,34 @@ void ToggleWidgetsPage::CreateContent()
     sizerLeft->Add(m_radioVAlign, wxSizerFlags().Expand().Border());
 #endif // wxHAS_BITMAPTOGGLEBUTTON
 
-    sizerLeft->AddSpacer(5);
+    sizerLeft->AddSpacer(FromDIP(5));
 
-    wxButton *btn = new wxButton(this, TogglePage_Reset, "&Reset");
-    sizerLeft->Add(btn, wxSizerFlags().CentreHorizontal().Border(wxALL, 15));
+    wxButton *btn = new wxButton(sizerLeftBox, TogglePage_Reset, "&Reset");
+    sizerLeft->Add(btn, wxSizerFlags().CentreHorizontal().TripleBorder());
 
     // middle pane
-    wxStaticBox *box2 = new wxStaticBox(this, wxID_ANY, "&Operations");
-    wxSizer *sizerMiddle = new wxStaticBoxSizer(box2, wxVERTICAL);
+    wxStaticBoxSizer *sizerMiddle = new wxStaticBoxSizer(wxVERTICAL, this, "&Operations");
 
     wxSizer *sizerRow = CreateSizerWithTextAndButton(TogglePage_ChangeLabel,
                                                      "Change label",
                                                      wxID_ANY,
-                                                     &m_textLabel);
+                                                     &m_textLabel,
+                                                     sizerMiddle->GetStaticBox());
     m_textLabel->SetValue("&Toggle me!");
 
     sizerMiddle->Add(sizerRow, wxSizerFlags().Expand().Border());
 
     // right pane
     m_sizerToggle = new wxBoxSizer(wxHORIZONTAL);
-    m_sizerToggle->SetMinSize(150, 0);
+    m_sizerToggle->SetMinSize(FromDIP(150), 0);
 
     // the 3 panes panes compose the window
     sizerTop->Add(sizerLeft,
-                  wxSizerFlags(0).Expand().Border((wxALL & ~wxLEFT), 10));
+                  wxSizerFlags().Expand().DoubleBorder((wxALL & ~wxLEFT)));
     sizerTop->Add(sizerMiddle,
-                  wxSizerFlags(1).Expand().Border(wxALL, 10));
+                  wxSizerFlags(1).Expand().DoubleBorder());
     sizerTop->Add(m_sizerToggle,
-                  wxSizerFlags(1).Expand().Border((wxALL & ~wxRIGHT), 10));
+                  wxSizerFlags(1).Expand().DoubleBorder((wxALL & ~wxRIGHT)));
 
     // do create the main control
     Reset();
@@ -463,6 +459,9 @@ void ToggleWidgetsPage::CreateToggle()
                                       wxDefaultPosition, wxDefaultSize,
                                       flags);
     }
+
+    NotifyWidgetRecreation(m_toggle);
+
     m_toggle->SetValue(value);
 
 #ifdef wxHAS_BITMAPTOGGLEBUTTON
@@ -508,9 +507,9 @@ void ToggleWidgetsPage::AddButtonToSizer()
 {
     if ( m_chkFit->GetValue() )
     {
-        m_sizerToggle->AddStretchSpacer(1);
-        m_sizerToggle->Add(m_toggle, wxSizerFlags(0).Centre().Border());
-        m_sizerToggle->AddStretchSpacer(1);
+        m_sizerToggle->AddStretchSpacer();
+        m_sizerToggle->Add(m_toggle, wxSizerFlags().Centre().Border());
+        m_sizerToggle->AddStretchSpacer();
     }
     else // take up the entire space
     {

@@ -1,8 +1,7 @@
 @echo off
 
-REM This bash script regenerates the HTML doxygen version of the
-REM wxWidgets manual and adjusts the doxygen log to make it more
-REM readable.
+REM This batch script is used to regenerate the CHM doxygen version of the
+REM wxWidgets manual.
 
 where /q doxygen
 if %ERRORLEVEL% neq 0 (
@@ -23,6 +22,10 @@ pushd ..\..
 set WXWIDGETS=%CD%
 popd
 
+REM SVG is not supported by CHM and we can't/don't need to use custom JS with it.
+set HTML_HEADER=custom_header_simple.html
+set DOT_IMAGE_FORMAT=png
+
 REM Defaults for settings controlled by this script
 set GENERATE_DOCSET=NO
 set GENERATE_HTML=NO
@@ -30,6 +33,7 @@ set GENERATE_HTMLHELP=NO
 set GENERATE_LATEX=NO
 set GENERATE_QHP=NO
 set GENERATE_XML=NO
+set HTML_CODE_FOLDING=YES
 set SEARCHENGINE=NO
 set SERVER_BASED_SEARCH=NO
 
@@ -41,6 +45,7 @@ IF "%1" == "all" (
   IF "%1" == "chm" (
     set GENERATE_HTML=YES
     set GENERATE_HTMLHELP=YES
+    set HTML_CODE_FOLDING=NO
   ) ELSE (
     IF "%1" == "docset" (
       set GENERATE_DOCSET=YES

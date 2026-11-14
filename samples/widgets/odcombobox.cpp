@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_ODCOMBOBOX
 
@@ -46,8 +43,6 @@
 
 #include "itemcontainer.h"
 #include "widgets.h"
-
-#include "icons/odcombobox.xpm"
 
 // ----------------------------------------------------------------------------
 // constants
@@ -88,16 +83,16 @@ enum
 class ODComboboxWidgetsPage : public ItemContainerWidgetsPage
 {
 public:
-    ODComboboxWidgetsPage(WidgetsBookCtrl *book, wxImageList *imaglist);
+    ODComboboxWidgetsPage(WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist);
 
-    virtual wxWindow *GetWidget() const wxOVERRIDE { return m_combobox; }
-    virtual wxTextEntryBase *GetTextEntry() const wxOVERRIDE
-        { return m_combobox ? m_combobox->GetTextCtrl() : NULL; }
-    virtual wxItemContainer* GetContainer() const wxOVERRIDE { return m_combobox; }
-    virtual void RecreateWidget() wxOVERRIDE { CreateCombo(); }
+    virtual wxWindow *GetWidget() const override { return m_combobox; }
+    virtual wxTextEntryBase *GetTextEntry() const override
+        { return m_combobox ? m_combobox->GetTextCtrl() : nullptr; }
+    virtual wxItemContainer* GetContainer() const override { return m_combobox; }
+    virtual void RecreateWidget() override { CreateCombo(); }
 
     // lazy creation of the content
-    virtual void CreateContent() wxOVERRIDE;
+    virtual void CreateContent() override;
 
 protected:
     // event handlers
@@ -242,7 +237,7 @@ public:
     virtual void OnDrawItem(wxDC& dc,
                             const wxRect& rect,
                             int item,
-                            int WXUNUSED(flags)) const wxOVERRIDE
+                            int WXUNUSED(flags)) const override
     {
         if ( item == wxNOT_FOUND )
             return;
@@ -268,7 +263,7 @@ public:
     }
 
     virtual void OnDrawBackground(wxDC& dc, const wxRect& rect,
-                                  int item, int flags ) const wxOVERRIDE
+                                  int item, int flags ) const override
     {
 
         // If item is selected or even, or we are painting the
@@ -287,12 +282,12 @@ public:
         dc.DrawRectangle(rect);
     }
 
-    virtual wxCoord OnMeasureItem(size_t WXUNUSED(item)) const wxOVERRIDE
+    virtual wxCoord OnMeasureItem(size_t WXUNUSED(item)) const override
     {
         return 48;
     }
 
-    virtual wxCoord OnMeasureItemWidth(size_t WXUNUSED(item)) const wxOVERRIDE
+    virtual wxCoord OnMeasureItemWidth(size_t WXUNUSED(item)) const override
     {
         return -1; // default - will be measured from text width
     }
@@ -304,16 +299,16 @@ IMPLEMENT_WIDGETS_PAGE(ODComboboxWidgetsPage, "OwnerDrawnCombobox",
                        );
 
 ODComboboxWidgetsPage::ODComboboxWidgetsPage(WidgetsBookCtrl *book,
-                                             wxImageList *imaglist)
-                  : ItemContainerWidgetsPage(book, imaglist, odcombobox_xpm)
+                                             wxVector<wxBitmapBundle>& imaglist)
+                  : ItemContainerWidgetsPage(book, imaglist, WidgetsIcon::ODComboBox)
 {
     // init everything
     m_chkSort =
     m_chkReadonly =
-    m_chkDclickcycles = (wxCheckBox *)NULL;
+    m_chkDclickcycles = nullptr;
 
-    m_combobox = (wxOwnerDrawnComboBox *)NULL;
-    m_sizerCombo = (wxSizer *)NULL;
+    m_combobox = nullptr;
+    m_sizerCombo = nullptr;
 }
 
 void ODComboboxWidgetsPage::CreateContent()
@@ -332,145 +327,152 @@ void ODComboboxWidgetsPage::CreateContent()
     wxSizer *sizerLeft = new wxBoxSizer(wxVERTICAL);
 
     // left pane - style box
-    wxStaticBox *box = new wxStaticBox(this, wxID_ANY, "&Set style");
+    wxStaticBoxSizer *sizerStyle = new wxStaticBoxSizer(wxVERTICAL, this, "&Set style");
+    wxStaticBox* const sizerStyleBox = sizerStyle->GetStaticBox();
 
-    wxSizer *sizerStyle = new wxStaticBoxSizer(box, wxVERTICAL);
+    m_chkSort = CreateCheckBoxAndAddToSizer(sizerStyle, "&Sort items", wxID_ANY, sizerStyleBox);
+    m_chkReadonly = CreateCheckBoxAndAddToSizer(sizerStyle, "&Read only", wxID_ANY, sizerStyleBox);
+    m_chkDclickcycles = CreateCheckBoxAndAddToSizer(sizerStyle, "&Double-click Cycles", wxID_ANY, sizerStyleBox);
 
-    m_chkSort = CreateCheckBoxAndAddToSizer(sizerStyle, "&Sort items");
-    m_chkReadonly = CreateCheckBoxAndAddToSizer(sizerStyle, "&Read only");
-    m_chkDclickcycles = CreateCheckBoxAndAddToSizer(sizerStyle, "&Double-click Cycles");
+    sizerStyle->AddSpacer(FromDIP(4));
 
-    sizerStyle->AddSpacer(4);
+    m_chkBitmapbutton = CreateCheckBoxAndAddToSizer(sizerStyle, "&Bitmap button", wxID_ANY, sizerStyleBox);
+    m_chkStdbutton = CreateCheckBoxAndAddToSizer(sizerStyle, "B&lank button background", wxID_ANY, sizerStyleBox);
 
-    m_chkBitmapbutton = CreateCheckBoxAndAddToSizer(sizerStyle, "&Bitmap button");
-    m_chkStdbutton = CreateCheckBoxAndAddToSizer(sizerStyle, "B&lank button background");
-
-    wxButton *btn = new wxButton(this, ODComboPage_Reset, "&Reset");
-    sizerStyle->Add(btn, 0, wxALIGN_CENTRE_HORIZONTAL | wxALL, 3);
+    wxButton *btn = new wxButton(sizerStyleBox, ODComboPage_Reset, "&Reset");
+    sizerStyle->Add(btn, wxSizerFlags().CentreHorizontal().Border(wxALL, FromDIP(3)));
 
     sizerLeft->Add(sizerStyle, wxSizerFlags().Expand());
 
     // left pane - popup adjustment box
-    box = new wxStaticBox(this, wxID_ANY, "Adjust &popup");
-
-    wxSizer *sizerPopupPos = new wxStaticBoxSizer(box, wxVERTICAL);
+    wxStaticBoxSizer *sizerPopupPos = new wxStaticBoxSizer(wxVERTICAL, this, "Adjust &popup");
+    wxStaticBox* const sizerPopupPosBox = sizerPopupPos->GetStaticBox();
 
     sizerRow = CreateSizerWithTextAndLabel("Min. Width:",
                                            ODComboPage_PopupMinWidth,
-                                           &m_textPopupMinWidth);
+                                           &m_textPopupMinWidth,
+                                           sizerPopupPosBox);
     m_textPopupMinWidth->SetValue("-1");
-    sizerPopupPos->Add(sizerRow, 0, wxALL | wxGROW, 5);
+    sizerPopupPos->Add(sizerRow, wxSizerFlags().Expand().Border());
 
     sizerRow = CreateSizerWithTextAndLabel("Max. Height:",
                                            ODComboPage_PopupHeight,
-                                           &m_textPopupHeight);
+                                           &m_textPopupHeight,
+                                           sizerPopupPosBox);
     m_textPopupHeight->SetValue("-1");
-    sizerPopupPos->Add(sizerRow, 0, wxALL | wxGROW, 5);
+    sizerPopupPos->Add(sizerRow, wxSizerFlags().Expand().Border());
 
-    m_chkAlignpopupright = CreateCheckBoxAndAddToSizer(sizerPopupPos, "Align Right");
+    m_chkAlignpopupright = CreateCheckBoxAndAddToSizer(sizerPopupPos, "Align Right", wxID_ANY, sizerPopupPosBox);
 
-    sizerLeft->Add(sizerPopupPos, wxSizerFlags().Expand().Border(wxTOP, 2));
+    sizerLeft->Add(sizerPopupPos, wxSizerFlags().Expand().Border(wxTOP, FromDIP(2)));
 
     // left pane - button adjustment box
-    box = new wxStaticBox(this, wxID_ANY, "Adjust &button");
-
-    wxSizer *sizerButtonPos = new wxStaticBoxSizer(box, wxVERTICAL);
+    wxStaticBoxSizer *sizerButtonPos = new wxStaticBoxSizer(wxVERTICAL, this, "Adjust &button");
+    wxStaticBox* const sizerButtonPosBox = sizerButtonPos->GetStaticBox();
 
     sizerRow = CreateSizerWithTextAndLabel("Width:",
                                            ODComboPage_ButtonWidth,
-                                           &m_textButtonWidth);
+                                           &m_textButtonWidth,
+                                           sizerButtonPosBox);
     m_textButtonWidth->SetValue("-1");
-    sizerButtonPos->Add(sizerRow, 0, wxALL | wxGROW, 5);
+    sizerButtonPos->Add(sizerRow, wxSizerFlags().Expand().Border());
 
     sizerRow = CreateSizerWithTextAndLabel("VSpacing:",
                                            ODComboPage_ButtonSpacing,
-                                           &m_textButtonSpacing);
+                                           &m_textButtonSpacing,
+                                           sizerButtonPosBox);
     m_textButtonSpacing->SetValue("0");
-    sizerButtonPos->Add(sizerRow, 0, wxALL | wxGROW, 5);
+    sizerButtonPos->Add(sizerRow, wxSizerFlags().Expand().Border());
 
     sizerRow = CreateSizerWithTextAndLabel("Height:",
                                            ODComboPage_ButtonHeight,
-                                           &m_textButtonHeight);
+                                           &m_textButtonHeight,
+                                           sizerButtonPosBox);
     m_textButtonHeight->SetValue("-1");
-    sizerButtonPos->Add(sizerRow, 0, wxALL | wxGROW, 5);
+    sizerButtonPos->Add(sizerRow, wxSizerFlags().Expand().Border());
 
-    m_chkAlignbutleft = CreateCheckBoxAndAddToSizer(sizerButtonPos, "Align Left");
+    m_chkAlignbutleft = CreateCheckBoxAndAddToSizer(sizerButtonPos, "Align Left", wxID_ANY, sizerButtonPosBox);
 
-    sizerLeft->Add(sizerButtonPos, wxSizerFlags().Expand().Border(wxTOP, 2));
+    sizerLeft->Add(sizerButtonPos, wxSizerFlags().Expand().Border(wxTOP, FromDIP(2)));
 
     // middle pane
-    wxStaticBox *box2 = new wxStaticBox(this, wxID_ANY,
-        "&Change combobox contents");
-    wxSizer *sizerMiddle = new wxStaticBoxSizer(box2, wxVERTICAL);
+    wxStaticBoxSizer *sizerMiddle = new wxStaticBoxSizer(wxVERTICAL, this, "&Change combobox contents");
+    wxStaticBox* const sizerMiddleBox = sizerMiddle->GetStaticBox();
 
-    btn = new wxButton(this, ODComboPage_ContainerTests, "Run &tests");
-    sizerMiddle->Add(btn, 0, wxALL | wxGROW, 5);
+    btn = new wxButton(sizerMiddleBox, ODComboPage_ContainerTests, "Run &tests");
+    sizerMiddle->Add(btn, wxSizerFlags().Expand().Border());
 
     sizerRow = CreateSizerWithTextAndLabel("Current selection",
                                            ODComboPage_CurText,
-                                           &text);
+                                           &text,
+                                           sizerMiddleBox);
     text->SetEditable(false);
 
-    sizerMiddle->Add(sizerRow, 0, wxALL | wxGROW, 5);
+    sizerMiddle->Add(sizerRow, wxSizerFlags().Expand().Border());
 
     sizerRow = CreateSizerWithTextAndLabel("Insertion Point",
                                            ODComboPage_InsertionPointText,
-                                           &text);
+                                           &text,
+                                           sizerMiddleBox);
     text->SetEditable(false);
 
-    sizerMiddle->Add(sizerRow, 0, wxALL | wxGROW, 5);
+    sizerMiddle->Add(sizerRow, wxSizerFlags().Expand().Border());
 
     sizerRow = CreateSizerWithTextAndButton(ODComboPage_Insert,
                                             "&Insert this string",
                                             ODComboPage_InsertText,
-                                            &m_textInsert);
-    sizerMiddle->Add(sizerRow, 0, wxALL | wxGROW, 5);
+                                            &m_textInsert,
+                                            sizerMiddleBox);
+    sizerMiddle->Add(sizerRow, wxSizerFlags().Expand().Border());
 
     sizerRow = CreateSizerWithTextAndButton(ODComboPage_Add,
                                             "&Add this string",
                                             ODComboPage_AddText,
-                                            &m_textAdd);
-    sizerMiddle->Add(sizerRow, 0, wxALL | wxGROW, 5);
+                                            &m_textAdd,
+                                            sizerMiddleBox);
+    sizerMiddle->Add(sizerRow, wxSizerFlags().Expand().Border());
 
-    btn = new wxButton(this, ODComboPage_AddSeveral, "&Append a few strings");
-    sizerMiddle->Add(btn, 0, wxALL | wxGROW, 5);
+    btn = new wxButton(sizerMiddleBox, ODComboPage_AddSeveral, "&Append a few strings");
+    sizerMiddle->Add(btn, wxSizerFlags().Expand().Border());
 
-    btn = new wxButton(this, ODComboPage_AddMany, "Append &many strings");
-    sizerMiddle->Add(btn, 0, wxALL | wxGROW, 5);
+    btn = new wxButton(sizerMiddleBox, ODComboPage_AddMany, "Append &many strings");
+    sizerMiddle->Add(btn, wxSizerFlags().Expand().Border());
 
     sizerRow = CreateSizerWithTextAndButton(ODComboPage_Change,
                                             "C&hange current",
                                             ODComboPage_ChangeText,
-                                            &m_textChange);
-    sizerMiddle->Add(sizerRow, 0, wxALL | wxGROW, 5);
+                                            &m_textChange,
+                                            sizerMiddleBox);
+    sizerMiddle->Add(sizerRow, wxSizerFlags().Expand().Border());
 
     sizerRow = CreateSizerWithTextAndButton(ODComboPage_Delete,
                                             "&Delete this item",
                                             ODComboPage_DeleteText,
-                                            &m_textDelete);
-    sizerMiddle->Add(sizerRow, 0, wxALL | wxGROW, 5);
+                                            &m_textDelete,
+                                            sizerMiddleBox);
+    sizerMiddle->Add(sizerRow, wxSizerFlags().Expand().Border());
 
-    btn = new wxButton(this, ODComboPage_DeleteSel, "Delete &selection");
-    sizerMiddle->Add(btn, 0, wxALL | wxGROW, 5);
+    btn = new wxButton(sizerMiddleBox, ODComboPage_DeleteSel, "Delete &selection");
+    sizerMiddle->Add(btn, wxSizerFlags().Expand().Border());
 
-    btn = new wxButton(this, ODComboPage_Clear, "&Clear");
-    sizerMiddle->Add(btn, 0, wxALL | wxGROW, 5);
+    btn = new wxButton(sizerMiddleBox, ODComboPage_Clear, "&Clear");
+    sizerMiddle->Add(btn, wxSizerFlags().Expand().Border());
 
     // right pane
     wxSizer *sizerRight = new wxBoxSizer(wxVERTICAL);
     m_combobox = new DemoODComboBox();
     m_combobox->Create(this, ODComboPage_Combo, wxEmptyString,
                        wxDefaultPosition, wxDefaultSize,
-                       0, NULL,
+                       0, nullptr,
                        0);
-    sizerRight->Add(m_combobox, 0, wxGROW | wxALL, 5);
-    sizerRight->SetMinSize(150, 0);
+    sizerRight->Add(m_combobox, wxSizerFlags().Expand().Border());
+    sizerRight->SetMinSize(FromDIP(150), 0);
     m_sizerCombo = sizerRight; // save it to modify it later
 
     // the 3 panes panes compose the window
-    sizerTop->Add(sizerLeft, 4, wxGROW | (wxALL & ~wxLEFT), 10);
-    sizerTop->Add(sizerMiddle, 5, wxGROW | wxALL, 10);
-    sizerTop->Add(sizerRight, 4, wxGROW | (wxALL & ~wxRIGHT), 10);
+    sizerTop->Add(sizerLeft, wxSizerFlags(4).Expand().DoubleBorder(wxALL & ~wxLEFT));
+    sizerTop->Add(sizerMiddle, wxSizerFlags(5).Expand().DoubleBorder());
+    sizerTop->Add(sizerRight, wxSizerFlags(4).Expand().DoubleBorder(wxALL & ~wxRIGHT));
 
     // final initializations
     Reset();
@@ -520,8 +522,10 @@ void ODComboboxWidgetsPage::CreateCombo()
     m_combobox = new DemoODComboBox();
     m_combobox->Create(this, ODComboPage_Combo, wxEmptyString,
                        wxDefaultPosition, wxDefaultSize,
-                       0, NULL,
+                       0, nullptr,
                        flags);
+
+    NotifyWidgetRecreation(m_combobox);
 
     unsigned int count = items.GetCount();
     for ( unsigned int n = 0; n < count; n++ )
@@ -546,7 +550,7 @@ void ODComboboxWidgetsPage::CreateCombo()
         m_combobox->SetButtonBitmaps(bmpNormal,m_chkStdbutton->GetValue(),bmpPressed,bmpHover);
     }
 
-    m_sizerCombo->Add(m_combobox, 0, wxGROW | wxALL, 5);
+    m_sizerCombo->Add(m_combobox, wxSizerFlags().Expand().Border());
     m_sizerCombo->Layout();
 }
 

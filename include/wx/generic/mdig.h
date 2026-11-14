@@ -68,13 +68,13 @@ public:
     // implement base class pure virtuals
     static bool IsTDI() { return true; }
 
-    virtual void ActivateNext() { AdvanceActive(true); }
-    virtual void ActivatePrevious() { AdvanceActive(false); }
+    virtual void ActivateNext() override { AdvanceActive(true); }
+    virtual void ActivatePrevious() override { AdvanceActive(false); }
 
 #if wxUSE_MENUS
-    virtual void SetWindowMenu(wxMenu* pMenu);
+    virtual void SetWindowMenu(wxMenu* pMenu) override;
 
-    virtual void SetMenuBar(wxMenuBar *pMenuBar);
+    virtual void SetMenuBar(wxMenuBar *pMenuBar) override;
 #endif // wxUSE_MENUS
 
     virtual wxGenericMDIClientWindow *OnCreateGenericClient();
@@ -109,18 +109,18 @@ private:
     void OnWindowMenu(wxCommandEvent& event);
 #endif // wxUSE_MENUS
 
-    virtual bool ProcessEvent(wxEvent& event);
+    virtual bool ProcessEvent(wxEvent& event) override;
 
     void OnClose(wxCloseEvent& event);
 
-    // return the client window, may be NULL if we hadn't been created yet
+    // return the client window, may be null if we hadn't been created yet
     wxGenericMDIClientWindow *GetGenericClientWindow() const;
 
     // close all children, return false if any of them vetoed it
     bool CloseAll();
 
 
-    // this pointer is non-NULL if we're currently inside our ProcessEvent()
+    // this pointer is non-null if we're currently inside our ProcessEvent()
     // and we forwarded the event to this child (as we do with menu events)
     wxMDIChildFrameBase *m_childHandler;
 
@@ -160,18 +160,18 @@ public:
     virtual ~wxGenericMDIChildFrame();
 
     // implement MDI operations
-    virtual void Activate();
+    virtual void Activate() override;
 
 
 #if wxUSE_MENUS
-    virtual void SetMenuBar( wxMenuBar *menu_bar );
-    virtual wxMenuBar *GetMenuBar() const;
+    virtual void SetMenuBar( wxMenuBar *menu_bar ) override;
+    virtual wxMenuBar *GetMenuBar() const override;
 #endif // wxUSE_MENUS
 
-    virtual wxString GetTitle() const { return m_title; }
-    virtual void SetTitle(const wxString& title);
+    virtual wxString GetTitle() const override { return m_title; }
+    virtual void SetTitle(const wxString& title) override;
 
-    virtual bool TryAfter(wxEvent& event);
+    virtual bool TryAfter(wxEvent& event) override;
 
     // implementation only from now on
 
@@ -217,7 +217,7 @@ private:
 class WXDLLIMPEXP_CORE wxGenericMDIClientWindow : public wxMDIClientWindowBase
 {
 public:
-    wxGenericMDIClientWindow() { }
+    wxGenericMDIClientWindow() = default;
 
     // unfortunately we need to provide our own version of CreateClient()
     // because of the difference in the type of the first parameter and
@@ -226,7 +226,7 @@ public:
     // window creation by overriding it in the derived classes)
     virtual bool CreateGenericClient(wxWindow *parent);
     virtual bool CreateClient(wxMDIParentFrame *parent,
-                              long WXUNUSED(style) = wxVSCROLL | wxHSCROLL)
+                              long WXUNUSED(style) = wxVSCROLL | wxHSCROLL) override
     {
         return CreateGenericClient(parent);
     }

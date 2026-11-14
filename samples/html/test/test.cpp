@@ -10,9 +10,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 // For all others, include the necessary headers (this file is usually all you
 // need because it includes almost all "standard" wxWidgets headers
@@ -20,6 +17,7 @@
     #include "wx/wx.h"
 #endif
 
+#include "wx/artprov.h"
 #include "wx/image.h"
 #include "wx/sysopt.h"
 #include "wx/html/htmlwin.h"
@@ -41,7 +39,7 @@
 class MyApp : public wxApp
 {
 public:
-    virtual bool OnInit() wxOVERRIDE;
+    virtual bool OnInit() override;
 };
 
 // Define a new html window type: this is a wrapper for handling wxHtmlWindow events
@@ -53,10 +51,12 @@ public:
         // no custom background initially to avoid confusing people
         m_drawCustomBg = false;
     }
+    MyHtmlWindow(const MyHtmlWindow&) = delete;
+    MyHtmlWindow& operator=(const MyHtmlWindow&) = delete;
 
     virtual wxHtmlOpeningStatus OnOpeningURL(wxHtmlURLType WXUNUSED(type),
                                              const wxString& WXUNUSED(url),
-                                             wxString *WXUNUSED(redirect)) const wxOVERRIDE;
+                                             wxString *WXUNUSED(redirect)) const override;
 
     // toggle drawing of custom background
     void DrawCustomBg(bool draw)
@@ -74,7 +74,6 @@ private:
     bool m_drawCustomBg;
 
     wxDECLARE_EVENT_TABLE();
-    wxDECLARE_NO_COPY_CLASS(MyHtmlWindow);
 };
 
 // Define a new frame type: this is going to be our main frame
@@ -91,6 +90,8 @@ public:
     void OnDefaultWebBrowser(wxCommandEvent& event);
     void OnBack(wxCommandEvent& event);
     void OnForward(wxCommandEvent& event);
+    void OnUpdateBack(wxUpdateUIEvent& event);
+    void OnUpdateForward(wxUpdateUIEvent& event);
     void OnProcessor(wxCommandEvent& event);
     void OnDrawCustomBg(wxCommandEvent& event);
 
@@ -110,7 +111,7 @@ private:
 class BoldProcessor : public wxHtmlProcessor
 {
 public:
-    virtual wxString Process(const wxString& s) const wxOVERRIDE
+    virtual wxString Process(const wxString& s) const override
     {
         wxString r(s);
         r.Replace("<b>", wxEmptyString);
@@ -202,7 +203,7 @@ bool MyApp::OnInit()
 
 // frame constructor
 MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
-   : wxFrame((wxFrame *)NULL, wxID_ANY, title, pos, size,
+   : wxFrame(nullptr, wxID_ANY, title, pos, size,
              wxDEFAULT_FRAME_STYLE, "html_test_app")
 {
     // create a menu bar
@@ -231,6 +232,19 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
     SetMenuBar(menuBar);
 
     SetIcon(wxIcon(sample_xpm));
+
+#if wxUSE_TOOLBAR
+    // Create a toolbar with Back and Forward navigation buttons
+    wxToolBar *toolbar = CreateToolBar();
+    auto* toolBack = toolbar->AddTool(ID_Back, _("Go Back"),
+                              wxArtProvider::GetBitmapBundle(wxART_GO_BACK, wxART_TOOLBAR));
+    Bind(wxEVT_UPDATE_UI, &MyFrame::OnUpdateBack, this, toolBack->GetId());
+    auto* toolForward = toolbar->AddTool(ID_Forward, _("Go Forward"),
+                                 wxArtProvider::GetBitmapBundle(wxART_GO_FORWARD, wxART_TOOLBAR));
+    Bind(wxEVT_UPDATE_UI, &MyFrame::OnUpdateForward, this, toolForward->GetId());
+
+    toolbar->Realize();
+#endif // wxUSE_TOOLBAR
 
 #if wxUSE_ACCEL
     // Create convenient accelerators for Back and Forward navigation
@@ -264,8 +278,8 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
     delete wxLog::SetActiveTarget(new wxLogTextCtrl(text));
 
     wxSizer *sz = new wxBoxSizer(wxVERTICAL);
-    sz->Add(m_Html, 3, wxGROW);
-    sz->Add(text, 1, wxGROW);
+    sz->Add(m_Html, wxSizerFlags(3).Expand());
+    sz->Add(text, wxSizerFlags(1).Expand());
     SetSizer(sz);
 }
 
@@ -275,7 +289,7 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
 void MyFrame::OnQuit(wxCommandEvent& WXUNUSED(event))
 {
     m_Html->WriteCustomization(wxConfig::Get());
-    delete wxConfig::Set(NULL);
+    delete wxConfig::Set(nullptr);
 
     // true is to force the frame to close
     Close(true);
@@ -332,6 +346,16 @@ void MyFrame::OnForward(wxCommandEvent& WXUNUSED(event))
     {
         wxMessageBox(_("No more items in history!"));
     }
+}
+
+void MyFrame::OnUpdateBack(wxUpdateUIEvent& event)
+{
+    event.Enable(m_Html->HistoryCanBack());
+}
+
+void MyFrame::OnUpdateForward(wxUpdateUIEvent& event)
+{
+    event.Enable(m_Html->HistoryCanForward());
 }
 
 void MyFrame::OnProcessor(wxCommandEvent& WXUNUSED(event))

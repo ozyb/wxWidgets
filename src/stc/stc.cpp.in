@@ -28,24 +28,17 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_STC
 
 #include "wx/stc/stc.h"
-#include "wx/stc/private.h"
 
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
 #endif // WX_PRECOMP
 
-#include <ctype.h>
-
 #include "wx/tokenzr.h"
 #include "wx/mstream.h"
-#include "wx/image.h"
 #include "wx/vlbox.h"
 #include "wx/stack.h"
 #if wxUSE_FFILE
@@ -171,11 +164,6 @@ wxEND_EVENT_TABLE()
 wxIMPLEMENT_CLASS(wxStyledTextCtrl, wxControl);
 wxIMPLEMENT_DYNAMIC_CLASS(wxStyledTextEvent, wxCommandEvent);
 
-#ifdef LINK_LEXERS
-// forces the linking of the lexer modules
-int Scintilla_LinkLexers();
-#endif
-
 //----------------------------------------------------------------------
 // Constructor and Destructor
 
@@ -186,7 +174,7 @@ wxStyledTextCtrl::wxStyledTextCtrl(wxWindow *parent,
                                    long style,
                                    const wxString& name)
 {
-    m_swx = NULL;
+    m_swx = nullptr;
     Create(parent, id, pos, size, style, name);
 }
 
@@ -198,23 +186,37 @@ bool wxStyledTextCtrl::Create(wxWindow *parent,
                               long style,
                               const wxString& name)
 {
-    style |= wxVSCROLL | wxHSCROLL;
-    if (!wxControl::Create(parent, id, pos, size,
-                           style | wxWANTS_CHARS | wxCLIP_CHILDREN,
-                           wxDefaultValidator, name))
+    style |= wxVSCROLL | wxHSCROLL | wxWANTS_CHARS | wxCLIP_CHILDREN;
+
+    // We want to use a specific class name for this window in wxMSW to make it
+    // possible to configure screen readers to handle it specifically.
+    bool created =
+#ifdef __WXMSW__
+        CreateUsingMSWClass(
+            wxApp::GetRegisteredClassName(wxT("Scintilla")),
+            parent, id, pos, size, style, name
+        );
+#else
+        wxControl::Create(
+            parent, id, pos, size, style, wxDefaultValidator, name
+        );
+#endif
+    if ( !created )
         return false;
 
-#ifdef LINK_LEXERS
-    Scintilla_LinkLexers();
-#endif
     m_swx = new ScintillaWX(this);
     m_stopWatch.Start();
     m_lastKeyDownConsumed = false;
-    m_vScrollBar = NULL;
-    m_hScrollBar = NULL;
-#if wxUSE_UNICODE
+    m_vScrollBar = nullptr;
+    m_hScrollBar = nullptr;
     // Put Scintilla into unicode (UTF-8) mode
     SetCodePage(wxSTC_CP_UTF8);
+
+#ifdef wxHAS_TEXT_INPUT_CLIENT
+    // The generic wxSTC backend can display composition itself on these
+    // platforms, so prefer inline input instead of relying on an IM module to
+    // provide a separate pre-edit window.
+    SetIMEInteraction(wxSTC_IME_INLINE);
 #endif
 
     SetInitialSize(size);
@@ -240,6 +242,22 @@ bool wxStyledTextCtrl::Create(wxWindow *parent,
     SetFontQuality(wxSTC_EFF_QUALITY_DEFAULT);
 #endif
 
+    // Use colours appropriate for the current system colour theme.
+    auto attr = wxTextCtrl::GetClassDefaultAttributes();
+    StyleSetForeground(wxSTC_STYLE_DEFAULT, attr.colFg);
+    StyleSetBackground(wxSTC_STYLE_DEFAULT, attr.colBg);
+    SetCaretForeground(attr.colFg);
+
+    // We also need to set this one because its foreground is hardcoded as
+    // black in Scintilla sources.
+    StyleSetForeground(wxSTC_STYLE_LINENUMBER, attr.colFg);
+
+    // And foreground for this one is hardcoded as white.
+    StyleSetForeground(wxSTC_STYLE_CALLTIP, attr.colFg);
+
+    SetSelForeground(true, wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHTTEXT));
+    SetSelBackground(true, wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHT));
+
     return true;
 }
 
@@ -261,7 +279,7 @@ wxIntPtr wxStyledTextCtrl::SendMsg(int msg, wxUIntPtr wp, wxIntPtr lp) const
 // Set the vertical scrollbar to use instead of the one that's built-in.
 void wxStyledTextCtrl::SetVScrollBar(wxScrollBar* bar)  {
     m_vScrollBar = bar;
-    if (bar != NULL) {
+    if (bar != nullptr) {
         // ensure that the built-in scrollbar is not visible
         SetScrollbar(wxVERTICAL, 0, 0, 0);
     }
@@ -271,7 +289,7 @@ void wxStyledTextCtrl::SetVScrollBar(wxScrollBar* bar)  {
 // Set the horizontal scrollbar to use instead of the one that's built-in.
 void wxStyledTextCtrl::SetHScrollBar(wxScrollBar* bar)  {
     m_hScrollBar = bar;
-    if (bar != NULL) {
+    if (bar != nullptr) {
         // ensure that the built-in scrollbar is not visible
         SetScrollbar(wxHORIZONTAL, 0, 0, 0);
     }
@@ -369,7 +387,7 @@ void wxStyledTextCtrl::StyleSetFont(int styleNum, const wxFont& font) {
 #ifdef __WXGTK__
     // Ensure that the native font is initialized
     int x, y;
-    GetTextExtent(wxT("X"), &x, &y, NULL, NULL, &font);
+    GetTextExtent(wxT("X"), &x, &y, nullptr, nullptr, &font);
 #endif
     int            size     = font.GetPointSize();
     wxString       faceName = font.GetFaceName();
@@ -452,7 +470,7 @@ wxStyledTextCtrl::DoSaveFile(const wxString& filename, int WXUNUSED(fileType))
     wxFile file(filename, wxFile::write);
 #endif
 
-    if ( file.IsOpened() && file.Write(GetValue(), *wxConvCurrent) )
+    if ( file.IsOpened() && file.Write(GetValue()) )
     {
         SetSavePoint();
 
@@ -481,7 +499,7 @@ wxStyledTextCtrl::DoLoadFile(const wxString& filename, int WXUNUSED(fileType))
     if ( file.IsOpened() )
     {
         wxString text;
-        if ( file.ReadAll(&text, wxConvAuto()) )
+        if ( file.ReadAll(&text) )
         {
             // Detect the EOL: we use just the first line because there is not
             // much we can do if the file uses inconsistent EOLs anyhow, we'd
@@ -556,15 +574,15 @@ bool wxStyledTextCtrl::DoDropText(long x, long y, const wxString& data) {
 
 
 void wxStyledTextCtrl::SetUseAntiAliasing(bool useAA) {
-    m_swx->SetUseAntiAliasing(useAA);
+    SetFontQuality(useAA ? wxSTC_EFF_QUALITY_DEFAULT : wxSTC_EFF_QUALITY_NON_ANTIALIASED);
 }
 
 bool wxStyledTextCtrl::GetUseAntiAliasing() {
-    return m_swx->GetUseAntiAliasing();
+    return GetFontQuality() != wxSTC_EFF_QUALITY_NON_ANTIALIASED;
 }
 
 void wxStyledTextCtrl::AnnotationClearLine(int line) {
-    SendMsg(SCI_ANNOTATIONSETTEXT, line, (sptr_t)NULL);
+    SendMsg(SCI_ANNOTATIONSETTEXT, line, (sptr_t)nullptr);
 }
 
 void wxStyledTextCtrl::MarkerDefineBitmap(int markerNumber,
@@ -704,6 +722,16 @@ int wxStyledTextCtrl::ReplaceTargetRERaw(const char* text, int length)
     return SendMsg(SCI_REPLACETARGETRE, length, reinterpret_cast<sptr_t>(text));
 }
 
+void wxStyledTextCtrl::SetMirrorCtrl(wxStyledTextCtrl* mirrorCtrl)
+{
+    m_mirrorCtrl = mirrorCtrl;
+
+    // Set the fold flags to the same value as in this control in case they had
+    // been changed before calling this function.
+    if ( m_mirrorCtrl )
+        m_mirrorCtrl->SetFoldFlags(m_swx->foldFlags);
+}
+
 #if WXWIN_COMPATIBILITY_3_0
 // Deprecated since Scintilla 3.7.2
 void wxStyledTextCtrl::UsePopUp(bool allowPopUp)
@@ -724,7 +752,12 @@ void wxStyledTextCtrl::StartStyling(int start, int unused)
 // Event handlers
 
 void wxStyledTextCtrl::OnPaint(wxPaintEvent& WXUNUSED(evt)) {
-    wxPaintDC dc(this);
+    wxBufferedPaintDC dc(this, m_buffer);
+
+    // We don't use bounding box for anything, so disable updating it to speed
+    // things up a bit.
+    dc.DisableAutomaticBoundingBoxUpdates();
+
     m_swx->DoPaint(&dc, GetUpdateRegion().GetBox());
 }
 
@@ -756,27 +789,28 @@ void wxStyledTextCtrl::OnMouseLeftDown(wxMouseEvent& evt) {
     SetFocus();
     wxPoint pt = evt.GetPosition();
     m_swx->DoLeftButtonDown(Point(pt.x, pt.y), m_stopWatch.Time(),
-                      evt.ShiftDown(), evt.ControlDown(), evt.AltDown());
+                            evt.ShiftDown(), evt.ControlDown(), evt.AltDown(), evt.MetaDown());
 }
 
 void wxStyledTextCtrl::OnMouseRightDown(wxMouseEvent& evt) {
     SetFocus();
     wxPoint pt = evt.GetPosition();
     m_swx->DoRightButtonDown(Point(pt.x, pt.y), m_stopWatch.Time(),
-                      evt.ShiftDown(), evt.ControlDown(), evt.AltDown());
+                             evt.ShiftDown(), evt.ControlDown(), evt.AltDown(), evt.MetaDown());
     // We need to call evt.Skip() to allow generating EVT_CONTEXT_MENU
     evt.Skip();
 }
 
 void wxStyledTextCtrl::OnMouseMove(wxMouseEvent& evt) {
     wxPoint pt = evt.GetPosition();
-    m_swx->DoLeftButtonMove(Point(pt.x, pt.y));
+    m_swx->DoLeftButtonMove(Point(pt.x, pt.y), m_stopWatch.Time(),
+                            evt.ShiftDown(), evt.ControlDown(), evt.AltDown(), evt.MetaDown());
 }
 
 void wxStyledTextCtrl::OnMouseLeftUp(wxMouseEvent& evt) {
     wxPoint pt = evt.GetPosition();
     m_swx->DoLeftButtonUp(Point(pt.x, pt.y), m_stopWatch.Time(),
-                      evt.ControlDown());
+                          evt.ShiftDown(), evt.ControlDown(), evt.AltDown(), evt.MetaDown());
 }
 
 void wxStyledTextCtrl::OnMouseMiddleUp(wxMouseEvent& evt) {
@@ -826,7 +860,7 @@ void wxStyledTextCtrl::OnMouseWheel(wxMouseEvent& evt)
     if ( !GetMouseWheelCaptures() && !GetRect().Contains(evt.GetPosition()) )
     {
         wxWindow* parent = GetParent();
-        if ( parent != NULL )
+        if ( parent != nullptr )
         {
             wxMouseEvent newevt(evt);
             newevt.SetPosition(
@@ -841,7 +875,7 @@ void wxStyledTextCtrl::OnMouseWheel(wxMouseEvent& evt)
 
         // First try to find the list. It will be a wxVListBox named
         // "AutoCompListBox".
-        wxWindow* curWin  = this, *acListBox = NULL;
+        wxWindow* curWin  = this, *acListBox = nullptr;
         wxStack<wxWindow*> windows;
         windows.push(curWin);
 
@@ -904,16 +938,13 @@ void wxStyledTextCtrl::OnChar(wxKeyEvent& evt) {
 #endif
     bool skip = ((ctrl || alt) && ! (ctrl && alt));
 
-#if wxUSE_UNICODE
     // apparently if we don't do this, Unicode keys pressed after non-char
     // ASCII ones (e.g. Enter, Tab) are not taken into account (patch 1615989)
-    if (m_lastKeyDownConsumed && evt.GetUnicodeKey() > 255)
+    if (m_lastKeyDownConsumed && evt.GetUnicodeChar() > 255)
         m_lastKeyDownConsumed = false;
-#endif
 
     if (!m_lastKeyDownConsumed && !skip) {
-#if wxUSE_UNICODE
-        int key = evt.GetUnicodeKey();
+        wxUniChar key = evt.GetUnicodeChar();
         bool keyOk = true;
 
         // if the unicode key code is not really a unicode character (it may
@@ -928,13 +959,6 @@ void wxStyledTextCtrl::OnChar(wxKeyEvent& evt) {
             m_swx->DoAddChar(key);
             return;
         }
-#else
-        int key = evt.GetKeyCode();
-        if (key < WXK_START) {
-            m_swx->DoAddChar(key);
-            return;
-        }
-#endif
     }
 
     evt.Skip();
@@ -971,7 +995,7 @@ void wxStyledTextCtrl::OnDPIChanged(wxDPIChangedEvent& evt) {
     // adjust the margins to the new DPI
     for ( int i = 0; i < SC_MAX_MARGIN; ++i )
     {
-        SetMarginWidth(i, (int)wxMulDivInt32(GetMarginWidth(i), evt.GetNewDPI().y, evt.GetOldDPI().y));
+        SetMarginWidth(i, evt.ScaleX(GetMarginWidth(i)));
     }
 
     // Hide auto-complete popup, there is no (easy) way to set it to the correct size
@@ -980,11 +1004,15 @@ void wxStyledTextCtrl::OnDPIChanged(wxDPIChangedEvent& evt) {
     {
         AutoCompCancel();
     }
+
+    evt.Skip();
 }
 
 
-void wxStyledTextCtrl::OnSysColourChanged(wxSysColourChangedEvent& WXUNUSED(evt)) {
+void wxStyledTextCtrl::OnSysColourChanged(wxSysColourChangedEvent& evt)
+{
     m_swx->DoInvalidateStyleData();
+    evt.Skip();
 }
 
 
@@ -1037,7 +1065,7 @@ static void SetEventText(wxStyledTextEvent& evt, const char* text,
                          size_t length) {
     if(!text) return;
 
-    evt.SetString(stc2wx(text, length));
+    evt.SetString(wxString::FromUTF8(text, length));
 }
 
 
@@ -1119,7 +1147,6 @@ void wxStyledTextCtrl::NotifyParent(SCNotification* _scn) {
         evt.SetEventType(wxEVT_STC_USERLISTSELECTION);
         evt.SetListType(scn.listType);
         SetEventText(evt, scn.text, strlen(scn.text));
-        evt.SetPosition(scn.lParam);
         evt.SetListCompletionMethod(scn.listCompletionMethod);
         break;
 
@@ -1167,7 +1194,6 @@ void wxStyledTextCtrl::NotifyParent(SCNotification* _scn) {
         evt.SetEventType(wxEVT_STC_AUTOCOMP_SELECTION);
         evt.SetListType(scn.listType);
         SetEventText(evt, scn.text, strlen(scn.text));
-        evt.SetPosition(scn.lParam);
         evt.SetListCompletionMethod(scn.listCompletionMethod);
         break;
 
@@ -1183,13 +1209,18 @@ void wxStyledTextCtrl::NotifyParent(SCNotification* _scn) {
         evt.SetEventType(wxEVT_STC_AUTOCOMP_COMPLETED);
         evt.SetListType(scn.listType);
         SetEventText(evt, scn.text, strlen(scn.text));
-        evt.SetPosition(scn.lParam);
         evt.SetListCompletionMethod(scn.listCompletionMethod);
         break;
 
     case SCN_MARGINRIGHTCLICK:
         evt.SetEventType(wxEVT_STC_MARGIN_RIGHT_CLICK);
         evt.SetMargin(scn.margin);
+        break;
+
+    case SCN_AUTOCSELECTIONCHANGE:
+        evt.SetEventType(wxEVT_STC_AUTOCOMP_SELECTION_CHANGE);
+        evt.SetListType(scn.listType);
+        SetEventText(evt, scn.text, strlen(scn.text));
         break;
 
     default:
@@ -1204,18 +1235,10 @@ WXLRESULT wxStyledTextCtrl::MSWWindowProc(WXUINT nMsg,
     WXWPARAM wParam,
     WXLPARAM lParam)
 {
-    switch(nMsg) {
-    // Forward IME messages to ScintillaWX
-    case WM_IME_KEYDOWN:
-    case WM_IME_REQUEST:
-    case WM_IME_STARTCOMPOSITION:
-    case WM_IME_ENDCOMPOSITION:
-    case WM_IME_COMPOSITION:
-    case WM_IME_SETCONTEXT:
+    if ( m_swx )
         return SendMsg(nMsg, wParam, lParam);
-    default:
+    else
         return wxControl::MSWWindowProc(nMsg, wParam, lParam);
-    }
 }
 #endif
 
@@ -1223,36 +1246,6 @@ WXLRESULT wxStyledTextCtrl::MSWWindowProc(WXUINT nMsg,
 //----------------------------------------------------------------------
 //----------------------------------------------------------------------
 //----------------------------------------------------------------------
-
-wxStyledTextEvent::wxStyledTextEvent(wxEventType commandType, int id)
-    : wxCommandEvent(commandType, id)
-{
-    m_position = 0;
-    m_key = 0;
-    m_modifiers = 0;
-    m_modificationType = 0;
-    m_length = 0;
-    m_linesAdded = 0;
-    m_line = 0;
-    m_foldLevelNow = 0;
-    m_foldLevelPrev = 0;
-    m_margin = 0;
-    m_message = 0;
-    m_wParam = 0;
-    m_lParam = 0;
-    m_listType = 0;
-    m_x = 0;
-    m_y = 0;
-    m_token = 0;
-    m_annotationLinesAdded = 0;
-    m_updated = 0;
-    m_listCompletionMethod = 0;
-
-#if wxUSE_DRAG_AND_DROP
-    m_dragFlags = wxDrag_CopyOnly;
-    m_dragResult = wxDragNone;
-#endif
-}
 
 bool wxStyledTextEvent::GetShift() const { return (m_modifiers & SCI_SHIFT) != 0; }
 bool wxStyledTextEvent::GetControl() const { return (m_modifiers & SCI_CTRL) != 0; }
@@ -1296,9 +1289,6 @@ wxStyledTextEvent::wxStyledTextEvent(const wxStyledTextEvent& event):
 //----------------------------------------------------------------------
 //----------------------------------------------------------------------
 
-/*static*/ wxVersionInfo wxStyledTextCtrl::GetLibraryVersionInfo()
-{
-    return wxVersionInfo("Scintilla", 3, 7, 2, "Scintilla 3.7.2");
-}
+%(VERSION_INFO)s
 
 #endif // wxUSE_STC

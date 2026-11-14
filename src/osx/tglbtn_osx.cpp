@@ -3,7 +3,6 @@
 // Purpose:     Definition of the wxToggleButton class, which implements a
 //              toggle button under wxMac.
 // Author:      Stefan Csomor
-// Modified by:
 // Created:     08.02.01
 // Copyright:   (c) Stefan Csomor
 // Licence:     wxWindows licence
@@ -47,7 +46,7 @@ bool wxToggleButton::Create(wxWindow *parent, wxWindowID id,
                             const wxString& name)
 {
     DontCreatePeer();
-    
+
     m_marginX =
     m_marginY = 0;
 
@@ -107,14 +106,14 @@ bool wxToggleButton::OSXHandleClicked( double WXUNUSED(timestampsec) )
 wxIMPLEMENT_DYNAMIC_CLASS(wxBitmapToggleButton, wxToggleButton);
 
 bool wxBitmapToggleButton::Create(wxWindow *parent, wxWindowID id,
-                            const wxBitmap& label,
+                            const wxBitmapBundle& label,
                             const wxPoint& pos,
                             const wxSize& size, long style,
                             const wxValidator& validator,
                             const wxString& name)
 {
     DontCreatePeer();
-    
+
     if ( !wxToggleButton::Create(parent, id, wxEmptyString, pos, size, style | wxBU_NOTEXT | wxBU_EXACTFIT, validator, name) )
         return false;
 

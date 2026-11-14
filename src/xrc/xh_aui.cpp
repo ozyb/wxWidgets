@@ -10,9 +10,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_XRC && wxUSE_AUI
 
@@ -20,13 +17,13 @@
 #include "wx/aui/framemanager.h"
 #include "wx/aui/auibook.h"
 
-wxIMPLEMENT_DYNAMIC_CLASS(wxAuiXmlHandler, wxXmlResourceHandler)
+wxIMPLEMENT_DYNAMIC_CLASS(wxAuiXmlHandler, wxXmlResourceHandler);
 
 wxAuiXmlHandler::wxAuiXmlHandler()
                 : wxXmlResourceHandler(),
-                  m_manager(NULL),
-                  m_window(NULL),
-                  m_notebook(NULL),
+                  m_manager(nullptr),
+                  m_window(nullptr),
+                  m_notebook(nullptr),
                   m_mgrInside(false),
                   m_anbInside(false)
 {
@@ -60,16 +57,13 @@ wxAuiXmlHandler::wxAuiXmlHandler()
 
 wxAuiManager *wxAuiXmlHandler::GetAuiManager( wxWindow *managed ) const
 {
-    for ( Managers::const_iterator it = m_managers.begin();
-          it != m_managers.end();
-          ++it )
+    for ( auto* mgr : m_managers )
     {
-        wxAuiManager* const mgr = *it;
         if ( mgr->GetManagedWindow() == managed )
             return mgr;
     }
 
-    return NULL;
+    return nullptr;
 }
 
 void wxAuiXmlHandler::OnManagedWindowClose( wxWindowDestroyEvent &event )
@@ -95,7 +89,7 @@ wxObject *wxAuiXmlHandler::DoCreateResource()
 {
     if (m_class == wxS("wxAuiManager"))
     {
-        wxAuiManager *manager = NULL;
+        wxAuiManager *manager = nullptr;
 
         if (m_parentAsWindow)
         {
@@ -143,7 +137,7 @@ wxObject *wxAuiXmlHandler::DoCreateResource()
     else if (m_class == "wxAuiPaneInfo")
     {
         wxXmlNode *node   = GetParamNode(wxS("object"));
-        wxWindow  *window = NULL;
+        wxWindow  *window = nullptr;
 
         if (!node)
             node = GetParamNode(wxS("object_ref"));
@@ -153,7 +147,7 @@ wxObject *wxAuiXmlHandler::DoCreateResource()
             bool old_ins = m_mgrInside;
             m_mgrInside = false;
 
-            wxObject *object = CreateResFromNode(node, m_window, NULL);
+            wxObject *object = CreateResFromNode(node, m_window, nullptr);
 
             m_mgrInside = old_ins;
             window = wxDynamicCast( object, wxWindow );
@@ -196,6 +190,7 @@ wxObject *wxAuiXmlHandler::DoCreateResource()
             if ( HasParam(wxS("floatable")) )       paneInfo.Floatable( GetBool(wxS("floatable")) );
 // Sizes
             if ( HasParam(wxS("floating_size")) )   paneInfo.FloatingSize( GetSize(wxS("floating_size")) );
+            if ( HasParam(wxS("floating_client_size")) )   paneInfo.FloatingClientSize( GetSize(wxS("floating_client_size")) );
             if ( HasParam(wxS("min_size")) )        paneInfo.MinSize( GetSize(wxS("min_size")) );
             if ( HasParam(wxS("max_size")) )        paneInfo.MaxSize( GetSize(wxS("max_size")) );
             if ( HasParam(wxS("best_size")) )       paneInfo.BestSize( GetSize(wxS("best_size")) );
@@ -236,7 +231,7 @@ wxObject *wxAuiXmlHandler::DoCreateResource()
         {
             bool old_ins = m_anbInside;
             m_anbInside = false;
-            wxObject *item = CreateResFromNode(anb, m_notebook, NULL);
+            wxObject *item = CreateResFromNode(anb, m_notebook, nullptr);
             m_anbInside = old_ins;
             wxWindow *wnd = wxDynamicCast(item, wxWindow);
 
@@ -247,7 +242,7 @@ wxObject *wxAuiXmlHandler::DoCreateResource()
                     m_notebook->AddPage(wnd,
                                         GetText(wxS("label")),
                                         GetBool(wxS("selected")),
-                                        GetBitmap(wxS("bitmap"), wxART_OTHER));
+                                        GetBitmapBundle(wxS("bitmap"), wxART_OTHER));
                 }
                 else
                 {
@@ -265,7 +260,7 @@ wxObject *wxAuiXmlHandler::DoCreateResource()
         else
         {
             ReportError("notebookpage must have a window child");
-            return NULL;
+            return nullptr;
         }
     }
     else // if (m_class == wxS("wxAuiNotebook"))
@@ -277,6 +272,20 @@ wxObject *wxAuiXmlHandler::DoCreateResource()
                     GetPosition(),
                     GetSize(),
                     GetStyle(wxS("style")));
+
+        wxString provider = GetText("art-provider", false);
+        if (provider == "default" || provider.IsEmpty())
+            anb->SetArtProvider(new wxAuiDefaultTabArt);
+        else if (provider.CmpNoCase("native") == 0)
+            anb->SetArtProvider(new wxAuiNativeTabArt);
+        else if (provider.CmpNoCase("flat") == 0)
+            anb->SetArtProvider(new wxAuiFlatTabArt);
+        else if (provider.CmpNoCase("generic") == 0)
+            anb->SetArtProvider(new wxAuiGenericTabArt);
+        else if (provider.CmpNoCase("simple") == 0)
+            anb->SetArtProvider(new wxAuiSimpleTabArt);
+        else
+            ReportError("invalid wxAuiNotebook art provider");
 
         SetupWindow(anb);
 

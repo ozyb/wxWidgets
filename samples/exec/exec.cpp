@@ -2,7 +2,6 @@
 // Name:        exec.cpp
 // Purpose:     exec sample demonstrates wxExecute and related functions
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     15.01.00
 // Copyright:   (c) Vadim Zeitlin
 // Licence:     wxWindows licence
@@ -19,9 +18,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 // for all others, include the necessary headers (this file is usually all you
 // need because it includes almost all "standard" wxWidgets headers
@@ -55,7 +51,6 @@
 #include "wx/numdlg.h"
 #include "wx/textdlg.h"
 #include "wx/ffile.h"
-#include "wx/scopedptr.h"
 #include "wx/stopwatch.h"
 
 #include "wx/process.h"
@@ -65,6 +60,9 @@
 #ifdef __WINDOWS__
     #include "wx/dde.h"
 #endif // __WINDOWS__
+
+#include <memory>
+#include <vector>
 
 #ifndef wxHAS_IMAGES_IN_RESOURCES
     #include "../sample.xpm"
@@ -84,15 +82,15 @@ public:
     // this one is called on application startup and is a good place for the app
     // initialization (doing it here and not in the ctor allows to have an error
     // return: if OnInit() returns false, the application terminates)
-    virtual bool OnInit() wxOVERRIDE;
+    virtual bool OnInit() override;
 };
 
 // Define an array of process pointers used by MyFrame
 class MyPipedProcess;
-WX_DEFINE_ARRAY_PTR(MyPipedProcess *, MyPipedProcessesArray);
+using MyPipedProcessesArray = std::vector<MyPipedProcess*>;
 
 class MyProcess;
-WX_DEFINE_ARRAY_PTR(MyProcess *, MyProcessesArray);
+using MyProcessesArray = std::vector<MyProcess*>;
 
 // Define a new frame type: this is going to be our main frame
 class MyFrame : public wxFrame
@@ -120,10 +118,14 @@ public:
 
     void OnPOpen(wxCommandEvent& event);
 
+#if wxUSE_MIMETYPE
     void OnFileExec(wxCommandEvent& event);
+#endif // wxUSE_MIMETYPE
     void OnFileLaunch(wxCommandEvent& event);
     void OnOpenURL(wxCommandEvent& event);
+#if wxUSE_MIMETYPE
     void OnShowCommandForExt(wxCommandEvent& event);
+#endif // wxUSE_MIMETYPE
 
     void OnAbout(wxCommandEvent& event);
 
@@ -264,7 +266,7 @@ public:
     // instead of overriding this virtual function we might as well process the
     // event from it in the frame class - this might be more convenient in some
     // cases
-    virtual void OnTerminate(int pid, int status) wxOVERRIDE;
+    virtual void OnTerminate(int pid, int status) override;
 
 protected:
     MyFrame *m_parent;
@@ -281,7 +283,7 @@ public:
             Redirect();
         }
 
-    virtual void OnTerminate(int pid, int status) wxOVERRIDE;
+    virtual void OnTerminate(int pid, int status) override;
 
     virtual bool HasInput();
 };
@@ -296,7 +298,7 @@ public:
         {
         }
 
-    virtual bool HasInput() wxOVERRIDE;
+    virtual bool HasInput() override;
 
 private:
     wxString m_input;
@@ -370,8 +372,10 @@ wxBEGIN_EVENT_TABLE(MyFrame, wxFrame)
 
     EVT_MENU(Exec_POpen, MyFrame::OnPOpen)
 
+#if wxUSE_MIMETYPE
     EVT_MENU(Exec_OpenFile, MyFrame::OnFileExec)
     EVT_MENU(Exec_ShowCommandForExt, MyFrame::OnShowCommandForExt)
+#endif // wxUSE_MIMETYPE
     EVT_MENU(Exec_LaunchFile, MyFrame::OnFileLaunch)
     EVT_MENU(Exec_OpenURL, MyFrame::OnOpenURL)
 
@@ -445,7 +449,7 @@ bool MyApp::OnInit()
 
 // frame constructor
 MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
-       : wxFrame((wxFrame *)NULL, wxID_ANY, title, pos, size),
+       : wxFrame(nullptr, wxID_ANY, title, pos, size),
          m_timerIdleWakeUp(this, Exec_TimerIdle),
          m_timerBg(this, Exec_TimerBg)
 {
@@ -543,9 +547,9 @@ MyFrame::~MyFrame()
     // any processes left until now must be deleted manually: normally this is
     // done when the associated process terminates but it must be still running
     // if this didn't happen until now
-    for ( size_t n = 0; n < m_allAsync.size(); n++ )
+    for ( auto process : m_allAsync )
     {
-        delete m_allAsync[n];
+        delete process;
     }
 }
 
@@ -741,7 +745,7 @@ wxBEGIN_EVENT_TABLE(ExecQueryDialog, wxDialog)
 wxEND_EVENT_TABLE()
 
 ExecQueryDialog::ExecQueryDialog(const wxString& cmd)
-    : wxDialog(NULL, wxID_ANY, GetDialogTitle(),
+    : wxDialog(nullptr, wxID_ANY, GetDialogTitle(),
                wxDefaultPosition, wxDefaultSize,
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
 {
@@ -879,7 +883,7 @@ void MyFrame::OnSyncExec(wxCommandEvent& WXUNUSED(event))
 
     wxLogStatus( "'%s' is running please wait...", cmd );
 
-    int code = wxExecute(cmd, wxEXEC_SYNC | GetExecFlags(), NULL, &env);
+    int code = wxExecute(cmd, wxEXEC_SYNC | GetExecFlags(), nullptr, &env);
 
     wxLogStatus("Process '%s' terminated with exit code %d.",
         cmd, code);
@@ -1073,6 +1077,7 @@ static bool AskUserForFileName()
     return true;
 }
 
+#if wxUSE_MIMETYPE
 void MyFrame::OnFileExec(wxCommandEvent& WXUNUSED(event))
 {
     if ( !AskUserForFileName() )
@@ -1124,7 +1129,7 @@ void MyFrame::OnShowCommandForExt(wxCommandEvent& WXUNUSED(event))
 
     s_ext = ext;
 
-    wxScopedPtr<wxFileType>
+    std::unique_ptr<wxFileType>
         ft(wxTheMimeTypesManager->GetFileTypeFromExtension(ext));
     if ( !ft )
     {
@@ -1142,6 +1147,7 @@ void MyFrame::OnShowCommandForExt(wxCommandEvent& WXUNUSED(event))
     wxLogMessage("Open command for files of extension \"%s\" is\n%s",
                  ext, cmd);
 }
+#endif // wxUSE_MIMETYPE
 
 void MyFrame::OnFileLaunch(wxCommandEvent& WXUNUSED(event))
 {
@@ -1268,10 +1274,9 @@ void MyFrame::OnDDERequest(wxCommandEvent& WXUNUSED(event))
 // input polling
 void MyFrame::OnIdle(wxIdleEvent& event)
 {
-    size_t count = m_running.GetCount();
-    for ( size_t n = 0; n < count; n++ )
+    for ( auto process : m_running )
     {
-        if ( m_running[n]->HasInput() )
+        if ( process->HasInput() )
         {
             event.RequestMore();
         }
@@ -1296,14 +1301,14 @@ void MyFrame::OnProcessTerminated(MyPipedProcess *process)
 
 void MyFrame::OnAsyncTermination(MyProcess *process)
 {
-    m_allAsync.Remove(process);
+    m_allAsync.erase(std::find(m_allAsync.begin(), m_allAsync.end(), process));
 
     delete process;
 }
 
 void MyFrame::AddPipedProcess(MyPipedProcess *process)
 {
-    if ( m_running.IsEmpty() )
+    if ( m_running.empty() )
     {
         // we want to start getting the timer events to ensure that a
         // steady stream of idle events comes in -- otherwise we
@@ -1312,15 +1317,15 @@ void MyFrame::AddPipedProcess(MyPipedProcess *process)
     }
     //else: the timer is already running
 
-    m_running.Add(process);
-    m_allAsync.Add(process);
+    m_running.push_back(process);
+    m_allAsync.push_back(process);
 }
 
 void MyFrame::RemovePipedProcess(MyPipedProcess *process)
 {
-    m_running.Remove(process);
+    m_running.erase(std::find(m_running.begin(), m_running.end(), process));
 
-    if ( m_running.IsEmpty() )
+    if ( m_running.empty() )
     {
         // we don't need to get idle events all the time any more
         m_timerIdleWakeUp.Stop();
@@ -1437,7 +1442,7 @@ MyPipeFrame::MyPipeFrame(wxFrame *parent,
                          wxProcess *process)
            : wxFrame(parent, wxID_ANY, cmd),
              m_process(process),
-             // in a real program we'd check that the streams are !NULL here
+             // in a real program we'd check that the streams are non-null here
              m_out(*process->GetOutputStream()),
              m_in(*process->GetInputStream()),
              m_err(*process->GetErrorStream())
@@ -1459,21 +1464,21 @@ MyPipeFrame::MyPipeFrame(wxFrame *parent,
     m_textErr->SetEditable(false);
 
     wxSizer *sizerTop = new wxBoxSizer(wxVERTICAL);
-    sizerTop->Add(m_textOut, 0, wxGROW | wxALL, 5);
+    sizerTop->Add(m_textOut, wxSizerFlags().Expand().Border());
 
     wxSizer *sizerBtns = new wxBoxSizer(wxHORIZONTAL);
     sizerBtns->
-        Add(new wxButton(panel, Exec_Btn_Send, "&Send"), 0, wxALL, 5);
+        Add(new wxButton(panel, Exec_Btn_Send, "&Send"), wxSizerFlags().Border());
     sizerBtns->
-        Add(new wxButton(panel, Exec_Btn_SendFile, "&File..."), 0, wxALL, 5);
+        Add(new wxButton(panel, Exec_Btn_SendFile, "&File..."), wxSizerFlags().Border());
     sizerBtns->
-        Add(new wxButton(panel, Exec_Btn_Get, "&Get"), 0, wxALL, 5);
+        Add(new wxButton(panel, Exec_Btn_Get, "&Get"), wxSizerFlags().Border());
     sizerBtns->
-        Add(new wxButton(panel, Exec_Btn_Close, "&Close"), 0, wxALL, 5);
+        Add(new wxButton(panel, Exec_Btn_Close, "&Close"), wxSizerFlags().Border());
 
-    sizerTop->Add(sizerBtns, 0, wxCENTRE | wxALL, 5);
-    sizerTop->Add(m_textIn, 1, wxGROW | wxALL, 5);
-    sizerTop->Add(m_textErr, 1, wxGROW | wxALL, 5);
+    sizerTop->Add(sizerBtns, wxSizerFlags().Centre().Border());
+    sizerTop->Add(m_textIn, wxSizerFlags(1).Expand().Border());
+    sizerTop->Add(m_textErr, wxSizerFlags(1).Expand().Border());
 
     panel->SetSizer(sizerTop);
     sizerTop->Fit(this);
@@ -1560,8 +1565,8 @@ void MyPipeFrame::OnClose(wxCloseEvent& event)
         // we're not interested in getting the process termination notification
         // if we are closing it ourselves
         wxProcess *process = m_process;
-        m_process = NULL;
-        process->SetNextHandler(NULL);
+        m_process = nullptr;
+        process->SetNextHandler(nullptr);
 
         process->CloseOutput();
     }

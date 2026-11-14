@@ -9,10 +9,7 @@
 #ifndef WX_ARCHIVETEST_INCLUDED
 #define WX_ARCHIVETEST_INCLUDED 1
 
-#define WX_TEST_ARCHIVE_ITERATOR
-
 #include "wx/archive.h"
-#include "wx/scopedptr.h"
 #include "wx/wfstream.h"
 
 #include <map>
@@ -42,8 +39,8 @@ public:
     ~TestOutputStream() { delete [] m_data; }
 
     int GetOptions() const { return m_options; }
-    wxFileOffset GetLength() const wxOVERRIDE { return m_size; }
-    bool IsSeekable() const wxOVERRIDE { return (m_options & PipeOut) == 0; }
+    wxFileOffset GetLength() const override { return m_size; }
+    bool IsSeekable() const override { return (m_options & PipeOut) == 0; }
 
     // gives away the data, this stream is then empty, and can be reused
     void GetData(char*& data, size_t& size);
@@ -51,9 +48,9 @@ public:
 private:
     void Init();
 
-    wxFileOffset OnSysSeek(wxFileOffset pos, wxSeekMode mode) wxOVERRIDE;
-    wxFileOffset OnSysTell() const wxOVERRIDE;
-    size_t OnSysWrite(const void *buffer, size_t size) wxOVERRIDE;
+    wxFileOffset OnSysSeek(wxFileOffset pos, wxSeekMode mode) override;
+    wxFileOffset OnSysTell() const override;
+    size_t OnSysWrite(const void *buffer, size_t size) override;
 
     int m_options;
     size_t m_pos;
@@ -74,23 +71,23 @@ public:
 
     // ctor takes the data from the output stream, which is then empty
     TestInputStream(TestOutputStream& out, int eoftype)
-        : m_data(NULL), m_eoftype(eoftype) { SetData(out); }
+        : m_data(nullptr), m_eoftype(eoftype) { SetData(out); }
     // this ctor 'dups'
     TestInputStream(const TestInputStream& in);
     ~TestInputStream() { delete [] m_data; }
 
     void Rewind();
-    wxFileOffset GetLength() const wxOVERRIDE { return m_size; }
-    bool IsSeekable() const wxOVERRIDE { return (m_options & PipeIn) == 0; }
+    wxFileOffset GetLength() const override { return m_size; }
+    bool IsSeekable() const override { return (m_options & PipeIn) == 0; }
     void SetData(TestOutputStream& out);
 
     void Chop(size_t size) { m_size = size; }
     char& operator [](size_t pos) { return m_data[pos]; }
 
 private:
-    wxFileOffset OnSysSeek(wxFileOffset pos, wxSeekMode mode) wxOVERRIDE;
-    wxFileOffset OnSysTell() const wxOVERRIDE;
-    size_t OnSysRead(void *buffer, size_t size) wxOVERRIDE;
+    wxFileOffset OnSysSeek(wxFileOffset pos, wxSeekMode mode) override;
+    wxFileOffset OnSysTell() const override;
+    size_t OnSysRead(void *buffer, size_t size) override;
 
     int m_options;
     size_t m_pos;
@@ -147,10 +144,52 @@ private:
 
 
 ///////////////////////////////////////////////////////////////////////////////
+// Make ids
+
+class TestId
+{
+public:
+    // make a new id and return it as a string
+    static std::string MakeId();
+    // get the current id
+    static int GetId() { return m_seed; }
+private:
+    // seed for generating the ids
+    static int m_seed;
+};
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Common base class allowing to run all the tests polymorphically
+
+class ArchiveTest
+{
+public:
+    explicit ArchiveTest(const std::string& name)
+        : m_name(TestId::MakeId() + name)
+    {
+    }
+
+    virtual ~ArchiveTest() = default;
+
+    // the name is only used for the diagnostic messages
+    const std::string& GetName() const { return m_name; }
+
+    // the entry point for the test
+    virtual void RunTest() = 0;
+
+private:
+    const std::string m_name;
+
+    wxDECLARE_NO_COPY_CLASS(ArchiveTest);
+};
+
+
+///////////////////////////////////////////////////////////////////////////////
 // The test case
 
 template <class ClassFactoryT>
-class ArchiveTestCase : public CppUnit::TestCase
+class ArchiveTestCase : public ArchiveTest
 {
 public:
     ArchiveTestCase(std::string name,
@@ -161,6 +200,8 @@ public:
 
     ~ArchiveTestCase();
 
+    void RunTest() override;
+
 protected:
     // the classes to test
     typedef typename ClassFactoryT::entry_type     EntryT;
@@ -170,9 +211,6 @@ protected:
     typedef typename ClassFactoryT::iter_type      IterT;
     typedef typename ClassFactoryT::pairiter_type  PairIterT;
 
-    // the entry point for the test
-    void runTest() wxOVERRIDE;
-
     // create the test data
     void CreateTestData();
     TestEntry& Add(const char *name, const char *data, int len = -1);
@@ -180,7 +218,7 @@ protected:
 
     // 'archive up' the test data
     void CreateArchive(wxOutputStream& out);
-#ifndef __WXOSX_IPHONE__
+#ifndef __WXDARWIN_IPHONE__
     void CreateArchive(wxOutputStream& out, const wxString& archiver);
 #endif
 
@@ -189,7 +227,7 @@ protected:
 
     // extract the archive and verify its contents
     void ExtractArchive(wxInputStream& in);
-#ifndef __WXOSX_IPHONE__
+#ifndef __WXDARWIN_IPHONE__
     void ExtractArchive(wxInputStream& in, const wxString& unarchiver);
 #endif
     void VerifyDir(wxString& path, size_t rootlen = 0);
@@ -212,15 +250,15 @@ protected:
 
     virtual void OnCreateEntry(     OutputStreamT& WXUNUSED(arc),
                                     TestEntry& WXUNUSED(testEntry),
-                                    EntryT *entry = NULL) { (void)entry; }
+                                    EntryT *entry = nullptr) { (void)entry; }
 
     virtual void OnEntryExtracted(  EntryT& WXUNUSED(entry),
                                     const TestEntry& WXUNUSED(testEntry),
-                                    InputStreamT *arc = NULL) { (void)arc; }
+                                    InputStreamT *arc = nullptr) { (void)arc; }
 
     typedef std::map<wxString, TestEntry*> TestEntries;
     TestEntries m_testEntries;              // test data
-    wxScopedPtr<ClassFactoryT> m_factory;   // factory to make classes
+    std::unique_ptr<ClassFactoryT> m_factory;   // factory to make classes
     int m_options;                          // test options
     wxDateTime m_timeStamp;                 // timestamp to give test entries
     int m_id;                               // select between the possibilites
@@ -230,41 +268,28 @@ protected:
 
 
 ///////////////////////////////////////////////////////////////////////////////
-// Make ids
-
-class TestId
-{
-public:
-    // make a new id and return it as a string
-    static std::string MakeId();
-    // get the current id
-    static int GetId() { return m_seed; }
-private:
-    // seed for generating the ids
-    static int m_seed;
-};
-
-
-///////////////////////////////////////////////////////////////////////////////
 // Base class for the archive test suites
 
-class ArchiveTestSuite : public CppUnit::TestSuite
+class ArchiveTestSuite
 {
 public:
     ArchiveTestSuite(std::string name);
+    virtual ~ArchiveTestSuite() = default;
+
+    // run all the tests in this suite
+    void RunAll();
 
 protected:
-    void DoRunTest();
-
-    virtual CppUnit::Test *makeTest(std::string descr,
-                                    int options,
-                                    bool genericInterface,
-                                    const wxString& archiver,
-                                    const wxString& unarchiver);
+    // create the test for the given combination of the parameters or return
+    // null if this combination is not supported
+    virtual ArchiveTest *makeTest(std::string descr,
+                                  int options,
+                                  bool genericInterface,
+                                  const wxString& archiver,
+                                  const wxString& unarchiver);
 
     void AddArchiver(const wxString& cmd) { AddCmd(m_archivers, cmd); }
     void AddUnArchiver(const wxString &cmd) { AddCmd(m_unarchivers, cmd); }
-    bool IsInPath(const wxString& cmd);
 
     std::string Description(const wxString& type,
                             int options,
@@ -274,11 +299,16 @@ protected:
 
 private:
     wxString m_name;
-    wxPathList m_path;
     wxArrayString m_archivers;
     wxArrayString m_unarchivers;
 
     void AddCmd(wxArrayString& cmdlist, const wxString& cmd);
 };
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Return true if the given command can be found in PATH
+
+bool IsInPath(const wxString& cmd);
 
 #endif

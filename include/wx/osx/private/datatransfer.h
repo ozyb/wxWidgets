@@ -76,11 +76,30 @@ public:
     // create a new sink item
     virtual wxOSXDataSinkItem* CreateItem() = 0;
 
-    // flush the created sink items into the system sink representation
-    virtual void Flush() = 0 ;
+    // flush the created sink items into the system sink representation (autoreleased)
+    virtual WX_NSArray Flush() = 0 ;
 };
 
-class WXDLLIMPEXP_CORE wxOSXPasteboard : public wxOSXDataSink, public wxOSXDataSource
+class WXDLLIMPEXP_CORE wxOSXPasteboardSink : public wxOSXDataSink
+{
+public:
+    wxOSXPasteboardSink();
+    ~wxOSXPasteboardSink();
+
+    virtual wxOSXDataSinkItem* CreateItem() override;
+
+    void Clear() override;
+
+    WX_NSArray Flush() override;
+private:
+    virtual wxOSXDataSinkItem* DoCreateItem();
+
+    void DeleteSinkItems();
+    wxVector<wxOSXDataSinkItem*> m_sinkItems;
+
+};
+
+class WXDLLIMPEXP_CORE wxOSXPasteboard : public wxOSXPasteboardSink, public wxOSXDataSource
 {
 public:
     wxOSXPasteboard(OSXPasteboard native);
@@ -88,26 +107,21 @@ public:
 
     // sink methods
 
-    virtual wxOSXDataSinkItem* CreateItem() wxOVERRIDE;
+    void Clear() override;
 
-    void Clear() wxOVERRIDE;
-
-    void Flush() wxOVERRIDE;
+    WX_NSArray Flush() override;
 
     // source methods
 
-    virtual size_t GetItemCount() const wxOVERRIDE;
+    virtual size_t GetItemCount() const override;
 
-    virtual const wxOSXDataSourceItem* GetItem(size_t pos) const wxOVERRIDE;
+    virtual const wxOSXDataSourceItem* GetItem(size_t pos) const override;
 
-    virtual bool HasData(CFArrayRef types) const wxOVERRIDE;
+    virtual bool HasData(CFArrayRef types) const override;
 
     static wxOSXPasteboard* GetGeneralClipboard();
 private:
-    void DeleteSinkItems();
-
     OSXPasteboard m_pasteboard;
-    wxVector<wxOSXDataSinkItem*> m_sinkItems;
 };
 
 #endif

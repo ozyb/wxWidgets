@@ -144,7 +144,7 @@ public:
         context it returns a 2-element list (item, submenu).
         @endWxPerlOnly
     */
-    virtual wxMenuItem* FindItem(int id, wxMenu** menu = NULL) const;
+    virtual wxMenuItem* FindItem(int id, wxMenu** menu = nullptr) const;
 
     /**
         Returns the index of the menu with the given @a title or @c wxNOT_FOUND if no
@@ -197,25 +197,6 @@ public:
         @remarks Use only after the menubar has been associated with a frame.
     */
     wxString GetLabel(int id) const;
-
-    /**
-        Returns the label of a top-level menu. Note that the returned string does not
-        include the accelerator characters which could have been specified in the menu
-        title string during its construction.
-
-        @param pos
-            Position of the menu on the menu bar, starting from zero.
-
-        @return The menu label, or the empty string if the menu was not found.
-
-        @remarks Use only after the menubar has been associated with a frame.
-
-        @deprecated
-        This function is deprecated in favour of GetMenuLabel() and GetMenuLabelText().
-
-        @see SetLabelTop()
-    */
-    wxString GetLabelTop(size_t pos) const;
 
     /**
         Returns the menu at @a menuIndex (zero-based).
@@ -300,7 +281,7 @@ public:
     /**
         Redraw the menu bar
     */
-    virtual void Refresh(bool eraseBackground = true, const wxRect* rect = NULL);
+    virtual void Refresh(bool eraseBackground = true, const wxRect* rect = nullptr);
 
     /**
         Removes the menu from the menu bar and returns the menu object - the caller
@@ -353,23 +334,6 @@ public:
         @see GetLabel()
     */
     void SetLabel(int id, const wxString& label);
-
-    /**
-        Sets the label of a top-level menu.
-
-        @param pos
-            The position of a menu on the menu bar, starting from zero.
-        @param label
-            The menu label.
-
-        @remarks Use only after the menubar has been associated with a frame.
-
-        @deprecated
-        This function has been deprecated in favour of SetMenuLabel().
-
-        @see GetLabelTop()
-    */
-    void SetLabelTop(size_t pos, const wxString& label);
 
     /**
         Sets the label of a top-level menu.
@@ -532,14 +496,6 @@ public:
 
     /**
         Destructor, destroying the menu.
-
-        @note
-            Under Motif, a popup menu must have a valid parent (the window
-            it was last popped up on) when being destroyed. Therefore, make sure
-            you delete or re-use the popup menu @e before destroying the parent
-            window. Re-use in this context means popping up the menu on a different
-            window from last time, which causes an implicit destruction and
-            recreation of internal data structures.
     */
     virtual ~wxMenu();
 
@@ -637,8 +593,6 @@ public:
         Adds a radio item to the end of the menu.
         All consequent radio items form a group and when an item in the group is
         checked, all the others are automatically unchecked.
-
-        @note Radio items are not supported under wxMotif.
 
         @see Append(), InsertRadioItem()
     */
@@ -756,7 +710,7 @@ public:
       @return
         Menu item object or @NULL if not found.
      */
-    wxMenuItem *FindChildItem(int id, size_t *pos = NULL) const;
+    wxMenuItem *FindChildItem(int id, size_t *pos = nullptr) const;
 
     /**
         Finds the menu id for a menu item string.
@@ -781,9 +735,9 @@ public:
             If the pointer is not @NULL, it will be filled with the item's
             parent menu (if the item was found)
 
-        @return Menu item object or NULL if none is found.
+        @return Menu item object or nullptr if none is found.
     */
-    wxMenuItem* FindItem(int id, wxMenu** menu = NULL) const;
+    wxMenuItem* FindItem(int id, wxMenu** menu = nullptr) const;
 
     /**
         Returns the wxMenuItem given a position in the menu.
@@ -833,7 +787,7 @@ public:
     */
     size_t GetMenuItemCount() const;
 
-    //@{
+    ///@{
     /**
         Returns the list of items in the menu.
 
@@ -842,7 +796,7 @@ public:
     */
     wxMenuItemList& GetMenuItems();
     const wxMenuItemList& GetMenuItems() const;
-    //@}
+    ///@}
 
     /**
         Returns the title of the menu.
@@ -930,6 +884,33 @@ public:
         @see Enable()
     */
     bool IsEnabled(int id) const;
+
+    /**
+        Allows handling native MSW menu command messages.
+
+        This is a low-level function which allows handling MSW @c WM_COMMAND
+        messages generated when menu items are selected. It is particularly
+        useful for the popup menus, as specific handling can then be defined in
+        a wxMenu-derived class directly, instead of in the wxWindow-derived
+        owner class.
+
+        The base class version of this function generates @c wxEVT_MENU command
+        events.
+
+        @param param
+            The MSW command parameter.
+
+        @param id
+            The id of the command.
+
+        @return
+            @true if the command was handled, @false otherwise.
+
+        @onlyfor{wxmsw}
+
+        @since 3.1.5
+    */
+    virtual bool MSWCommand(WXUINT param, WXWORD id);
 
     /**
         Inserts the given @a item at position 0, i.e.\ before all the other
@@ -1036,7 +1017,7 @@ public:
 
         @remarks Notice that you can only call this method directly for the
             popup menus, to change the title of a menu that is part of a menu
-            bar you need to use wxMenuBar::SetLabelTop().
+            bar you need to use wxMenuBar::SetMenuLabel().
 
         @see GetTitle()
     */
@@ -1051,7 +1032,7 @@ public:
         not be used, it is deprecated and exists only for backwards
         compatibility.
     */
-    void UpdateUI(wxEvtHandler* source = NULL);
+    void UpdateUI(wxEvtHandler* source = nullptr);
 
 
     void SetInvokingWindow(wxWindow *win);

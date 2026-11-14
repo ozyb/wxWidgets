@@ -2,7 +2,6 @@
 // Name:        src/ribbon/buttonbar.cpp
 // Purpose:     Ribbon control similar to a tool bar
 // Author:      Peter Cawley
-// Modified by:
 // Created:     2009-07-01
 // Copyright:   (C) Peter Cawley
 // Licence:     wxWindows licence
@@ -10,16 +9,15 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_RIBBON
 
 #include "wx/ribbon/panel.h"
 #include "wx/ribbon/buttonbar.h"
+#include "wx/ribbon/bar.h"
 #include "wx/ribbon/art.h"
 #include "wx/dcbuffer.h"
+#include "wx/renderer.h"
 #include "wx/imaglist.h"
 
 #ifndef WX_PRECOMP
@@ -45,6 +43,8 @@ wxBEGIN_EVENT_TABLE(wxRibbonButtonBar, wxRibbonControl)
     EVT_LEFT_DOWN(wxRibbonButtonBar::OnMouseDown)
     EVT_LEFT_DCLICK(wxRibbonButtonBar::OnMouseDown)
     EVT_LEFT_UP(wxRibbonButtonBar::OnMouseUp)
+    EVT_DPI_CHANGED(wxRibbonButtonBar::OnDPIChanged)
+    EVT_SYS_COLOUR_CHANGED(wxRibbonButtonBar::OnSysColourChanged)
 wxEND_EVENT_TABLE()
 
 class wxRibbonButtonBarButtonSizeInfo
@@ -64,110 +64,24 @@ public:
     wxRibbonButtonBarButtonState size;
 };
 
-namespace
-{
-
-wxBitmap MakeResizedBitmap(const wxBitmap& original, wxSize size)
-{
-    double scale = original.GetScaleFactor();
-    if (scale > 1.0)
-        scale = 2.0;
-
-    wxImage img(original.ConvertToImage());
-    img.Rescale(scale * size.GetWidth(), scale * size.GetHeight(), wxIMAGE_QUALITY_HIGH);
-    return wxBitmap(img, -1, scale);
-}
-
-wxBitmap MakeDisabledBitmap(const wxBitmap& original)
-{
-    wxImage img(original.ConvertToImage());
-    return wxBitmap(img.ConvertToGreyscale(), -1, original.GetScaleFactor());
-}
-
-} // anonymous namespace
-
 class wxRibbonButtonBarButtonBase
 {
 public:
     wxRibbonButtonBarButtonBase()
     {
-        barButtonImageListPos =
-        barButtonSmallImageListPos = -1;
+        imageIndexLarge = -1;
+        imageIndexSmall = -1;
+        imageIndexLargeDisabled = -1;
+        imageIndexSmallDisabled = -1;
     }
 
-    void SetBitmaps(wxRibbonBar* ribbon,
-                    wxSize bitmap_size_large,
-                    wxSize bitmap_size_small,
-                    wxBitmap bitmap_large,
-                    wxBitmap bitmap_large_disabled,
-                    wxBitmap bitmap_small,
-                    wxBitmap bitmap_small_disabled)
+    // Store bundle indices in parent's bundle vectors
+    void SetBundleIndices(int largeIdx, int smallIdx, int largeDisabledIdx, int smallDisabledIdx)
     {
-        if(!bitmap_large.IsOk())
-        {
-            bitmap_large = MakeResizedBitmap(bitmap_small, bitmap_size_large);
-        }
-        else if(bitmap_large.GetScaledSize() != bitmap_size_large)
-        {
-            bitmap_large = MakeResizedBitmap(bitmap_large, bitmap_size_large);
-        }
-
-        if(!bitmap_small.IsOk())
-        {
-            bitmap_small = MakeResizedBitmap(bitmap_large, bitmap_size_small);
-        }
-        else if(bitmap_small.GetScaledSize() != bitmap_size_small)
-        {
-            bitmap_small = MakeResizedBitmap(bitmap_small, bitmap_size_small);
-        }
-
-        if(!bitmap_large_disabled.IsOk())
-        {
-            bitmap_large_disabled = MakeDisabledBitmap(bitmap_large);
-        }
-
-        if(!bitmap_small_disabled.IsOk())
-        {
-            bitmap_small_disabled = MakeDisabledBitmap(bitmap_small);
-        }
-
-        if ( bitmap_large.IsOk() )
-        {
-            wxImageList* const
-                buttonImageList = ribbon->GetButtonImageList(bitmap_size_large);
-
-            barButtonImageListPos = buttonImageList->Add(bitmap_large);
-            buttonImageList->Add(bitmap_large_disabled);
-        }
-
-        wxImageList* const
-            buttonSmallImageList = ribbon->GetButtonImageList(bitmap_size_small);
-
-        barButtonSmallImageListPos = buttonSmallImageList->Add(bitmap_small);
-        buttonSmallImageList->Add(bitmap_small_disabled);
-    }
-
-    void GetBitmaps(wxRibbonBar* ribbon,
-                    wxSize bitmap_size_large,
-                    wxSize bitmap_size_small,
-                    wxBitmap& bitmap,
-                    wxBitmap& bitmap_small) const
-    {
-        wxImageList* buttonImageList = ribbon->GetButtonImageList(bitmap_size_large);
-        wxImageList* buttonSmallImageList = ribbon->GetButtonImageList(bitmap_size_small);
-
-        int pos = barButtonImageListPos;
-        int pos_small = barButtonSmallImageListPos;
-
-        if (state & wxRIBBON_BUTTONBAR_BUTTON_DISABLED)
-        {
-            // Disabled buttons are stored after the normal ones.
-            pos++;
-            pos_small++;
-        }
-
-        bitmap = buttonImageList->GetBitmap(pos);
-        bitmap_small = buttonSmallImageList->GetBitmap(pos_small);
+        imageIndexLarge = largeIdx;
+        imageIndexSmall = smallIdx;
+        imageIndexLargeDisabled = largeDisabledIdx;
+        imageIndexSmallDisabled = smallDisabledIdx;
     }
 
     wxRibbonButtonBarButtonInstance NewInstance()
@@ -228,12 +142,11 @@ public:
     wxString help_string;
     wxCoord text_min_width[3];
 
-    // Index of the bitmap in the wxRibbonBar normal image list. Notice that
-    // the disabled bitmap is in the next position, so this one is always even.
-    int barButtonImageListPos;
-
-    // Same thing for the small bitmap index in the small image list.
-    int barButtonSmallImageListPos;
+    // Indices into parent wxRibbonButtonBar's wxWithImages collections
+    int imageIndexLarge;
+    int imageIndexSmall;
+    int imageIndexLargeDisabled;
+    int imageIndexSmallDisabled;
 
     wxRibbonButtonBarButtonSizeInfo sizes[3];
     wxRibbonButtonBarButtonState min_size_class;
@@ -244,24 +157,17 @@ public:
     long state;
 };
 
-WX_DECLARE_OBJARRAY(wxRibbonButtonBarButtonInstance, wxArrayRibbonButtonBarButtonInstance);
-#include "wx/arrimpl.cpp"
-WX_DEFINE_OBJARRAY(wxArrayRibbonButtonBarButtonInstance)
-
 class wxRibbonButtonBarLayout
 {
 public:
     wxSize overall_size;
-    wxArrayRibbonButtonBarButtonInstance buttons;
+    std::vector<wxRibbonButtonBarButtonInstance> buttons;
 
     void CalculateOverallSize()
     {
         overall_size = wxSize(0, 0);
-        size_t btn_count = buttons.Count();
-        size_t btn_i;
-        for(btn_i = 0; btn_i < btn_count; ++btn_i)
+        for ( auto& instance : buttons )
         {
-            wxRibbonButtonBarButtonInstance& instance = buttons.Item(btn_i);
             wxSize size = instance.base->sizes[instance.size].size;
             int right = instance.position.x + size.GetWidth();
             int bottom = instance.position.y + size.GetHeight();
@@ -279,21 +185,30 @@ public:
     wxRibbonButtonBarButtonInstance* FindSimilarInstance(
         wxRibbonButtonBarButtonInstance* inst)
     {
-        if(inst == NULL)
+        if(inst == nullptr)
         {
-            return NULL;
+            return nullptr;
         }
-        size_t btn_count = buttons.Count();
-        size_t btn_i;
-        for(btn_i = 0; btn_i < btn_count; ++btn_i)
+        return FindInstanceForBase(inst->base);
+    }
+
+    // Takes the stable button object directly, rather than an instance
+    // pointer, which may be dangling.
+    wxRibbonButtonBarButtonInstance* FindInstanceForBase(
+        wxRibbonButtonBarButtonBase* base)
+    {
+        if(base == nullptr)
         {
-            wxRibbonButtonBarButtonInstance& instance = buttons.Item(btn_i);
-            if(instance.base == inst->base)
+            return nullptr;
+        }
+        for ( auto& instance : buttons )
+        {
+            if(instance.base == base)
             {
                 return &instance;
             }
         }
-        return NULL;
+        return nullptr;
     }
 };
 
@@ -353,18 +268,18 @@ bool wxRibbonButtonBar::Create(wxWindow* parent,
 wxRibbonButtonBarButtonBase* wxRibbonButtonBar::AddButton(
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string,
                 wxRibbonButtonKind kind)
 {
-    return AddButton(button_id, label, bitmap, wxNullBitmap, wxNullBitmap,
-        wxNullBitmap, kind, help_string);
+    return AddButton(button_id, label, bitmap, wxBitmapBundle(), wxBitmapBundle(),
+        wxBitmapBundle(), kind, help_string);
 }
 
 wxRibbonButtonBarButtonBase* wxRibbonButtonBar::AddDropdownButton(
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string)
 {
     return AddButton(button_id, label, bitmap, help_string,
@@ -374,7 +289,7 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::AddDropdownButton(
 wxRibbonButtonBarButtonBase* wxRibbonButtonBar::AddToggleButton(
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string)
 {
     return AddButton(button_id, label, bitmap, help_string,
@@ -384,7 +299,7 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::AddToggleButton(
 wxRibbonButtonBarButtonBase* wxRibbonButtonBar::AddHybridButton(
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string)
 {
     return AddButton(button_id, label, bitmap, help_string,
@@ -394,10 +309,10 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::AddHybridButton(
 wxRibbonButtonBarButtonBase* wxRibbonButtonBar::AddButton(
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
-                const wxBitmap& bitmap_small,
-                const wxBitmap& bitmap_disabled,
-                const wxBitmap& bitmap_small_disabled,
+                const wxBitmapBundle& bitmap,
+                const wxBitmapBundle& bitmap_small,
+                const wxBitmapBundle& bitmap_disabled,
+                const wxBitmapBundle& bitmap_small_disabled,
                 wxRibbonButtonKind kind,
                 const wxString& help_string)
 {
@@ -409,19 +324,20 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::InsertButton(
                 size_t pos,
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
-                const wxBitmap& bitmap_small,
-                const wxBitmap& bitmap_disabled,
-                const wxBitmap& bitmap_small_disabled,
+                const wxBitmapBundle& bitmap,
+                const wxBitmapBundle& bitmap_small,
+                const wxBitmapBundle& bitmap_disabled,
+                const wxBitmapBundle& bitmap_small_disabled,
                 wxRibbonButtonKind kind,
                 const wxString& help_string)
 {
     wxASSERT(bitmap.IsOk() || bitmap_small.IsOk());
+
     if(m_buttons.IsEmpty())
     {
         if(bitmap.IsOk())
         {
-            m_bitmap_size_large = bitmap.GetScaledSize();
+            m_bitmap_size_large = bitmap.GetDefaultSize();
             if(!bitmap_small.IsOk())
             {
                 m_bitmap_size_small = m_bitmap_size_large;
@@ -430,7 +346,7 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::InsertButton(
         }
         if(bitmap_small.IsOk())
         {
-            m_bitmap_size_small = bitmap_small.GetScaledSize();
+            m_bitmap_size_small = bitmap_small.GetDefaultSize();
             if(!bitmap.IsOk())
             {
                 m_bitmap_size_large = m_bitmap_size_small;
@@ -439,11 +355,72 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::InsertButton(
         }
     }
 
+    // Add bundles to our vectors and remember indices
+    int idxLarge = -1;
+    int idxSmall = -1;
+    int idxLargeDisabled = -1;
+    int idxSmallDisabled = -1;
+
+    if(bitmap.IsOk())
+    {
+        idxLarge = m_bundlesLarge.size();
+        m_bundlesLarge.push_back(bitmap);
+
+        idxLargeDisabled = m_bundlesLargeDisabled.size();
+        if(bitmap_disabled.IsOk())
+        {
+            m_bundlesLargeDisabled.push_back(bitmap_disabled);
+        }
+        else
+        {
+            // Generate disabled bitmap from normal one
+            m_bundlesLargeDisabled.push_back(bitmap.MakeDisabled());
+        }
+    }
+
+    if(bitmap_small.IsOk())
+    {
+        idxSmall = m_bundlesSmall.size();
+        m_bundlesSmall.push_back(bitmap_small);
+
+        idxSmallDisabled = m_bundlesSmallDisabled.size();
+        if(bitmap_small_disabled.IsOk())
+        {
+            m_bundlesSmallDisabled.push_back(bitmap_small_disabled);
+        }
+        else
+        {
+            // Generate disabled bitmap from normal one
+            m_bundlesSmallDisabled.push_back(bitmap_small.MakeDisabled());
+        }
+    }
+    else if(bitmap.IsOk())
+    {
+        // No dedicated small bitmap was provided, so derive one from the large
+        // bundle. The derived bitmap must have the small default size; otherwise
+        // wxBitmapBundle::GetBitmap() would keep returning bitmaps whose logical
+        // size is the large default size and the "small" buttons would be drawn
+        // too big.
+        const wxSize sizeSmallPhys = ToPhys(FromDIP(m_bitmap_size_small));
+        wxBitmap smallBmp = bitmap.GetBitmap(sizeSmallPhys);
+        // Tag the derived bitmap with the small logical size (its scale factor
+        // is simply physical/logical) so that the resulting bundle's default
+        // size is correct and small buttons are not drawn at the large size.
+        smallBmp.SetScaleFactor(static_cast<double>(sizeSmallPhys.y) /
+                                m_bitmap_size_small.y);
+
+        idxSmall = m_bundlesSmall.size();
+        m_bundlesSmall.push_back(wxBitmapBundle::FromBitmap(smallBmp));
+
+        idxSmallDisabled = m_bundlesSmallDisabled.size();
+        m_bundlesSmallDisabled.push_back(
+            wxBitmapBundle::FromBitmap(smallBmp).MakeDisabled());
+    }
+
     wxRibbonButtonBarButtonBase* base = new wxRibbonButtonBarButtonBase;
     base->id = button_id;
     base->label = label;
-    base->SetBitmaps(GetAncestorRibbonBar(), m_bitmap_size_large, m_bitmap_size_small,
-                     bitmap, bitmap_disabled, bitmap_small, bitmap_small_disabled);
+    base->SetBundleIndices(idxLarge, idxSmall, idxLargeDisabled, idxSmallDisabled);
     base->kind = kind;
     base->help_string = help_string;
     base->state = 0;
@@ -453,7 +430,7 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::InsertButton(
     base->min_size_class = wxRIBBON_BUTTONBAR_BUTTON_SMALL;
     base->max_size_class = wxRIBBON_BUTTONBAR_BUTTON_LARGE;
 
-    wxClientDC temp_dc(this);
+    wxInfoDC temp_dc(this);
     FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_SMALL, temp_dc);
     FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM, temp_dc);
     FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_LARGE, temp_dc);
@@ -476,7 +453,7 @@ wxRibbonButtonBar::SetItemClientObject(wxRibbonButtonBarButtonBase* item,
 wxClientData*
 wxRibbonButtonBar::GetItemClientObject(const wxRibbonButtonBarButtonBase* item) const
 {
-    wxCHECK_MSG( item, NULL, "Can't get client object for an invalid item" );
+    wxCHECK_MSG( item, nullptr, "Can't get client object for an invalid item" );
 
     return item->client_data.GetClientObject();
 }
@@ -493,7 +470,7 @@ wxRibbonButtonBar::SetItemClientData(wxRibbonButtonBarButtonBase* item,
 void*
 wxRibbonButtonBar::GetItemClientData(const wxRibbonButtonBarButtonBase* item) const
 {
-    wxCHECK_MSG( item, NULL, "Can't get client data for an invalid item" );
+    wxCHECK_MSG( item, nullptr, "Can't get client data for an invalid item" );
 
     return item->client_data.GetClientData();
 }
@@ -503,19 +480,19 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::InsertButton(
                 size_t pos,
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string,
                 wxRibbonButtonKind kind)
 {
-    return InsertButton(pos, button_id, label, bitmap, wxNullBitmap,
-        wxNullBitmap, wxNullBitmap, kind, help_string);
+    return InsertButton(pos, button_id, label, bitmap, wxBitmapBundle(),
+        wxBitmapBundle(), wxBitmapBundle(), kind, help_string);
 }
 
 wxRibbonButtonBarButtonBase* wxRibbonButtonBar::InsertDropdownButton(
                 size_t pos,
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string)
 {
     return InsertButton(pos, button_id, label, bitmap, help_string,
@@ -526,7 +503,7 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::InsertToggleButton(
                 size_t pos,
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string)
 {
     return InsertButton(pos, button_id, label, bitmap, help_string,
@@ -537,7 +514,7 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::InsertHybridButton(
                 size_t pos,
                 int button_id,
                 const wxString& label,
-                const wxBitmap& bitmap,
+                const wxBitmapBundle& bitmap,
                 const wxString& help_string)
 {
     return InsertButton(pos, button_id, label, bitmap, help_string,
@@ -545,14 +522,17 @@ wxRibbonButtonBarButtonBase* wxRibbonButtonBar::InsertHybridButton(
 }
 
 void wxRibbonButtonBar::FetchButtonSizeInfo(wxRibbonButtonBarButtonBase* button,
-        wxRibbonButtonBarButtonState size, wxDC& dc)
+        wxRibbonButtonBarButtonState size, wxReadOnlyDC& dc)
 {
     wxRibbonButtonBarButtonSizeInfo& info = button->sizes[size];
     if(m_art)
     {
+        const wxSize bmpSizeLarge = FromDIP(m_bitmap_size_large);
+        const wxSize bmpSizeSmall = FromDIP(m_bitmap_size_small);
+
         info.is_supported = m_art->GetButtonBarButtonSize(dc, this,
             button->kind, size, button->label, button->text_min_width[size],
-            m_bitmap_size_large, m_bitmap_size_small, &info.size,
+            bmpSizeLarge, bmpSizeSmall, &info.size,
             &info.normal_region, &info.dropdown_region);
     }
     else
@@ -585,6 +565,11 @@ void wxRibbonButtonBar::ClearButtons()
         delete button;
     }
     m_buttons.Clear();
+    m_keyTips.clear();
+    m_dropdownKeyTips.clear();
+    m_hovered_button = nullptr;
+    m_active_button = nullptr;
+    m_focused_button = nullptr;
     Realize();
 }
 
@@ -600,16 +585,102 @@ bool wxRibbonButtonBar::DeleteButton(int button_id)
             m_layouts_valid = false;
             m_buttons.RemoveAt(i);
             if (m_hovered_button && m_hovered_button->base == button)
-                m_hovered_button = NULL;
+                m_hovered_button = nullptr;
             if (m_active_button  && m_active_button->base  == button)
-                m_active_button = NULL;
+                m_active_button = nullptr;
+            if (m_focused_button == button)
+                m_focused_button = nullptr;
             delete button;
+            m_keyTips.erase(button_id);
+            m_dropdownKeyTips.erase(button_id);
             Realize();
             Refresh();
             return true;
         }
     }
     return false;
+}
+
+void wxRibbonButtonBar::SetKeyTip(wxWindowID button_id, const wxString& keytip)
+{
+    if ( keytip.empty() )
+        m_keyTips.erase(button_id);
+    else
+        m_keyTips[button_id] = keytip.Upper();
+}
+
+wxString wxRibbonButtonBar::GetKeyTip(wxWindowID button_id) const
+{
+    auto it = m_keyTips.find(button_id);
+    return it == m_keyTips.end() ? wxString() : it->second;
+}
+
+void wxRibbonButtonBar::SetDropdownKeyTip(wxWindowID button_id, const wxString& keytip)
+{
+    if ( keytip.empty() )
+        m_dropdownKeyTips.erase(button_id);
+    else
+        m_dropdownKeyTips[button_id] = keytip.Upper();
+}
+
+wxString wxRibbonButtonBar::GetDropdownKeyTip(wxWindowID button_id) const
+{
+    auto it = m_dropdownKeyTips.find(button_id);
+    return it == m_dropdownKeyTips.end() ? wxString() : it->second;
+}
+
+void wxRibbonButtonBar::ActivateButton(wxRibbonButtonBarButtonBase* button, bool dropdown)
+{
+    wxCHECK_RET(button, wxT("invalid button"));
+    if ( button->state & wxRIBBON_BUTTONBAR_BUTTON_DISABLED )
+        return;
+
+    wxEventType event_type = (dropdown || button->kind == wxRIBBON_BUTTON_DROPDOWN)
+        ? wxEVT_RIBBONBUTTONBAR_DROPDOWN_CLICKED
+        : wxEVT_RIBBONBUTTONBAR_CLICKED;
+
+    wxRibbonButtonBarEvent notification(event_type, button->id);
+    if ( !dropdown && button->kind == wxRIBBON_BUTTON_TOGGLE )
+    {
+        button->state ^= wxRIBBON_BUTTONBAR_BUTTON_TOGGLED;
+        notification.SetInt(button->state & wxRIBBON_BUTTONBAR_BUTTON_TOGGLED);
+    }
+    notification.SetEventObject(this);
+    notification.SetBar(this);
+    notification.SetButton(button);
+
+    // PopupMenu() positions the menu relative to m_active_button, so set
+    // it here too, otherwise a keytip-opened menu appears at the cursor.
+    if ( m_active_button == nullptr || m_active_button->base != button )
+        m_active_button = m_layouts.Item(m_current_layout)->FindInstanceForBase(button);
+
+    // Track the id, not the instance pointer, since Realize() may rebuild
+    // the layout mid-handler and invalidate it.
+    const int old_active_id = m_active_button != nullptr ? m_active_button->base->id : wxID_ANY;
+
+    // Keep OnMouseMove() from mutating the active state while a handler runs
+    // a nested event loop, e.g. for a popup menu.
+    m_lock_active_state = true;
+    ProcessWindowEvent(notification);
+    m_lock_active_state = false;
+
+    // Re-resolve from the id instead of trusting m_active_button.
+    m_active_button = nullptr;
+    if ( old_active_id != wxID_ANY )
+    {
+        wxRibbonButtonBarButtonBase* old_active_base = GetItemById(old_active_id);
+        if ( old_active_base != nullptr )
+        {
+            m_active_button =
+                m_layouts.Item(m_current_layout)->FindInstanceForBase(old_active_base);
+        }
+    }
+
+    wxRibbonPanel* panel = wxDynamicCast(GetParent(), wxRibbonPanel);
+    if ( panel != nullptr )
+        panel->HideIfExpanded();
+
+    Refresh(false);
 }
 
 void wxRibbonButtonBar::EnableButton(int button_id, bool enable)
@@ -642,13 +713,20 @@ void wxRibbonButtonBar::EnableButton(int button_id, bool enable)
     }
 }
 
+bool wxRibbonButtonBar::GetButtonEnabled(int button_id) const
+{
+    for ( auto const* button : m_buttons )
+    {
+        if ( button->id == button_id )
+            return (button->state & wxRIBBON_BUTTONBAR_BUTTON_DISABLED) == 0;
+    }
+    return false;
+}
+
 void wxRibbonButtonBar::ToggleButton(int button_id, bool checked)
 {
-    size_t count = m_buttons.GetCount();
-    size_t i;
-    for(i = 0; i < count; ++i)
+    for ( auto* button : m_buttons )
     {
-        wxRibbonButtonBarButtonBase* button = m_buttons.Item(i);
         if(button->id == button_id)
         {
             if(checked)
@@ -674,27 +752,72 @@ void wxRibbonButtonBar::ToggleButton(int button_id, bool checked)
 
 void wxRibbonButtonBar::SetButtonIcon(
                 int button_id,
-                const wxBitmap& bitmap,
-                const wxBitmap& bitmap_small,
-                const wxBitmap& bitmap_disabled,
-                const wxBitmap& bitmap_small_disabled)
+                const wxBitmapBundle& bitmap,
+                const wxBitmapBundle& bitmap_small,
+                const wxBitmapBundle& bitmap_disabled,
+                const wxBitmapBundle& bitmap_small_disabled)
 {
     wxRibbonButtonBarButtonBase* base = GetItemById(button_id);
-    if(base == NULL)
+    if(base == nullptr)
         return;
-    base->SetBitmaps(GetAncestorRibbonBar(), m_bitmap_size_large, m_bitmap_size_small,
-                     bitmap, bitmap_disabled, bitmap_small, bitmap_small_disabled);
+
+    // Update the bundles in our vectors
+    if(bitmap.IsOk() && base->imageIndexLarge >= 0)
+    {
+        m_bundlesLarge[base->imageIndexLarge] = bitmap;
+
+        if(bitmap_disabled.IsOk())
+        {
+            m_bundlesLargeDisabled[base->imageIndexLargeDisabled] = bitmap_disabled;
+        }
+        else
+        {
+            m_bundlesLargeDisabled[base->imageIndexLargeDisabled] = bitmap.MakeDisabled();
+        }
+    }
+
+    if(bitmap_small.IsOk() && base->imageIndexSmall >= 0)
+    {
+        m_bundlesSmall[base->imageIndexSmall] = bitmap_small;
+
+        if(bitmap_small_disabled.IsOk())
+        {
+            m_bundlesSmallDisabled[base->imageIndexSmallDisabled] = bitmap_small_disabled;
+        }
+        else
+        {
+            m_bundlesSmallDisabled[base->imageIndexSmallDisabled] = bitmap_small.MakeDisabled();
+        }
+    }
+    else if ( bitmap.IsOk() && base->imageIndexSmall >= 0 )
+    {
+        // No dedicated small bitmap was provided, so derive one from the large
+        // bundle. The derived bitmap must have the small default size; otherwise
+        // wxBitmapBundle::GetBitmap() would keep returning bitmaps whose logical
+        // size is the large default size and the "small" buttons would be drawn
+        // too big.
+        const wxSize sizeSmallPhys = ToPhys(FromDIP(m_bitmap_size_small));
+        wxBitmap smallBmp = bitmap.GetBitmap(sizeSmallPhys);
+        smallBmp.SetScaleFactor(static_cast<double>(sizeSmallPhys.y) /
+                                m_bitmap_size_small.y);
+
+        m_bundlesSmall[base->imageIndexSmall] =
+            wxBitmapBundle::FromBitmap(smallBmp);
+        m_bundlesSmallDisabled[base->imageIndexSmallDisabled] =
+            wxBitmapBundle::FromBitmap(smallBmp).MakeDisabled();
+    }
+
     Refresh();
 }
 
 void wxRibbonButtonBar::SetButtonText(int button_id, const wxString& label)
 {
     wxRibbonButtonBarButtonBase* base = GetItemById(button_id);
-    if(base == NULL)
+    if(base == nullptr)
         return;
     base->label = label;
 
-    wxClientDC temp_dc(this);
+    wxInfoDC temp_dc(this);
     FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_SMALL, temp_dc);
     FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM, temp_dc);
     FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_LARGE, temp_dc);
@@ -706,12 +829,12 @@ void wxRibbonButtonBar::SetButtonTextMinWidth(int button_id,
                 int min_width_medium, int min_width_large)
 {
     wxRibbonButtonBarButtonBase* base = GetItemById(button_id);
-    if(base == NULL)
+    if(base == nullptr)
         return;
     base->text_min_width[0] = 0;
     base->text_min_width[1] = min_width_medium;
     base->text_min_width[2] = min_width_large;
-    wxClientDC temp_dc(this);
+    wxInfoDC temp_dc(this);
     FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_SMALL, temp_dc);
     FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM, temp_dc);
     FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_LARGE, temp_dc);
@@ -722,9 +845,9 @@ void wxRibbonButtonBar::SetButtonTextMinWidth(
                 int button_id, const wxString& label)
 {
     wxRibbonButtonBarButtonBase* base = GetItemById(button_id);
-    if(base == NULL)
+    if(base == nullptr)
         return;
-    wxClientDC temp_dc(this);
+    wxInfoDC temp_dc(this);
     base->text_min_width[wxRIBBON_BUTTONBAR_BUTTON_MEDIUM] =
         m_art->GetButtonBarButtonTextWidth(
         temp_dc, label, base->kind, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
@@ -742,7 +865,7 @@ void wxRibbonButtonBar::SetButtonMinSizeClass(int button_id,
                 wxRibbonButtonBarButtonState min_size_class)
 {
     wxRibbonButtonBarButtonBase* base = GetItemById(button_id);
-    if(base == NULL)
+    if(base == nullptr)
         return;
     if(base->max_size_class < min_size_class)
     {
@@ -757,7 +880,7 @@ void wxRibbonButtonBar::SetButtonMaxSizeClass(int button_id,
                 wxRibbonButtonBarButtonState max_size_class)
 {
     wxRibbonButtonBarButtonBase* base = GetItemById(button_id);
-    if(base == NULL)
+    if(base == nullptr)
         return;
     if(base->min_size_class > max_size_class)
     {
@@ -784,7 +907,7 @@ void wxRibbonButtonBar::SetArtProvider(wxRibbonArtProvider* art)
     if (!art)
         return;
 
-    wxClientDC temp_dc(this);
+    wxInfoDC temp_dc(this);
     size_t btn_count = m_buttons.Count();
     size_t btn_i;
     for(btn_i = 0; btn_i < btn_count; ++btn_i)
@@ -914,14 +1037,22 @@ void wxRibbonButtonBar::UpdateWindowUI(long flags)
                 ToggleButton(id, event.GetChecked());
             if ( event.GetSetText() )
             {
-                btn.label = event.GetText();
+                // this also remeasures the button and invalidates the layouts
+                SetButtonText(id, event.GetText());
                 rerealize = true;
             }
         }
     }
 
     if ( rerealize )
-        Realize();
+    {
+        // The button sizes may have changed, so the panel containing us needs
+        // to be laid out again too and not just this bar.
+        if ( m_ribbonBar )
+            m_ribbonBar->Realize();
+        else
+            Realize();
+    }
 }
 
 void wxRibbonButtonBar::OnEraseBackground(wxEraseEvent& WXUNUSED(evt))
@@ -936,23 +1067,77 @@ void wxRibbonButtonBar::OnPaint(wxPaintEvent& WXUNUSED(evt))
 
     wxRibbonButtonBarLayout* layout = m_layouts.Item(m_current_layout);
 
-    wxRibbonBar* const ribbon = GetAncestorRibbonBar();
+    // Calculate DPI-scaled bitmap sizes (must match layout calculation)
+    const double scale = GetDPIScaleFactor();
+    const wxSize scaledLarge = m_bitmap_size_large * scale;
+    const wxSize scaledSmall = m_bitmap_size_small * scale;
 
-    size_t btn_count = layout->buttons.Count();
-    size_t btn_i;
-    for(btn_i = 0; btn_i < btn_count; ++btn_i)
+    for ( auto& button : layout->buttons )
     {
-        wxRibbonButtonBarButtonInstance& button = layout->buttons.Item(btn_i);
         wxRibbonButtonBarButtonBase* base = button.base;
         wxRect rect(button.position + m_layout_offset, base->sizes[button.size].size);
 
         wxBitmap bitmap, bitmap_small;
-        base->GetBitmaps(ribbon,
-                         m_bitmap_size_large, m_bitmap_size_small, bitmap,
-                         bitmap_small);
+
+        bool disabled = (base->state & wxRIBBON_BUTTONBAR_BUTTON_DISABLED) != 0;
+
+        if(base->imageIndexLarge >= 0)
+        {
+            int idx = disabled ? base->imageIndexLargeDisabled : base->imageIndexLarge;
+            if(idx >= 0 && idx < (int)m_bundlesLarge.size())
+            {
+                const wxBitmapBundle& bundle = disabled ?
+                    m_bundlesLargeDisabled[idx] : m_bundlesLarge[idx];
+                bitmap = bundle.GetBitmap(scaledLarge);
+            }
+        }
+
+        if(base->imageIndexSmall >= 0)
+        {
+            int idx = disabled ? base->imageIndexSmallDisabled : base->imageIndexSmall;
+            if(idx >= 0 && idx < (int)m_bundlesSmall.size())
+            {
+                const wxBitmapBundle& bundle = disabled ?
+                    m_bundlesSmallDisabled[idx] : m_bundlesSmall[idx];
+                bitmap_small = bundle.GetBitmap(scaledSmall);
+            }
+        }
+
+        // Show the item with the keyboard focus as hovered, and mark it too.
+        long state = base->state | button.size;
+        const bool focused = (base == m_focused_button);
+        if ( focused )
+        {
+            state |= (base->kind == wxRIBBON_BUTTON_DROPDOWN)
+                        ? wxRIBBON_BUTTONBAR_BUTTON_DROPDOWN_HOVERED
+                        : wxRIBBON_BUTTONBAR_BUTTON_NORMAL_HOVERED;
+        }
+
         m_art->DrawButtonBarButton(dc, this, rect, base->kind,
-            base->state | button.size, base->label, bitmap, bitmap_small);
+            state, base->label, bitmap, bitmap_small);
+
+        if ( focused )
+        {
+            rect.Deflate(FromDIP(2));
+            wxRendererNative::Get().DrawFocusRect(this, dc, rect);
+        }
      }
+
+    wxRibbonBar* bar = GetAncestorRibbonBar();
+    if ( bar != nullptr )
+        bar->DrawKeyTipsFor(dc, this, m_art);
+}
+
+wxBitmap wxRibbonButtonBar::GetButtonBitmap(int imageIndex, bool large) const
+{
+    if(imageIndex < 0)
+        return wxNullBitmap;
+
+    const wxVector<wxBitmapBundle>& bundles = large ? m_bundlesLarge : m_bundlesSmall;
+    if(imageIndex >= (int)bundles.size())
+        return wxNullBitmap;
+
+    return bundles[imageIndex].GetBitmapFor(this);
 }
 
 void wxRibbonButtonBar::OnSize(wxSizeEvent& evt)
@@ -972,12 +1157,20 @@ void wxRibbonButtonBar::OnSize(wxSizeEvent& evt)
             break;
         }
     }
+    // Both point into the previous layout's instances, so remap them or they
+    // keep a stale position and size.
     m_hovered_button = m_layouts.Item(m_current_layout)->FindSimilarInstance(m_hovered_button);
+    m_active_button = m_layouts.Item(m_current_layout)->FindSimilarInstance(m_active_button);
     Refresh();
 }
 
 void wxRibbonButtonBar::CommonInit(long WXUNUSED(style))
 {
+    // This can initialize it to nullptr when we're called from the default ctor,
+    // but will set it to the correct value when used from non-default ctor or
+    // Create() later.
+    m_ribbonBar = GetAncestorRibbonBar();
+
     m_bitmap_size_large = wxSize(32, 32);
     m_bitmap_size_small = wxSize(16, 16);
 
@@ -986,8 +1179,8 @@ void wxRibbonButtonBar::CommonInit(long WXUNUSED(style))
     m_layouts.Add(placeholder_layout);
     m_current_layout = 0;
     m_layout_offset = wxPoint(0, 0);
-    m_hovered_button = NULL;
-    m_active_button = NULL;
+    m_hovered_button = nullptr;
+    m_active_button = nullptr;
     m_lock_active_state = false;
     m_show_tooltips_for_disabled = false;
 
@@ -1016,7 +1209,7 @@ wxSize wxRibbonButtonBar::DoGetBestSize() const
 
 void wxRibbonButtonBar::MakeLayouts()
 {
-    if(m_layouts_valid || m_art == NULL)
+    if(m_layouts_valid || m_art == nullptr)
     {
         return;
     }
@@ -1025,12 +1218,12 @@ void wxRibbonButtonBar::MakeLayouts()
         if(m_hovered_button)
         {
             m_hovered_button->base->state &= ~wxRIBBON_BUTTONBAR_BUTTON_HOVER_MASK;
-            m_hovered_button = NULL;
+            m_hovered_button = nullptr;
         }
         if(m_active_button)
         {
             m_active_button->base->state &= ~wxRIBBON_BUTTONBAR_BUTTON_ACTIVE_MASK;
-            m_active_button = NULL;
+            m_active_button = nullptr;
         }
         size_t count = m_layouts.GetCount();
         size_t i;
@@ -1066,7 +1259,6 @@ void wxRibbonButtonBar::MakeLayouts()
         //               small buttons small, stacked vertically
         wxRibbonButtonBarLayout* layout = new wxRibbonButtonBarLayout;
         wxPoint cursor(0, 0);
-        layout->overall_size.SetHeight(0);
         for(btn_i = 0; btn_i < btn_count; ++btn_i)
         {
             wxRibbonButtonBarButtonBase* button = m_buttons.Item(btn_i);
@@ -1100,10 +1292,9 @@ void wxRibbonButtonBar::MakeLayouts()
                 }
                 cursor.x += size.GetWidth();
             }
-            layout->buttons.Add(instance);
+            layout->buttons.push_back(instance);
         }
-        layout->overall_size.SetHeight(available_height);
-        layout->overall_size.SetWidth(cursor.x + stacked_width);
+        layout->CalculateOverallSize();
         m_layouts.Add(layout);
     }
     if(btn_count >= 2)
@@ -1119,15 +1310,18 @@ void wxRibbonButtonBar::MakeLayouts()
                               wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
         }
 
-        // TODO: small buttons are not implemented yet in 
-        //       art_msw.cpp:2581 and will be invisible
-        /*iLast = btn_count;
+        iLast = btn_count;
         while(iLast-- > 0)
         {
             TryCollapseLayout(m_layouts.Last(), iLast, &iLast,
                               wxRIBBON_BUTTONBAR_BUTTON_SMALL);
-        }*/
+        }
     }
+
+    // Removing buttons can result in fewer layouts from before,
+    // so clamp if necessary.
+    if ( m_current_layout >= (int)m_layouts.GetCount() )
+        m_current_layout = (int)m_layouts.GetCount() - 1;
 }
 
 void wxRibbonButtonBar::TryCollapseLayout(wxRibbonButtonBarLayout* original,
@@ -1156,7 +1350,7 @@ void wxRibbonButtonBar::TryCollapseLayout(wxRibbonButtonBarLayout* original,
                                       large_size.GetWidth());
 
         // Top button in column: add column width to available width
-        if(original->buttons.Item(btn_i).position.y == 0)
+        if(original->buttons.at(btn_i).position.y == 0)
         {
             t_available_width += original_column_width;
             original_column_width = 0;
@@ -1196,19 +1390,19 @@ void wxRibbonButtonBar::TryCollapseLayout(wxRibbonButtonBarLayout* original,
     {
         return;
     }
-    if(last_button != NULL)
+    if(last_button != nullptr)
     {
         *last_button = btn_i;
     }
 
     wxRibbonButtonBarLayout* layout = new wxRibbonButtonBarLayout;
     WX_APPEND_ARRAY(layout->buttons, original->buttons);
-    wxPoint cursor(layout->buttons.Item(btn_i).position);
+    wxPoint cursor(layout->buttons.at(btn_i).position);
 
     cursor.y = 0;
     for(; btn_i <= first_btn; ++btn_i)
     {
-        wxRibbonButtonBarButtonInstance& instance = layout->buttons.Item(btn_i);
+        wxRibbonButtonBarButtonInstance& instance = layout->buttons.at(btn_i);
         if(instance.size > target_size)
         {
             instance.base->GetSmallerSize(&instance.size,
@@ -1223,7 +1417,7 @@ void wxRibbonButtonBar::TryCollapseLayout(wxRibbonButtonBarLayout* original,
     // Adjust x coords of buttons right of shrinked column
     for(; btn_i < btn_count; ++btn_i)
     {
-        wxRibbonButtonBarButtonInstance& instance = layout->buttons.Item(btn_i);
+        wxRibbonButtonBarButtonInstance& instance = layout->buttons.at(btn_i);
         instance.position.x -= x_adjust;
     }
 
@@ -1253,16 +1447,13 @@ void wxRibbonButtonBar::TryCollapseLayout(wxRibbonButtonBarLayout* original,
 void wxRibbonButtonBar::OnMouseMove(wxMouseEvent& evt)
 {
     wxPoint cursor(evt.GetPosition());
-    wxRibbonButtonBarButtonInstance* new_hovered = NULL;
-    wxRibbonButtonBarButtonInstance* tooltipButton = NULL;
+    wxRibbonButtonBarButtonInstance* new_hovered = nullptr;
+    wxRibbonButtonBarButtonInstance* tooltipButton = nullptr;
     long new_hovered_state = 0;
 
     wxRibbonButtonBarLayout* layout = m_layouts.Item(m_current_layout);
-    size_t btn_count = layout->buttons.Count();
-    size_t btn_i;
-    for(btn_i = 0; btn_i < btn_count; ++btn_i)
+    for ( auto& instance : layout->buttons )
     {
-        wxRibbonButtonBarButtonInstance& instance = layout->buttons.Item(btn_i);
         wxRibbonButtonBarButtonSizeInfo& size = instance.base->sizes[instance.size];
         wxRect btn_rect;
         btn_rect.SetTopLeft(m_layout_offset + instance.position);
@@ -1295,27 +1486,29 @@ void wxRibbonButtonBar::OnMouseMove(wxMouseEvent& evt)
     }
 
 #if wxUSE_TOOLTIPS
-    if(tooltipButton == NULL && GetToolTip())
+    if(tooltipButton == nullptr && GetToolTip())
     {
         UnsetToolTip();
     }
     if(tooltipButton)
     {
-        SetToolTip(tooltipButton->base->help_string);
+        if (tooltipButton != m_hovered_button &&
+                !(tooltipButton->size & wxRIBBON_BUTTONBAR_BUTTON_DROPDOWN_ACTIVE))
+            SetToolTip(tooltipButton->base->help_string);
     }
 #else
     wxUnusedVar(tooltipButton);
 #endif
 
-    if(new_hovered != m_hovered_button || (m_hovered_button != NULL &&
+    if(new_hovered != m_hovered_button || (m_hovered_button != nullptr &&
         new_hovered_state != m_hovered_button->base->state))
     {
-        if(m_hovered_button != NULL)
+        if(m_hovered_button != nullptr)
         {
             m_hovered_button->base->state &= ~wxRIBBON_BUTTONBAR_BUTTON_HOVER_MASK;
         }
         m_hovered_button = new_hovered;
-        if(m_hovered_button != NULL)
+        if(m_hovered_button != nullptr)
         {
             m_hovered_button->base->state = new_hovered_state;
         }
@@ -1354,15 +1547,14 @@ void wxRibbonButtonBar::OnMouseMove(wxMouseEvent& evt)
 
 void wxRibbonButtonBar::OnMouseDown(wxMouseEvent& evt)
 {
+    DismissKeyTips();
+
     wxPoint cursor(evt.GetPosition());
-    m_active_button = NULL;
+    m_active_button = nullptr;
 
     wxRibbonButtonBarLayout* layout = m_layouts.Item(m_current_layout);
-    size_t btn_count = layout->buttons.Count();
-    size_t btn_i;
-    for(btn_i = 0; btn_i < btn_count; ++btn_i)
+    for ( auto& instance : layout->buttons )
     {
-        wxRibbonButtonBarButtonInstance& instance = layout->buttons.Item(btn_i);
         wxRibbonButtonBarButtonSizeInfo& size = instance.base->sizes[instance.size];
         wxRect btn_rect;
         btn_rect.SetTopLeft(m_layout_offset + instance.position);
@@ -1375,9 +1567,14 @@ void wxRibbonButtonBar::OnMouseDown(wxMouseEvent& evt)
                 cursor -= btn_rect.GetTopLeft();
                 long state = 0;
                 if(size.normal_region.Contains(cursor))
+                {
                     state = wxRIBBON_BUTTONBAR_BUTTON_NORMAL_ACTIVE;
+                }
                 else if(size.dropdown_region.Contains(cursor))
+                {
                     state = wxRIBBON_BUTTONBAR_BUTTON_DROPDOWN_ACTIVE;
+                    UnsetToolTip();
+                }
                 instance.base->state |= state;
                 Refresh(false);
                 break;
@@ -1399,38 +1596,16 @@ void wxRibbonButtonBar::OnMouseUp(wxMouseEvent& evt)
         btn_rect.SetSize(size.size);
         if(btn_rect.Contains(cursor))
         {
-            int id = m_active_button->base->id;
             cursor -= btn_rect.GetTopLeft();
-            wxEventType event_type;
-            do
-            {
-                if(size.normal_region.Contains(cursor))
-                    event_type = wxEVT_RIBBONBUTTONBAR_CLICKED;
-                else if(size.dropdown_region.Contains(cursor))
-                    event_type = wxEVT_RIBBONBUTTONBAR_DROPDOWN_CLICKED;
-                else
-                    break;
-                wxRibbonButtonBarEvent notification(event_type, id);
-                if(m_active_button->base->kind == wxRIBBON_BUTTON_TOGGLE)
-                {
-                    m_active_button->base->state ^=
-                        wxRIBBON_BUTTONBAR_BUTTON_TOGGLED;
-                    notification.SetInt(m_active_button->base->state &
-                        wxRIBBON_BUTTONBAR_BUTTON_TOGGLED);
-                }
-                notification.SetEventObject(this);
-                notification.SetBar(this);
-                notification.SetButton(m_active_button->base);
-                m_lock_active_state = true;
-                ProcessWindowEvent(notification);
-                m_lock_active_state = false;
+            if(size.normal_region.Contains(cursor))
+                ActivateButton(m_active_button->base, false);
+            else if(size.dropdown_region.Contains(cursor))
+                ActivateButton(m_active_button->base, true);
 
-                wxStaticCast(m_parent, wxRibbonPanel)->HideIfExpanded();
-            } while(false);
             if(m_active_button) // may have been NULLed by event handler
             {
                 m_active_button->base->state &= ~wxRIBBON_BUTTONBAR_BUTTON_ACTIVE_MASK;
-                m_active_button = NULL;
+                m_active_button = nullptr;
             }
             Refresh(false);
         }
@@ -1441,20 +1616,21 @@ void wxRibbonButtonBar::OnMouseEnter(wxMouseEvent& evt)
 {
     if(m_active_button && !evt.LeftIsDown())
     {
-        m_active_button = NULL;
+        m_active_button->base->state &= ~wxRIBBON_BUTTONBAR_BUTTON_ACTIVE_MASK;
+        m_active_button = nullptr;
     }
 }
 
 void wxRibbonButtonBar::OnMouseLeave(wxMouseEvent& WXUNUSED(evt))
 {
     bool repaint = false;
-    if(m_hovered_button != NULL)
+    if(m_hovered_button != nullptr)
     {
         m_hovered_button->base->state &= ~wxRIBBON_BUTTONBAR_BUTTON_HOVER_MASK;
-        m_hovered_button = NULL;
+        m_hovered_button = nullptr;
         repaint = true;
     }
-    if(m_active_button != NULL && !m_lock_active_state)
+    if(m_active_button != nullptr && !m_lock_active_state)
     {
         m_active_button->base->state &= ~wxRIBBON_BUTTONBAR_BUTTON_ACTIVE_MASK;
         repaint = true;
@@ -1463,21 +1639,118 @@ void wxRibbonButtonBar::OnMouseLeave(wxMouseEvent& WXUNUSED(evt))
         Refresh(false);
 }
 
+bool wxRibbonButtonBar::DoFocusButtonFrom(int pos, int step)
+{
+    const std::vector<wxRibbonButtonBarButtonInstance>& buttons =
+        m_layouts.Item(m_current_layout)->buttons;
+    const int count = static_cast<int>(buttons.size());
+    for ( int i = pos; i >= 0 && i < count; i += step )
+    {
+        wxRibbonButtonBarButtonBase* base = buttons[i].base;
+        if ( base->state & wxRIBBON_BUTTONBAR_BUTTON_DISABLED )
+            continue;
+
+        m_focused_button = base;
+        Refresh(false);
+
+#if wxUSE_ACCESSIBILITY
+        // The focus moves inside this window, so there is no native focus
+        // event. Tell the screen readers about it explicitly.
+        wxAccessible::NotifyEvent(wxACC_EVENT_OBJECT_FOCUS, this, wxOBJID_CLIENT, i + 1);
+#endif // wxUSE_ACCESSIBILITY
+
+        return true;
+    }
+    return false;
+}
+
+int wxRibbonButtonBar::DoGetFocusedButtonIndex() const
+{
+    if ( m_focused_button == nullptr )
+        return wxNOT_FOUND;
+
+    const std::vector<wxRibbonButtonBarButtonInstance>& buttons =
+        m_layouts.Item(m_current_layout)->buttons;
+    for ( size_t i = 0; i < buttons.size(); ++i )
+    {
+        if ( buttons[i].base == m_focused_button )
+            return static_cast<int>(i);
+    }
+    return wxNOT_FOUND;
+}
+
+bool wxRibbonButtonBar::HasFocusableItems() const
+{
+    for ( const auto& button : m_layouts.Item(m_current_layout)->buttons )
+    {
+        if ( !(button.base->state & wxRIBBON_BUTTONBAR_BUTTON_DISABLED) )
+            return true;
+    }
+    return false;
+}
+
+bool wxRibbonButtonBar::FocusFirstItem()
+{
+    return DoFocusButtonFrom(0, 1);
+}
+
+bool wxRibbonButtonBar::FocusLastItem()
+{
+    const int count = static_cast<int>(m_layouts.Item(m_current_layout)->buttons.size());
+    return DoFocusButtonFrom(count - 1, -1);
+}
+
+bool wxRibbonButtonBar::FocusNextItem(bool forward)
+{
+    const int current = DoGetFocusedButtonIndex();
+    if ( current == wxNOT_FOUND )
+        return forward ? FocusFirstItem() : FocusLastItem();
+
+    const int step = forward ? 1 : -1;
+    return DoFocusButtonFrom(current + step, step);
+}
+
+void wxRibbonButtonBar::ClearFocusedItem()
+{
+    if ( m_focused_button != nullptr )
+    {
+        m_focused_button = nullptr;
+        Refresh(false);
+    }
+}
+
+void wxRibbonButtonBar::ActivateFocusedItem(bool dropdown)
+{
+    wxRibbonButtonBarButtonBase* button = m_focused_button;
+    if ( button == nullptr )
+        return;
+
+    if ( dropdown )
+    {
+        // Only buttons with a dropdown have something to open.
+        if ( button->kind != wxRIBBON_BUTTON_DROPDOWN &&
+             button->kind != wxRIBBON_BUTTON_HYBRID )
+            return;
+    }
+
+    ActivateButton(button, dropdown);
+}
+
 wxRibbonButtonBarButtonBase *wxRibbonButtonBar::GetActiveItem() const
 {
-    return m_active_button == NULL ? NULL : m_active_button->base;
+    return m_active_button == nullptr ? nullptr : m_active_button->base;
 }
 
 
 wxRibbonButtonBarButtonBase *wxRibbonButtonBar::GetHoveredItem() const
 {
-    return m_hovered_button == NULL ? NULL : m_hovered_button->base;
+    return m_hovered_button == nullptr ? nullptr : m_hovered_button->base;
 }
 
 
 wxRibbonButtonBarButtonBase *wxRibbonButtonBar::GetItem(size_t n) const
 {
-    wxCHECK_MSG(n < m_buttons.GetCount(), NULL, "wxRibbonButtonBar item's index is out of bound");
+    wxCHECK_MSG(n < m_buttons.GetCount(), nullptr, "wxRibbonButtonBar item's index is out of bound");
     return m_buttons.Item(n);
 }
 
@@ -1491,16 +1764,56 @@ wxRibbonButtonBarButtonBase *wxRibbonButtonBar::GetItemById(int button_id) const
             return button;
     }
 
-    return NULL;
+    return nullptr;
 
 }
 
 int wxRibbonButtonBar::GetItemId(wxRibbonButtonBarButtonBase *item) const
 {
-    wxCHECK_MSG(item != NULL, wxNOT_FOUND, "wxRibbonButtonBar item should not be NULL");
+    wxCHECK_MSG(item != nullptr, wxNOT_FOUND, "wxRibbonButtonBar item should not be null");
     return item->id;
 }
 
+wxRect wxRibbonButtonBar::GetItemRect(int button_id)const
+{
+    wxRibbonButtonBarLayout* layout = m_layouts.Item(m_current_layout);
+    for ( auto& instance : layout->buttons )
+    {
+        wxRibbonButtonBarButtonBase* button = instance.base;
+
+        if (button->id == button_id)
+        {
+            wxRibbonButtonBarButtonSizeInfo& size = button->sizes[instance.size];
+            wxRect btn_rect;
+            btn_rect.SetTopLeft(m_layout_offset + instance.position);
+            btn_rect.SetSize(size.size);
+
+            return btn_rect;
+        }
+    }
+    return wxRect();
+}
+
+wxRect wxRibbonButtonBar::GetItemDropdownRect(int button_id) const
+{
+    wxRibbonButtonBarLayout* layout = m_layouts.Item(m_current_layout);
+    for ( auto& instance : layout->buttons )
+    {
+        wxRibbonButtonBarButtonBase* button = instance.base;
+
+        if ( button->id == button_id )
+        {
+            wxRibbonButtonBarButtonSizeInfo& size = button->sizes[instance.size];
+            if ( size.dropdown_region.IsEmpty() )
+                return wxRect();
+
+            wxRect dropdown_rect = size.dropdown_region;
+            dropdown_rect.Offset(m_layout_offset + instance.position);
+            return dropdown_rect;
+        }
+    }
+    return wxRect();
+}
 
 bool wxRibbonButtonBarEvent::PopupMenu(wxMenu* menu)
 {
@@ -1518,5 +1831,214 @@ bool wxRibbonButtonBarEvent::PopupMenu(wxMenu* menu)
     }
     return m_bar->PopupMenu(menu, pos);
 }
+
+void wxRibbonButtonBar::OnDPIChanged(wxDPIChangedEvent& event)
+{
+    // Recalculate all button sizes with new DPI scale, then rebuild layouts
+    wxInfoDC temp_dc(this);
+    size_t btn_count = m_buttons.GetCount();
+    for(size_t btn_i = 0; btn_i < btn_count; ++btn_i)
+    {
+        wxRibbonButtonBarButtonBase* base = m_buttons.Item(btn_i);
+        FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_SMALL, temp_dc);
+        FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM, temp_dc);
+        FetchButtonSizeInfo(base, wxRIBBON_BUTTONBAR_BUTTON_LARGE, temp_dc);
+    }
+
+    m_layouts_valid = false;
+    Realize();
+    Refresh();
+    event.Skip();
+}
+
+void wxRibbonButtonBar::OnSysColourChanged(wxSysColourChangedEvent& event)
+{
+    event.Skip();
+    if ( m_art )
+        m_art->UpdateColoursFromSystem();
+}
+
+#if wxUSE_ACCESSIBILITY
+
+class wxRibbonButtonBarAccessible : public wxWindowAccessible
+{
+public:
+    explicit wxRibbonButtonBarAccessible(wxRibbonButtonBar* bar) : wxWindowAccessible(bar) { }
+
+    wxAccStatus GetChildCount(int* childCount) override
+    {
+        wxRibbonButtonBar* bar = wxDynamicCast(GetWindow(), wxRibbonButtonBar);
+        if ( bar == nullptr )
+            return wxACC_FAIL;
+
+        *childCount = static_cast<int>(bar->m_layouts.Item(bar->m_current_layout)->buttons.size());
+        return wxACC_OK;
+    }
+
+    wxAccStatus GetChild(int childId, wxAccessible** child) override
+    {
+        *child = childId == wxACC_SELF ? this : nullptr;
+        return wxACC_OK;
+    }
+
+    wxAccStatus GetRole(int childId, wxAccRole* role) override
+    {
+        if ( childId == wxACC_SELF )
+        {
+            *role = wxROLE_SYSTEM_TOOLBAR;
+            return wxACC_OK;
+        }
+
+        wxRibbonButtonBarButtonBase* button = GetButton(childId);
+        if ( button == nullptr )
+            return wxACC_FAIL;
+
+        if ( button->kind == wxRIBBON_BUTTON_TOGGLE )
+            *role = wxROLE_SYSTEM_CHECKBUTTON;
+        else if ( button->kind & wxRIBBON_BUTTON_DROPDOWN )
+            *role = wxROLE_SYSTEM_BUTTONDROPDOWN;
+        else
+            *role = wxROLE_SYSTEM_PUSHBUTTON;
+        return wxACC_OK;
+    }
+
+    wxAccStatus GetState(int childId, long* state) override
+    {
+        wxRibbonButtonBar* bar = wxDynamicCast(GetWindow(), wxRibbonButtonBar);
+        if ( bar == nullptr )
+            return wxACC_FAIL;
+
+        if ( childId == wxACC_SELF )
+        {
+            long st = 0;
+            if ( !bar->IsEnabled() )
+                st |= wxACC_STATE_SYSTEM_UNAVAILABLE;
+            if ( !bar->IsShownOnScreen() )
+                st |= wxACC_STATE_SYSTEM_INVISIBLE;
+            *state = st;
+            return wxACC_OK;
+        }
+
+        wxRibbonButtonBarButtonBase* button = GetButton(childId);
+        if ( button == nullptr )
+            return wxACC_FAIL;
+
+        long st{ 0 };
+        if ( button->state & wxRIBBON_BUTTONBAR_BUTTON_DISABLED )
+            st |= wxACC_STATE_SYSTEM_UNAVAILABLE;
+        else
+            st |= wxACC_STATE_SYSTEM_FOCUSABLE;
+        if ( button->state & wxRIBBON_BUTTONBAR_BUTTON_TOGGLED )
+            st |= wxACC_STATE_SYSTEM_CHECKED;
+        if ( button->state & wxRIBBON_BUTTONBAR_BUTTON_ACTIVE_MASK )
+            st |= wxACC_STATE_SYSTEM_PRESSED;
+
+        wxRibbonBar* ribbonBar = bar->GetAncestorRibbonBar();
+        if ( bar->m_focused_button == button && ribbonBar && ribbonBar->HasFocus() )
+            st |= wxACC_STATE_SYSTEM_FOCUSED;
+
+        *state = st;
+        return wxACC_OK;
+    }
+
+    wxAccStatus GetName(int childId, wxString* name) override
+    {
+        if ( childId == wxACC_SELF )
+            return wxWindowAccessible::GetName(childId, name);
+
+        wxRibbonButtonBarButtonBase* button = GetButton(childId);
+        if ( button == nullptr )
+            return wxACC_FAIL;
+
+        *name = wxStripMenuCodes(button->label, wxStrip_Mnemonics);
+        return wxACC_OK;
+    }
+
+    wxAccStatus GetLocation(wxRect& rect, int elementId) override
+    {
+        if ( elementId == wxACC_SELF )
+            return wxWindowAccessible::GetLocation(rect, elementId);
+
+        wxRibbonButtonBar* bar = wxDynamicCast(GetWindow(), wxRibbonButtonBar);
+        if ( bar == nullptr )
+            return wxACC_FAIL;
+
+        wxRibbonButtonBarButtonBase* button = GetButton(elementId);
+        if ( button == nullptr )
+            return wxACC_FAIL;
+
+        rect = bar->GetItemRect(button->id);
+        rect.SetPosition(bar->ClientToScreen(rect.GetPosition()));
+        return wxACC_OK;
+    }
+
+    wxAccStatus GetDefaultAction(int childId, wxString* actionName) override
+    {
+        if ( childId == wxACC_SELF )
+            return wxACC_NOT_IMPLEMENTED;
+
+        *actionName = _("Press");
+        return wxACC_OK;
+    }
+
+    wxAccStatus DoDefaultAction(int childId) override
+    {
+        if ( childId == wxACC_SELF )
+            return wxACC_NOT_IMPLEMENTED;
+
+        wxRibbonButtonBar* bar = wxDynamicCast(GetWindow(), wxRibbonButtonBar);
+        if ( bar == nullptr )
+            return wxACC_FAIL;
+
+        wxRibbonButtonBarButtonBase* button = GetButton(childId);
+        if ( button == nullptr )
+            return wxACC_FAIL;
+
+        bar->ActivateButton(button);
+        return wxACC_OK;
+    }
+
+    wxAccStatus GetFocus(int* childId, wxAccessible** child) override
+    {
+        wxRibbonButtonBar* bar = wxDynamicCast(GetWindow(), wxRibbonButtonBar);
+        if ( bar == nullptr )
+            return wxACC_FAIL;
+
+        const int index = bar->DoGetFocusedButtonIndex();
+        if ( index == wxNOT_FOUND )
+        {
+            *childId = wxACC_SELF;
+            *child = this;
+        }
+        else
+        {
+            *childId = index + 1;
+            *child = nullptr;
+        }
+        return wxACC_OK;
+    }
+
+private:
+    wxRibbonButtonBarButtonBase* GetButton(int childId)
+    {
+        wxRibbonButtonBar* bar = wxDynamicCast(GetWindow(), wxRibbonButtonBar);
+        if ( bar == nullptr )
+            return nullptr;
+
+        const std::vector<wxRibbonButtonBarButtonInstance>& buttons =
+            bar->m_layouts.Item(bar->m_current_layout)->buttons;
+        const int index = childId - 1;
+        if ( index < 0 || index >= static_cast<int>(buttons.size()) )
+            return nullptr;
+        return buttons[index].base;
+    }
+};
+
+wxAccessible* wxRibbonButtonBar::CreateAccessible()
+{
+    return new wxRibbonButtonBarAccessible(this);
+}
+
+#endif // wxUSE_ACCESSIBILITY
 
 #endif // wxUSE_RIBBON

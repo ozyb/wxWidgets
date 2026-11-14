@@ -2,7 +2,6 @@
 // Name:        src/msw/slider.cpp
 // Purpose:     wxSlider, using trackbar control
 // Author:      Julian Smart
-// Modified by:
 // Created:     04/01/98
 // Copyright:   (c) Julian Smart 1998
 //                  Vadim Zeitlin 2004
@@ -20,9 +19,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_SLIDER
 
@@ -33,6 +29,7 @@
     #include "wx/brush.h"
 #endif
 
+#include "wx/msw/private/darkmode.h"
 #include "wx/msw/subwin.h"
 
 // ----------------------------------------------------------------------------
@@ -54,8 +51,10 @@ enum
 // the gaps between the slider and the labels, in pixels
 const int HGAP = 5;
 const int VGAP = 4;
-// this value is arbitrary:
-const int TICK = 8;
+// these values are arbitrary:
+const int THUMB = 20;
+const int THUMB_BORDER = 2;
+const int TICK = 4;
 
 } // anonymous namespace
 
@@ -69,9 +68,9 @@ const int TICK = 8;
 
 void wxSlider::Init()
 {
-    m_labels = NULL;
+    m_labels = nullptr;
 
-    m_hBrushBg = NULL;
+    m_hBrushBg = nullptr;
 
     m_pageSize = 1;
     m_lineSize = 1;
@@ -152,13 +151,13 @@ bool wxSlider::Create(wxWindow *parent,
             HWND wnd = ::CreateWindow
                          (
                             wxT("STATIC"),
-                            NULL,
+                            nullptr,
                             WS_CHILD | WS_VISIBLE | SS_CENTER,
                             0, 0, 0, 0,
                             hwndParent,
                             (HMENU)wxUIntToPtr(lblid.GetValue()),
                             wxGetInstance(),
-                            NULL
+                            nullptr
                          );
 
             m_labels->Set(n, wnd, lblid);
@@ -179,15 +178,31 @@ bool wxSlider::Create(wxWindow *parent,
     SetValue(value);
     SetPageSize( wxMax(1, (maxValue - minValue)/10) );
 
-    // we need to position the labels correctly if we have them and if
-    // SetSize() hadn't been called before (when best size was determined by
-    // MSWCreateControl()) as in this case they haven't been put in place yet
-    if ( m_labels && size.x != wxDefaultCoord && size.y != wxDefaultCoord )
+    int len = 0;
+    if ( size.IsFullySpecified() )
     {
-        SetSize(size);
+        // we need to position the labels correctly if we have them and if
+        // SetSize() hadn't been called before (when best size was determined by
+        // MSWCreateControl()) as in this case they haven't been put in place yet
+        if ( m_labels )
+        {
+            SetSize(size);
+        }
+
+        // And use the thumb length appropriate for the initial size.
+        len = HasFlag(wxSL_VERTICAL) ? size.x : size.y;
+        if ( style & wxSL_TICKS )
+        {
+            len -= TICK;
+            if ( style & wxSL_BOTH )
+                len -= TICK;
+        }
+
+        len -= 2*THUMB_BORDER;
     }
 
-    Bind(wxEVT_DPI_CHANGED, &wxSlider::OnDPIChanged, this);
+    // Use the length consistent with what our DoGetBestSize() does by default.
+    SetThumbLength(len > 0 ? len : FromDIP(THUMB));
 
     return true;
 }
@@ -238,6 +253,90 @@ wxSlider::~wxSlider()
 // ----------------------------------------------------------------------------
 // event handling
 // ----------------------------------------------------------------------------
+
+bool wxSlider::MSWOnNotify(int idCtrl, WXLPARAM lParam, WXLPARAM* result)
+{
+    NMHDR* hdr = (NMHDR*)lParam;
+    if ( wxMSWDarkMode::IsActive() && hdr->code == NM_CUSTOMDRAW )
+    {
+        // Draw the thumb always blue. The default system drawing changes the
+        // colour to black when the mouse is hovering and to gray when
+        // dragging. In dark mode, the black colour causes the thumb to
+        // disappear.
+        NMCUSTOMDRAW* nmcd = (NMCUSTOMDRAW*)lParam;
+        switch ( nmcd->dwDrawStage )
+        {
+            case CDDS_PREPAINT:
+                *result = CDRF_NOTIFYITEMDRAW;
+                return true;
+
+            case CDDS_ITEMPREPAINT:
+                if ( nmcd->dwItemSpec == TBCD_THUMB )
+                {
+                    // Draw a polygon that matches the shape of the thumb.
+                    // These shapes were determined by looking at how the
+                    // system draws the pointer in light mode at 100% and 200%
+                    // scale.
+                    const RECT& rc = nmcd->rc;
+                    // Half the width of the arrow point.
+                    auto mid = (HasFlag(wxSL_HORIZONTAL) ?
+                        rc.right - rc.left : rc.bottom - rc.top) / 2;
+                    POINT points[5];
+                    if ( HasFlag(wxSL_LEFT) )
+                    {
+                        points[0] = { rc.right, rc.top };
+                        points[1] = { rc.left + mid, rc.top };
+                        points[2] = { rc.left, rc.top + mid };
+                        points[3] = { rc.left + mid, rc.bottom - 1};
+                        points[4] = { rc.right, rc.bottom - 1 };
+                    }
+                    else if ( HasFlag(wxSL_RIGHT) )
+                    {
+                        auto right = rc.right - 2;
+                        points[0] = { rc.left, rc.top };
+                        points[1] = { right - mid, rc.top };
+                        points[2] = { right, rc.top + mid };
+                        points[3] = { right - mid, rc.bottom - 1 };
+                        points[4] = { rc.left, rc.bottom - 1 };
+                    }
+                    else if ( HasFlag(wxSL_TOP) )
+                    {
+                        points[0] = { rc.left, rc.bottom };
+                        points[1] = { rc.left, rc.top + mid };
+                        points[2] = { rc.left + mid, rc.top };
+                        points[3] = { rc.right - 1, rc.top + mid };
+                        points[4] = { rc.right - 1, rc.bottom };
+                    }
+                    else
+                    {
+                        wxASSERT(HasFlag(wxSL_BOTTOM));
+                        // Unlike the other orientations, the pointer tip
+                        // location (at the bottom) depends on the DPI
+                        // scaling. The pointer bottom is above the bottom of
+                        // the rectangle by 2 physical pixels at 100% and 3
+                        // physical pixels at 200%.
+                        auto bottom = rc.bottom - 1 - FromDIP(1);
+                        points[0] = { rc.left, rc.top };
+                        points[1] = { rc.right - 1, rc.top };
+                        points[2] = { rc.right - 1, bottom - mid };
+                        points[3] = { rc.left + mid, bottom };
+                        points[4] = { rc.left, bottom - mid };
+                    }
+                    // The observed colour of the thumb in light mode.
+                    const COLORREF fg = 0xd77800;
+                    AutoHBRUSH hBrush(fg);
+                    AutoHPEN hPen(fg);
+                    SelectInHDC selectBrush(nmcd->hdc, hBrush);
+                    SelectInHDC selectPen(nmcd->hdc, hPen);
+                    ::Polygon(nmcd->hdc, points, WXSIZEOF(points));
+                    *result = CDRF_SKIPDEFAULT;
+                    return true;
+                }
+                break;
+        }
+    }
+    return wxSliderBase::MSWOnNotify(idCtrl, lParam, result);
+}
 
 bool wxSlider::MSWOnScroll(int WXUNUSED(orientation),
                            WXWORD wParam,
@@ -313,15 +412,28 @@ bool wxSlider::MSWOnScroll(int WXUNUSED(orientation),
     SetValue(newPos);
 
     wxScrollEvent event(scrollEvent, m_windowId);
+    bool          processed = false;
+
     event.SetPosition(newPos);
     event.SetEventObject( this );
-    HandleWindowEvent(event);
+    processed = HandleWindowEvent(event);
 
-    wxCommandEvent cevent( wxEVT_SLIDER, GetId() );
-    cevent.SetInt( newPos );
-    cevent.SetEventObject( this );
+    // Do not generate wxEVT_SLIDER when the native scroll message
+    // parameter is SB_ENDSCROLL, which always follows only after
+    // another scroll message which already changed the slider value.
+    // Therefore, sending wxEVT_SLIDER after SB_ENDSCROLL
+    // would result in two wxEVT_SLIDER events with the same value.
+    if ( wParam != SB_ENDSCROLL )
+    {
+        wxCommandEvent cevent( wxEVT_SLIDER, GetId() );
 
-    return HandleWindowEvent( cevent );
+        cevent.SetInt( newPos );
+        cevent.SetEventObject( this );
+
+        processed = HandleWindowEvent( cevent );
+    }
+
+    return processed;
 }
 
 void wxSlider::Command (wxCommandEvent & event)
@@ -399,7 +511,7 @@ void wxSlider::DoMoveWindow(int x, int y, int width, int height)
     }
 
     const int thumbSize = GetThumbLength();
-    const int tickSize = FromDIP(TICK);
+    const int tickSize = TICK;
 
     int minLabelWidth,
         maxLabelWidth;
@@ -549,11 +661,9 @@ wxSize wxSlider::DoGetBestSize() const
     // this value is arbitrary:
     const int length = FromDIP(100);
 
-    // We need 2 extra pixels (which are not scaled by the DPI by the native
+    // We need extra pixels (which are not scaled by the DPI by the native
     // control) on either side to account for the focus rectangle.
-    const int thumbSize = GetThumbLength() + 4;
-
-    const int tickSize = FromDIP(TICK);
+    const int thumbSize = FromDIP(THUMB) + 2*THUMB_BORDER;
 
     int *width;
     wxSize size;
@@ -602,10 +712,10 @@ wxSize wxSlider::DoGetBestSize() const
     // need extra space to show ticks
     if ( HasFlag(wxSL_TICKS) )
     {
-        *width += tickSize;
+        *width += TICK;
         // and maybe twice as much if we show them on both sides
         if ( HasFlag(wxSL_BOTH) )
-            *width += tickSize;
+            *width += TICK;
     }
     return size;
 }
@@ -639,15 +749,14 @@ void wxSlider::MSWUpdateFontOnDPIChange(const wxSize& newDPI)
     }
 }
 
-void wxSlider::OnDPIChanged(wxDPIChangedEvent& event)
+void wxSlider::MSWBeforeDPIChangedEvent(const wxDPIChangedEvent& event)
 {
+    // We need to update the thumb before processing wxEVT_DPI_CHANGED in the
+    // user code, as it may update the slider size, which wouldn't work
+    // correctly if it still used the old thumb length.
     int thumbLen = GetThumbLength();
 
-    const double scaleFactor = (double)event.GetNewDPI().x / event.GetOldDPI().x;
-    const double thumbLenScaled = thumbLen * scaleFactor;
-    thumbLen = (int)(scaleFactor > 1.0 ? ceil(thumbLenScaled) : floor(thumbLenScaled));
-
-    SetThumbLength(thumbLen);
+    SetThumbLength(event.ScaleX(thumbLen));
 }
 
 // ----------------------------------------------------------------------------
@@ -785,17 +894,17 @@ void wxSlider::SetTick(int tickPos)
 
 WXHWND wxSlider::GetStaticMin() const
 {
-    return m_labels ? (WXHWND)(*m_labels)[SliderLabel_Min] : NULL;
+    return m_labels ? (WXHWND)(*m_labels)[SliderLabel_Min] : nullptr;
 }
 
 WXHWND wxSlider::GetStaticMax() const
 {
-    return m_labels ? (WXHWND)(*m_labels)[SliderLabel_Max] : NULL;
+    return m_labels ? (WXHWND)(*m_labels)[SliderLabel_Max] : nullptr;
 }
 
 WXHWND wxSlider::GetEditValue() const
 {
-    return m_labels ? (WXHWND)(*m_labels)[SliderLabel_Value] : NULL;
+    return m_labels ? (WXHWND)(*m_labels)[SliderLabel_Value] : nullptr;
 }
 
 WX_FORWARD_STD_METHODS_TO_SUBWINDOWS(wxSlider, wxSliderBase, m_labels)

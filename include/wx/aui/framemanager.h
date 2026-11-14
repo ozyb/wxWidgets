@@ -2,7 +2,6 @@
 // Name:        wx/aui/framemanager.h
 // Purpose:     wxaui: wx advanced user interface - docking window manager
 // Author:      Benjamin I. Williams
-// Modified by:
 // Created:     2005-05-17
 // Copyright:   (C) Copyright 2005, Kirix Corporation, All Rights Reserved.
 // Licence:     wxWindows Library Licence, Version 3.1
@@ -24,7 +23,10 @@
 #include "wx/window.h"
 #include "wx/timer.h"
 #include "wx/sizer.h"
-#include "wx/bitmap.h"
+#include "wx/bmpbndl.h"
+#include "wx/overlay.h"
+
+#include <memory>
 
 enum wxAuiManagerDock
 {
@@ -46,15 +48,24 @@ enum wxAuiManagerOption
     wxAUI_MGR_VENETIAN_BLINDS_HINT     = 1 << 4,
     wxAUI_MGR_RECTANGLE_HINT           = 1 << 5,
     wxAUI_MGR_HINT_FADE                = 1 << 6,
-    wxAUI_MGR_NO_VENETIAN_BLINDS_FADE  = 1 << 7,
+    wxAUI_MGR_NO_VENETIAN_BLINDS_FADE  = 0, // For compatibility only.
     wxAUI_MGR_LIVE_RESIZE              = 1 << 8,
 
     wxAUI_MGR_DEFAULT = wxAUI_MGR_ALLOW_FLOATING |
                         wxAUI_MGR_TRANSPARENT_HINT |
-                        wxAUI_MGR_HINT_FADE |
-                        wxAUI_MGR_NO_VENETIAN_BLINDS_FADE
+                        wxAUI_MGR_LIVE_RESIZE
 };
 
+enum wxAuiMinDockOption
+{
+    wxAUI_MIN_DOCK_ICONS       = 1 << 0,
+    wxAUI_MIN_DOCK_TEXT        = 1 << 1,
+    wxAUI_MIN_DOCK_BOTH        = wxAUI_MIN_DOCK_ICONS | wxAUI_MIN_DOCK_TEXT,
+
+    wxAUI_MIN_DOCK_ROTATE_ICON_WITH_TEXT = 1 << 2,
+
+    wxAUI_MIN_DOCK_DEFAULT = wxAUI_MIN_DOCK_BOTH
+};
 
 enum wxAuiPaneDockArtSetting
 {
@@ -127,21 +138,46 @@ class wxAuiPaneInfo;
 class wxAuiDockInfo;
 class wxAuiDockArt;
 class wxAuiManagerEvent;
+class wxAuiMinDock;
+class wxAuiSerializer;
+class wxAuiDeserializer;
 
-#ifndef SWIG
-WX_DECLARE_USER_EXPORTED_OBJARRAY(wxAuiDockInfo, wxAuiDockInfoArray, WXDLLIMPEXP_AUI);
-WX_DECLARE_USER_EXPORTED_OBJARRAY(wxAuiDockUIPart, wxAuiDockUIPartArray, WXDLLIMPEXP_AUI);
-WX_DECLARE_USER_EXPORTED_OBJARRAY(wxAuiPaneInfo, wxAuiPaneInfoArray, WXDLLIMPEXP_AUI);
-WX_DEFINE_USER_EXPORTED_ARRAY_PTR(wxAuiPaneInfo*, wxAuiPaneInfoPtrArray, class WXDLLIMPEXP_AUI);
-WX_DEFINE_USER_EXPORTED_ARRAY_PTR(wxAuiDockInfo*, wxAuiDockInfoPtrArray, class WXDLLIMPEXP_AUI);
-#endif // SWIG
+struct wxAuiDockLayoutInfo;
+struct wxAuiPaneLayoutInfo;
+
+using wxAuiDockUIPartArray = wxBaseArray<wxAuiDockUIPart>;
+using wxAuiDockInfoArray = wxBaseArray<wxAuiDockInfo>;
+using wxAuiDockInfoPtrArray = wxBaseArray<wxAuiDockInfo*>;
+using wxAuiPaneInfoPtrArray = wxBaseArray<wxAuiPaneInfo*>;
 
 extern WXDLLIMPEXP_AUI wxAuiDockInfo wxAuiNullDockInfo;
 extern WXDLLIMPEXP_AUI wxAuiPaneInfo wxAuiNullPaneInfo;
 
 
+// Basic information about a dock, used by wxAuiPaneInfo and wxAuiDockInfo.
+class wxAuiDockCoords
+{
+public:
+    wxAuiDockCoords()
+    {
+        dock_direction = 0;
+        dock_layer = 0;
+        dock_row = 0;
+    }
 
-class WXDLLIMPEXP_AUI wxAuiPaneInfo
+    bool IsHorizontal() const { return dock_direction == wxAUI_DOCK_TOP ||
+                             dock_direction == wxAUI_DOCK_BOTTOM; }
+    bool IsVertical() const { return dock_direction == wxAUI_DOCK_LEFT ||
+                             dock_direction == wxAUI_DOCK_RIGHT; }
+    bool IsVerticalOrCenter() const { return IsVertical() ||
+                             dock_direction == wxAUI_DOCK_CENTER; }
+
+    int dock_direction;     // dock direction (top, bottom, left, right, center)
+    int dock_layer;         // layer number (0 = innermost layer)
+    int dock_row;           // row number on the docking bar (0 = first row)
+};
+
+class WXDLLIMPEXP_AUI wxAuiPaneInfo : public wxAuiDockCoords
 {
 public:
 
@@ -151,20 +187,20 @@ public:
         , max_size(wxDefaultSize)
         , floating_pos(wxDefaultPosition)
         , floating_size(wxDefaultSize)
+        , floating_client_size(wxDefaultSize)
     {
-        window = NULL;
-        frame = NULL;
+        window = nullptr;
+        frame = nullptr;
         state = 0;
         dock_direction = wxAUI_DOCK_LEFT;
-        dock_layer = 0;
-        dock_row = 0;
         dock_pos = 0;
+        dock_size = 0;
         dock_proportion = 0;
 
         DefaultPane();
     }
 
-    ~wxAuiPaneInfo() {}
+    ~wxAuiPaneInfo() = default;
 
     // Write the safe parts of a newly loaded PaneInfo structure "source" into "this"
     // used on loading perspectives etc.
@@ -174,13 +210,11 @@ public:
         // unsafe bits of "dest"
         source.window = window;
         source.frame = frame;
-        wxCHECK_RET(source.IsValid(),
-                    "window settings and pane settings are incompatible");
-        // now assign
-        *this = source;
+        if (source.IsValid())
+            *this = source;
     }
 
-    bool IsOk() const { return window != NULL; }
+    bool IsOk() const { return window != nullptr; }
     bool IsFixed() const { return !HasFlag(optionResizable); }
     bool IsResizable() const { return HasFlag(optionResizable); }
     bool IsShown() const { return !HasFlag(optionHidden); }
@@ -216,21 +250,28 @@ public:
     {
         wxAuiPaneInfo test(*this);
         test.window = w;
-        wxCHECK_MSG(test.IsValid(), *this,
-                    "window settings and pane settings are incompatible");
-        *this = test;
+        if ( test.IsValid() )
+            *this = test;
         return *this;
     }
     wxAuiPaneInfo& Name(const wxString& n) { name = n; return *this; }
     wxAuiPaneInfo& Caption(const wxString& c) { caption = c; return *this; }
-    wxAuiPaneInfo& Icon(const wxBitmap& b) { icon = b; return *this; }
+    wxAuiPaneInfo& Icon(const wxBitmapBundle& b) { icon = b; return *this; }
+    wxAuiPaneInfo& IconMin(const wxBitmapBundle& b) { iconMin = b; return *this; }
     wxAuiPaneInfo& Left() { dock_direction = wxAUI_DOCK_LEFT; return *this; }
     wxAuiPaneInfo& Right() { dock_direction = wxAUI_DOCK_RIGHT; return *this; }
     wxAuiPaneInfo& Top() { dock_direction = wxAUI_DOCK_TOP; return *this; }
     wxAuiPaneInfo& Bottom() { dock_direction = wxAUI_DOCK_BOTTOM; return *this; }
-    wxAuiPaneInfo& Center() { dock_direction = wxAUI_DOCK_CENTER; return *this; }
-    wxAuiPaneInfo& Centre() { dock_direction = wxAUI_DOCK_CENTRE; return *this; }
-    wxAuiPaneInfo& Direction(int direction) { dock_direction = direction; return *this; }
+    wxAuiPaneInfo& Center() { dock_direction = wxAUI_DOCK_CENTER; return Layer(0).Row(0).Position(0); }
+    wxAuiPaneInfo& Centre() { dock_direction = wxAUI_DOCK_CENTRE; return Layer(0).Row(0).Position(0); }
+    wxAuiPaneInfo& Direction(int direction)
+    {
+        if (dock_direction == wxAUI_DOCK_CENTRE)
+            return Centre();
+
+        dock_direction = direction;
+        return *this;
+    }
     wxAuiPaneInfo& Layer(int layer) { dock_layer = layer; return *this; }
     wxAuiPaneInfo& Row(int row) { dock_row = row; return *this; }
     wxAuiPaneInfo& Position(int pos) { dock_pos = pos; return *this; }
@@ -244,12 +285,14 @@ public:
     wxAuiPaneInfo& FloatingPosition(int x, int y) { floating_pos.x = x; floating_pos.y = y; return *this; }
     wxAuiPaneInfo& FloatingSize(const wxSize& size) { floating_size = size; return *this; }
     wxAuiPaneInfo& FloatingSize(int x, int y) { floating_size.Set(x,y); return *this; }
+    wxAuiPaneInfo& FloatingClientSize(const wxSize& size) { floating_client_size = size; return *this; }
+    wxAuiPaneInfo& FloatingClientSize(int x, int y) { floating_client_size.Set(x,y); return *this; }
     wxAuiPaneInfo& Fixed() { return SetFlag(optionResizable, false); }
     wxAuiPaneInfo& Resizable(bool resizable = true) { return SetFlag(optionResizable, resizable); }
     wxAuiPaneInfo& Dock() { return SetFlag(optionFloating, false); }
     wxAuiPaneInfo& Float() { return SetFlag(optionFloating, true); }
     wxAuiPaneInfo& Hide() { return SetFlag(optionHidden, true); }
-    wxAuiPaneInfo& Show(bool show = true) { return SetFlag(optionHidden, !show); }
+    wxAuiPaneInfo& Show(bool show = true) { return SetFlag(optionHidden, !show).SetFlag(savedClosed, false); }
     wxAuiPaneInfo& CaptionVisible(bool visible = true) { return SetFlag(optionCaption, visible); }
     wxAuiPaneInfo& Maximize() { return SetFlag(optionMaximized, true); }
     wxAuiPaneInfo& Restore() { return SetFlag(optionMaximized, false); }
@@ -281,9 +324,8 @@ public:
                  optionLeftDockable | optionRightDockable |
                  optionFloatable | optionMovable | optionResizable |
                  optionCaption | optionPaneBorder | buttonClose;
-        wxCHECK_MSG(test.IsValid(), *this,
-                    "window settings and pane settings are incompatible");
-        *this = test;
+        if (test.IsValid())
+            *this = test;
         return *this;
     }
 
@@ -311,9 +353,8 @@ public:
             test.state |= flag;
         else
             test.state &= ~flag;
-        wxCHECK_MSG(test.IsValid(), *this,
-                    "window settings and pane settings are incompatible");
-        *this = test;
+        if (test.IsValid())
+            *this = test;
         return *this;
     }
 
@@ -364,6 +405,7 @@ public:
         buttonCustom2         = 1 << 27,
         buttonCustom3         = 1 << 28,
 
+        savedClosed           = 1 << 29, // used internally
         savedHiddenState      = 1 << 30, // used internally
         actionPane            = 1u << 31  // used internally
     };
@@ -371,16 +413,15 @@ public:
 public:
     wxString name;        // name of the pane
     wxString caption;     // caption displayed on the window
-    wxBitmap icon;        // icon of the pane, may be invalid
+    wxBitmapBundle icon;  // icon of the pane, may be invalid
+    wxBitmapBundle iconMin; // icon used when minimized, may also be invalid
 
     wxWindow* window;     // window that is in this pane
     wxFrame* frame;       // floating frame window that holds the pane
     unsigned int state;   // a combination of wxPaneState values
 
-    int dock_direction;   // dock direction (top, bottom, left, right, center)
-    int dock_layer;       // layer number (0 = innermost layer)
-    int dock_row;         // row number on the docking bar (0 = first row)
     int dock_pos;         // position inside the row (0 = first position)
+    int dock_size;        // size of the containing dock (0 if not set)
 
     wxSize best_size;     // size that the layout engine will prefer
     wxSize min_size;      // minimum size the pane window can tolerate
@@ -388,24 +429,40 @@ public:
 
     wxPoint floating_pos; // position while floating
     wxSize floating_size; // size while floating
+    // this has precedence over floating_size
+    wxSize floating_client_size; // client size while floating
     int dock_proportion;  // proportion while docked
 
     wxRect rect;              // current rectangle (populated by wxAUI)
 
+    // If the pane settings are internally consistent, return true, otherwise
+    // return false and trigger an assertion failure in debug builds.
     bool IsValid() const;
 };
+
+
+// Note that this one must remain a wxBaseObjectArray, i.e. store pointers to
+// heap-allocated objects, as it is returned by wxAuiManager::GetPane() and the
+// existing code expects these pointers to remain valid even if the array is
+// modified.
+using wxAuiPaneInfoArray = wxBaseObjectArray<wxAuiPaneInfo>;
 
 
 
 class WXDLLIMPEXP_FWD_AUI wxAuiFloatingFrame;
 
+// Private helper classes used to drag the panes under Wayland.
+class wxAuiPaneDragHandler;
+class wxTLWDragSession;
+
 class WXDLLIMPEXP_AUI wxAuiManager : public wxEvtHandler
 {
     friend class wxAuiFloatingFrame;
+    friend class wxAuiPaneDragHandler;
 
 public:
 
-    wxAuiManager(wxWindow* managedWnd = NULL,
+    wxAuiManager(wxWindow* managedWnd = nullptr,
                    unsigned int flags = wxAUI_MGR_DEFAULT);
     virtual ~wxAuiManager();
     void UnInit();
@@ -413,7 +470,7 @@ public:
     void SetFlags(unsigned int flags);
     unsigned int GetFlags() const;
 
-    static bool AlwaysUsesLiveResize();
+    static bool AlwaysUsesLiveResize(const wxWindow* window = nullptr);
     bool HasLiveResize() const;
 
     void SetManagedWindow(wxWindow* managedWnd);
@@ -424,9 +481,23 @@ public:
     void SetArtProvider(wxAuiDockArt* artProvider);
     wxAuiDockArt* GetArtProvider() const;
 
+    // Return the minimum size for any pane.
+    wxSize GetMinPaneSize() const;
+
+    // Change the sides where docks for minimized panes can be created.
+    // Must include one or more of wxLEFT, wxRIGHT, wxTOP, wxBOTTOM and must
+    // currently be called before there any minimized panes.
+    void AllowDocksForMinPanes(int directions);
+
+    // Set the style to use for the docks containing minimizing panes.
+    // Flags is the combination of wxAUI_MIN_DOCK_* values.
+    void SetDocksForMinPanesStyle(unsigned int style);
+
+
     wxAuiPaneInfo& GetPane(wxWindow* window);
     wxAuiPaneInfo& GetPane(const wxString& name);
-    wxAuiPaneInfoArray& GetAllPanes();
+    const wxAuiPaneInfoArray& GetAllPanes() const { return m_panes; }
+    wxAuiPaneInfoArray& GetAllPanes() { return m_panes; }
 
     bool AddPane(wxWindow* window,
                  const wxAuiPaneInfo& paneInfo);
@@ -443,12 +514,26 @@ public:
                  const wxAuiPaneInfo& insertLocation,
                  int insertLevel = wxAUI_INSERT_PANE);
 
+    bool SplitPane(wxWindow* window,
+                   wxWindow* newWindow,
+                   int direction,
+                   const wxPoint& dropPos = wxDefaultPosition);
+
     bool DetachPane(wxWindow* window);
 
     void Update();
 
+    // Serialize or restore the whole layout using the provided serializer.
+    void SaveLayout(wxAuiSerializer& serializer) const;
+    void LoadLayout(wxAuiDeserializer& deserializer);
+
+    // Older functions using bespoke text format, prefer using the ones using
+    // wxAuiSerializer and wxAuiDeserializer above instead in the new code.
     wxString SavePaneInfo(const wxAuiPaneInfo& pane);
     void LoadPaneInfo(wxString panePart, wxAuiPaneInfo &pane);
+private:
+    bool LoadPaneInfoVersioned(wxString layoutVersion, wxString panePart, wxAuiPaneInfo& pane);
+public:
     wxString SavePerspective();
     bool LoadPerspective(const wxString& perspective, bool update = true);
 
@@ -456,6 +541,7 @@ public:
     void GetDockSizeConstraint(double* widthPct, double* heightPct) const;
 
     void ClosePane(wxAuiPaneInfo& paneInfo);
+    void MinimizePane(wxAuiPaneInfo& paneInfo);
     void MaximizePane(wxAuiPaneInfo& paneInfo);
     void RestorePane(wxAuiPaneInfo& paneInfo);
     void RestoreMaximizedPane();
@@ -472,21 +558,36 @@ public:
     wxRect CalculateHintRect(
                  wxWindow* paneWindow,
                  const wxPoint& pt,
-                 const wxPoint& offset);
+                 const wxPoint& offset = wxPoint{});
+
+    wxSize CalculateNewSplitSize() const;
 
     void DrawHintRect(
                  wxWindow* paneWindow,
                  const wxPoint& pt,
-                 const wxPoint& offset);
+                 const wxPoint& offset = wxPoint{});
 
+    void UpdateHint(const wxRect& rect);
+
+    // These functions are public for compatibility reasons, but should never
+    // be called directly, use UpdateHint() above instead.
     virtual void ShowHint(const wxRect& rect);
     virtual void HideHint();
 
-    void OnHintActivate(wxActivateEvent& event);
+    // Internal functions, don't use them outside of wxWidgets itself.
+    void CopyDockLayoutFrom(wxAuiDockLayoutInfo& layoutInfo,
+                            const wxAuiPaneInfo& pane) const;
+    void CopyDockLayoutTo(const wxAuiDockLayoutInfo& layoutInfo,
+                          wxAuiPaneInfo& pane) const;
+
+    void CopyLayoutFrom(wxAuiPaneLayoutInfo& layoutInfo,
+                        const wxAuiPaneInfo& pane) const;
+    void CopyLayoutTo(const wxAuiPaneLayoutInfo& layoutInfo,
+                      wxAuiPaneInfo& pane) const;
 
 public:
 
-    // deprecated -- please use SetManagedWindow() and
+    // deprecated -- please use SetManagedWindow()
     // and GetManagedWindow() instead
 
     wxDEPRECATED( void SetFrame(wxFrame* frame) );
@@ -494,9 +595,10 @@ public:
 
 protected:
 
-    void UpdateHintWindowConfig();
-
     void DoFrameLayout();
+
+    virtual bool CanAddPane(wxWindow* window,
+                            const wxAuiPaneInfo& paneInfo) const;
 
     void LayoutAddPane(wxSizer* container,
                        wxAuiDockInfo& dock,
@@ -532,11 +634,46 @@ protected:
     void OnFloatingPaneActivated(wxWindow* window);
     void OnFloatingPaneClosed(wxWindow* window, wxCloseEvent& evt);
     void OnFloatingPaneResized(wxWindow* window, const wxRect& rect);
+
+    // Common parts of OnFloatingPaneMoving() and OnFloatingPaneMoved() and of
+    // the drag session handlers below: "pt" is the current pointer position in
+    // screen coordinates and "offset" the position of the pointer inside the
+    // frame being dragged.
+    void DoMovePane(wxAuiPaneInfo& pane, const wxPoint& pt, const wxPoint& offset);
+    void DoDropPane(wxAuiPaneInfo& pane, const wxPoint& pt, const wxPoint& offset);
+    void DoEndMovePane(wxAuiPaneInfo& pane);
+
+    // Ensure that the panes of the dock containing the given pane use
+    // sequential positions after finishing dragging a toolbar pane.
+    void SaveDockPositions(const wxAuiPaneInfo& pane);
+
+    // Try to start dragging the given pane using the system drag support,
+    // "origin" is the window in which the mouse is currently captured.
+    void StartDragSession(wxAuiPaneInfo& pane, wxWindow* origin);
+
+    // By default the origin window is the managed window itself.
+    void StartDragSession(wxAuiPaneInfo& pane)
+    {
+        StartDragSession(pane, m_frame);
+    }
+
+    // Handlers for the drag session events, used under Wayland only, see
+    // wxAuiPaneDragHandler. Here "win" is the TLW under the pointer or null.
+    void OnPaneDragMove(wxWindow* paneWindow,
+                        wxWindow* win,
+                        const wxPoint& pt,
+                        const wxPoint& offset);
+    void OnPaneDragDrop(wxWindow* paneWindow,
+                        wxWindow* win,
+                        const wxPoint& pt,
+                        const wxPoint& offset);
+    void OnPaneDragEnd(wxWindow* paneWindow);
+
     void Render(wxDC* dc);
-    void Repaint(wxDC* dc = NULL);
+    void Repaint(wxDC* dc = nullptr);
     void ProcessMgrEvent(wxAuiManagerEvent& event);
     void UpdateButtonOnScreen(wxAuiDockUIPart* buttonUiPart,
-                              const wxMouseEvent& event);
+                              int state = wxAUI_BUTTON_STATE_NORMAL);
     void GetPanePositionsAndSizes(wxAuiDockInfo& dock,
                               wxArrayInt& positions,
                               wxArrayInt& sizes);
@@ -569,6 +706,9 @@ protected:
     void OnHintFadeTimer(wxTimerEvent& evt);
     void OnFindManager(wxAuiManagerEvent& evt);
     void OnSysColourChanged(wxSysColourChangedEvent& event);
+#ifndef wxHAS_DPI_INDEPENDENT_PIXELS
+    void OnDPIChanged(wxDPIChangedEvent& event);
+#endif // !wxHAS_DPI_INDEPENDENT_PIXELS
 
 protected:
 
@@ -596,28 +736,88 @@ protected:
     wxPoint m_actionStart;      // position where the action click started
     wxPoint m_actionOffset;     // offset from upper left of the item clicked
     wxAuiDockUIPart* m_actionPart; // ptr to the part the action happened to
-    wxWindow* m_actionWindow;   // action frame or window (NULL if none)
+    wxWindow* m_actionWindow;   // action frame or window (nullptr if none)
     wxRect m_actionHintRect;    // hint rectangle for the action
     wxRect m_lastRect;
     wxAuiDockUIPart* m_hoverButton;// button uipart being hovered over
     wxRect m_lastHint;          // last hint rectangle
     wxPoint m_lastMouseMove;   // last mouse move position (see OnMotion)
     int  m_currentDragItem;
-    bool m_skipping;
     bool m_hasMaximized;
 
     double m_dockConstraintX;  // 0.0 .. 1.0; max pct of window width a dock can consume
     double m_dockConstraintY;  // 0.0 .. 1.0; max pct of window height a dock can consume
 
-    wxFrame* m_hintWnd;         // transparent hint window, if supported by platform
     wxTimer m_hintFadeTimer;    // transparent fade timer
     wxByte m_hintFadeAmt;       // transparent fade amount
     wxByte m_hintFadeMax;       // maximum value of hint fade
 
+    wxOverlay m_overlay;
+
     void* m_reserved;
 
+private:
+    // Return the index in m_uiParts corresponding to the current value of
+    // m_actionPart. If m_actionPart is null, returns wxNOT_FOUND.
+    int GetActionPartIndex() const;
+
+    // Get direction to use for minimizing the given pane docking direction.
+    //
+    // The returned value is one of 4 wxAUI_DOCK_{TOP,RIGHT,BOTTOM,LEFT} values
+    // but may be wxAUI_DOCK_NONE if paneDirection is wxAUI_DOCK_CENTER or
+    // invalid.
+    wxAuiManagerDock GetMinDockDirectionFor(int paneDirection) const;
+
+    // Get reference to the minimized dock for the given direction, which must
+    // be valid, i.e. not wxAUI_DOCK_NONE and not wxAUI_DOCK_CENTER.
+    wxAuiMinDock*& GetMinDockInDirection(wxAuiManagerDock direction);
+
+    // If the pane can be minimized and if the docking toolbar into which it
+    // would minimize is shown, add it to it.
+    void AddPaneToMinDockIfNecessary(wxAuiPaneInfo& paneInfo);
+
+    // Remove the pane from the docking toolbar in the given direction if it is
+    // shown and remove the toolbar itself if it becomes empty.
+    void
+    RemovePaneFromMinDockIfNecessary(wxAuiManagerDock direction,
+                                     wxAuiPaneInfo& paneInfo);
+
+
+    // Common part of ClosePane() and MinimizePane(): hide the pane window.
+    void DoHidePaneWindow(wxAuiPaneInfo& paneInfo);
+
+    // Reparent the pane window back to the managed window and destroy the
+    // floating frame containing it, which must be non-null.
+    void DestroyFloatingFrame(wxAuiPaneInfo& paneInfo);
+
+
+    // This flag is set to true if Update() is called while the window is
+    // minimized, in which case we postpone updating it until it is restored.
+    bool m_updateOnRestore = false;
+
+    // Number of (possibly nested) calls to DoFrameLayout() currently executing.
+    int m_frameLayoutDepth = 0;
+
+    // Toolbars used to show minimized panes. Some, or all, of them can be null.
+    //
+    // This is indexed by wxAUI_DOCK_TOP, wxAUI_DOCK_BOTTOM, wxAUI_DOCK_RIGHT
+    // and wxAUI_DOCK_LEFT with offset of -1, so don't access it directly and
+    // use GetMinDockInDirection() instead to not have to remember this -1.
+    wxAuiMinDock* m_minDocks[wxAUI_DOCK_LEFT] = { nullptr };
+
+    // Mask of directions where we are allowed to create docks for minimized
+    // panes.
+    int m_minDockAllowed = wxLEFT | wxRIGHT | wxBOTTOM;
+
+    // Style flags to use for the docks containing minimized panes.
+    unsigned int m_minDockStyle = wxAUI_MIN_DOCK_DEFAULT;
+
+    // Non-null only while dragging a pane using the system drag machinery,
+    // which is currently only done under Wayland, where we can't move the
+    // floating frame ourselves.
+    std::unique_ptr<wxTLWDragSession> m_dragSession;
+
 #ifndef SWIG
-    wxDECLARE_EVENT_TABLE();
     wxDECLARE_CLASS(wxAuiManager);
 #endif // SWIG
 };
@@ -631,14 +831,14 @@ class WXDLLIMPEXP_AUI wxAuiManagerEvent : public wxEvent
 public:
     wxAuiManagerEvent(wxEventType type=wxEVT_NULL) : wxEvent(0, type)
     {
-        manager = NULL;
-        pane = NULL;
+        manager = nullptr;
+        pane = nullptr;
         button = 0;
         veto_flag = false;
         canveto_flag = true;
-        dc = NULL;
+        dc = nullptr;
     }
-    wxEvent *Clone() const wxOVERRIDE { return new wxAuiManagerEvent(*this); }
+    wxNODISCARD wxEvent *Clone() const override { return new wxAuiManagerEvent(*this); }
 
     void SetManager(wxAuiManager* mgr) { manager = mgr; }
     void SetPane(wxAuiPaneInfo* p) { pane = p; }
@@ -665,19 +865,16 @@ public:
 
 #ifndef SWIG
 private:
-    wxDECLARE_DYNAMIC_CLASS_NO_ASSIGN(wxAuiManagerEvent);
+    wxDECLARE_DYNAMIC_CLASS_NO_ASSIGN_DEF_COPY(wxAuiManagerEvent);
 #endif
 };
 
 
-class WXDLLIMPEXP_AUI wxAuiDockInfo
+class WXDLLIMPEXP_AUI wxAuiDockInfo : public wxAuiDockCoords
 {
 public:
     wxAuiDockInfo()
     {
-        dock_direction = 0;
-        dock_layer = 0;
-        dock_row = 0;
         size = 0;
         min_size = 0;
         resizable = true;
@@ -687,17 +884,10 @@ public:
     }
 
     bool IsOk() const { return dock_direction != 0; }
-    bool IsHorizontal() const { return dock_direction == wxAUI_DOCK_TOP ||
-                             dock_direction == wxAUI_DOCK_BOTTOM; }
-    bool IsVertical() const { return dock_direction == wxAUI_DOCK_LEFT ||
-                             dock_direction == wxAUI_DOCK_RIGHT ||
-                             dock_direction == wxAUI_DOCK_CENTER; }
+
 public:
     wxAuiPaneInfoPtrArray panes; // array of panes
     wxRect rect;              // current rectangle
-    int dock_direction;       // dock direction (top, bottom, left, right, center)
-    int dock_layer;           // layer number (0 = innermost layer)
-    int dock_row;             // row number on the docking bar (0 = first row)
     int size;                 // size of the dock
     int min_size;             // minimum size of a dock (0 if there is no min)
     bool resizable;           // flag indicating whether the dock is resizable
@@ -725,6 +915,7 @@ public:
     };
 
     int type;                // ui part type (see enum above)
+    int state = wxAUI_BUTTON_STATE_NORMAL; // only used if type == typePaneButton
     int orientation;         // orientation (either wxHORIZONTAL or wxVERTICAL)
     wxAuiDockInfo* dock;        // which dock the item is associated with
     wxAuiPaneInfo* pane;        // which pane the item is associated with
@@ -741,6 +932,7 @@ public:
 
 wxDECLARE_EXPORTED_EVENT( WXDLLIMPEXP_AUI, wxEVT_AUI_PANE_BUTTON, wxAuiManagerEvent );
 wxDECLARE_EXPORTED_EVENT( WXDLLIMPEXP_AUI, wxEVT_AUI_PANE_CLOSE, wxAuiManagerEvent );
+wxDECLARE_EXPORTED_EVENT( WXDLLIMPEXP_AUI, wxEVT_AUI_PANE_MINIMIZE, wxAuiManagerEvent );
 wxDECLARE_EXPORTED_EVENT( WXDLLIMPEXP_AUI, wxEVT_AUI_PANE_MAXIMIZE, wxAuiManagerEvent );
 wxDECLARE_EXPORTED_EVENT( WXDLLIMPEXP_AUI, wxEVT_AUI_PANE_RESTORE, wxAuiManagerEvent );
 wxDECLARE_EXPORTED_EVENT( WXDLLIMPEXP_AUI, wxEVT_AUI_PANE_ACTIVATED, wxAuiManagerEvent );
@@ -756,6 +948,8 @@ typedef void (wxEvtHandler::*wxAuiManagerEventFunction)(wxAuiManagerEvent&);
    wx__DECLARE_EVT0(wxEVT_AUI_PANE_BUTTON, wxAuiManagerEventHandler(func))
 #define EVT_AUI_PANE_CLOSE(func) \
    wx__DECLARE_EVT0(wxEVT_AUI_PANE_CLOSE, wxAuiManagerEventHandler(func))
+#define EVT_AUI_PANE_MINIMIZE(func) \
+   wx__DECLARE_EVT0(wxEVT_AUI_PANE_MINIMIZE, wxAuiManagerEventHandler(func))
 #define EVT_AUI_PANE_MAXIMIZE(func) \
    wx__DECLARE_EVT0(wxEVT_AUI_PANE_MAXIMIZE, wxAuiManagerEventHandler(func))
 #define EVT_AUI_PANE_RESTORE(func) \
@@ -771,6 +965,7 @@ typedef void (wxEvtHandler::*wxAuiManagerEventFunction)(wxAuiManagerEvent&);
 
 %constant wxEventType wxEVT_AUI_PANE_BUTTON;
 %constant wxEventType wxEVT_AUI_PANE_CLOSE;
+%constant wxEventType wxEVT_AUI_PANE_MINIMIZE;
 %constant wxEventType wxEVT_AUI_PANE_MAXIMIZE;
 %constant wxEventType wxEVT_AUI_PANE_RESTORE;
 %constant wxEventType wxEVT_AUI_PANE_ACTIVATED;
@@ -780,6 +975,7 @@ typedef void (wxEvtHandler::*wxAuiManagerEventFunction)(wxAuiManagerEvent&);
 %pythoncode {
     EVT_AUI_PANE_BUTTON = wx.PyEventBinder( wxEVT_AUI_PANE_BUTTON )
     EVT_AUI_PANE_CLOSE = wx.PyEventBinder( wxEVT_AUI_PANE_CLOSE )
+    EVT_AUI_PANE_MINIMIZE = wx.PyEventBinder( wxEVT_AUI_PANE_MINIMIZE )
     EVT_AUI_PANE_MAXIMIZE = wx.PyEventBinder( wxEVT_AUI_PANE_MAXIMIZE )
     EVT_AUI_PANE_RESTORE = wx.PyEventBinder( wxEVT_AUI_PANE_RESTORE )
     EVT_AUI_PANE_ACTIVATED = wx.PyEventBinder( wxEVT_AUI_PANE_ACTIVATED )

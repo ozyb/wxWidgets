@@ -18,9 +18,6 @@
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_PREFERENCES_EDITOR
 
@@ -35,12 +32,13 @@
 #include "wx/weakref.h"
 #include "wx/windowid.h"
 #include "wx/osx/private.h"
+#include "wx/private/bmpbndl.h"
 #include "wx/osx/private/available.h"
 
 #import <AppKit/NSWindow.h>
 
 
-wxBitmap wxStockPreferencesPage::GetLargeIcon() const
+wxBitmapBundle wxStockPreferencesPage::GetIcon() const
 {
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_16
     if ( WX_IS_MACOS_AVAILABLE(11, 0) )
@@ -48,9 +46,9 @@ wxBitmap wxStockPreferencesPage::GetLargeIcon() const
         switch ( m_kind )
         {
             case Kind_General:
-                return wxBitmap([NSImage imageWithSystemSymbolName:@"gearshape" accessibilityDescription:nil]);
+                return wxOSXMakeBundleFromImage([NSImage imageWithSystemSymbolName:@"gearshape" accessibilityDescription:nil]);
             case Kind_Advanced:
-                return wxBitmap([NSImage imageWithSystemSymbolName:@"gearshape.2" accessibilityDescription:nil]);
+                return wxOSXMakeBundleFromImage([NSImage imageWithSystemSymbolName:@"gearshape.2" accessibilityDescription:nil]);
         }
     }
 #endif
@@ -58,12 +56,12 @@ wxBitmap wxStockPreferencesPage::GetLargeIcon() const
     switch ( m_kind )
     {
         case Kind_General:
-            return wxBitmap([NSImage imageNamed:NSImageNamePreferencesGeneral]);
+            return wxOSXMakeBundleFromImage([NSImage imageNamed:NSImageNamePreferencesGeneral]);
         case Kind_Advanced:
-            return wxBitmap([NSImage imageNamed:NSImageNameAdvanced]);
+            return wxOSXMakeBundleFromImage([NSImage imageNamed:NSImageNameAdvanced]);
     }
 
-    return wxBitmap(); // silence compiler warning
+    return wxBitmapBundle();
 }
 
 
@@ -71,11 +69,11 @@ class wxCocoaPrefsWindow : public wxFrame
 {
 public:
     wxCocoaPrefsWindow(const wxString& title)
-        : wxFrame(NULL, wxID_ANY, title,
+        : wxFrame(nullptr, wxID_ANY, title,
                   wxDefaultPosition, wxDefaultSize,
                   wxDEFAULT_FRAME_STYLE & ~(wxRESIZE_BORDER | wxMAXIMIZE_BOX | wxMINIMIZE_BOX)),
           m_toolbarRealized(false),
-          m_visiblePage(NULL)
+          m_visiblePage(nullptr)
     {
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_16
         if ( WX_IS_MACOS_AVAILABLE(11,0) )
@@ -93,6 +91,7 @@ public:
         m_toolbar->Bind(wxEVT_TOOL,
                         &wxCocoaPrefsWindow::OnPageChanged, this);
         Bind(wxEVT_CLOSE_WINDOW, &wxCocoaPrefsWindow::OnClose, this);
+        Bind(wxEVT_ACTIVATE, &wxCocoaPrefsWindow::OnActivate, this);
     }
 
     void AddPage(wxPreferencesPage *page)
@@ -101,7 +100,7 @@ public:
                       "can't add more preferences pages after showing the window" );
 
         const wxString title = page->GetName();
-        wxBitmap bmp(page->GetLargeIcon());
+        wxBitmapBundle bmp(page->GetIcon());
         wxASSERT_MSG( bmp.IsOk(), "OS X requires valid bitmap for preference page" );
 
         int toolId = wxIdManager::ReserveId();
@@ -113,7 +112,7 @@ public:
         tool->SetClientData(info.get());
     }
 
-    virtual bool Show(bool show) wxOVERRIDE
+    virtual bool Show(bool show) override
     {
         if ( show && !m_toolbarRealized )
         {
@@ -125,18 +124,25 @@ public:
             OnSelectPageForTool(first);
             m_toolbar->OSXSelectTool(first->GetId());
         }
+        else if ( show && m_visiblePage )
+        {
+            // The window is being shown again after having been hidden: the
+            // settings may have been changed elsewhere in the application in
+            // the meantime, so refresh the visible page (see #22165).
+            RefreshVisiblePage();
+        }
 
         return wxFrame::Show(show);
     }
 
-    virtual bool ShouldPreventAppExit() const wxOVERRIDE { return false; }
+    virtual bool ShouldPreventAppExit() const override { return false; }
 
 protected:
     // Native preferences windows resize when the selected panel changes and
     // the resizing is animated, so we need to override DoMoveWindow.
-    virtual void DoMoveWindow(int x, int y, int width, int height) wxOVERRIDE
+    virtual void DoMoveWindow(int x, int y, int width, int height) override
     {
-        NSRect r = wxToNSRect(NULL, wxRect(x, y, width, height));
+        NSRect r = wxToNSRect(nullptr, wxRect(x, y, width, height));
         NSWindow *win = (NSWindow*)GetWXWindow();
         [win setFrame:r display:YES animate:YES];
     }
@@ -145,7 +151,7 @@ protected:
 private:
     struct PageInfo : public wxObject
     {
-        PageInfo(wxPreferencesPage *p) : page(p), win(NULL) {}
+        PageInfo(wxPreferencesPage *p) : page(p), win(nullptr) {}
 
         wxSharedPtr<wxPreferencesPage> page;
         wxWindow *win;
@@ -232,6 +238,29 @@ private:
         //       method to implement this.
     }
 
+    // Re-fill the currently visible page with the (possibly updated) data
+    // and adapt its, and hence our, size to the updated contents.
+    void RefreshVisiblePage()
+    {
+        m_visiblePage->InitDialog();
+        FitPageWindow(m_visiblePage);
+        SetClientSize(m_visiblePage->GetSize());
+        m_visiblePage->Refresh();
+    }
+
+    void OnActivate(wxActivateEvent& event)
+    {
+        event.Skip();
+
+        // Refresh the page when the already shown window comes back to the
+        // foreground: the settings may have been changed from the other
+        // application windows while it was in the background (see #22165).
+        // Note that this also covers the window being re-shown, as showing
+        // it activates it.
+        if ( event.GetActive() && m_visiblePage && IsShownOnScreen() )
+            RefreshVisiblePage();
+    }
+
     void OnPageChanged(wxCommandEvent& event)
     {
         wxToolBarToolBase *tool = m_toolbar->FindById(event.GetId());
@@ -239,7 +268,7 @@ private:
         OnSelectPageForTool(tool);
     }
 
-    void OnClose(wxCloseEvent& e)
+    void OnClose(wxCloseEvent& WXUNUSED(e))
     {
         // Instead of destroying the window, just hide it, it could be
         // reused again by another invocation of the editor.
@@ -260,7 +289,7 @@ class wxCocoaPreferencesEditorImpl : public wxPreferencesEditorImpl
 {
 public:
     wxCocoaPreferencesEditorImpl(const wxString& title)
-        : m_win(NULL), m_title(title)
+        : m_win(nullptr), m_title(title)
     {
     }
 
@@ -273,12 +302,12 @@ public:
             m_win->Destroy();
     }
 
-    virtual void AddPage(wxPreferencesPage* page) wxOVERRIDE
+    virtual void AddPage(wxPreferencesPage* page) override
     {
         GetWin()->AddPage(page);
     }
 
-    virtual void Show(wxWindow* WXUNUSED(parent)) wxOVERRIDE
+    virtual void Show(wxWindow* WXUNUSED(parent)) override
     {
         // OS X preferences windows don't have parents, they are independent
         // windows, so we just ignore the 'parent' argument.
@@ -287,7 +316,7 @@ public:
         win->Raise();
     }
 
-    virtual void Dismiss() wxOVERRIDE
+    virtual void Dismiss() override
     {
         // Don't destroy the window, only hide it, because OS X preferences
         // window typically remember their state even when closed. Reopening

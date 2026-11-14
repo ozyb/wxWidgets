@@ -33,9 +33,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
@@ -78,6 +75,7 @@ wxIMPLEMENT_APP(MyApp);
 
 wxBEGIN_EVENT_TABLE(MyApp, wxApp)
     EVT_MENU(wxID_ABOUT, MyApp::OnAbout)
+    EVT_MENU(wxID_CLEAR, MyApp::OnForceCloseAll)
 wxEND_EVENT_TABLE()
 
 MyApp::MyApp()
@@ -88,8 +86,8 @@ MyApp::MyApp()
     m_mode = Mode_SDI;
 #endif
 
-    m_canvas = NULL;
-    m_menuEdit = NULL;
+    m_canvas = nullptr;
+    m_menuEdit = nullptr;
 }
 
 // constants for the command line options names
@@ -169,8 +167,7 @@ bool MyApp::OnCmdLineParsed(wxCmdLineParser& parser)
 
     // save any files given on the command line: we'll open them in OnInit()
     // later, after creating the frame
-    for ( size_t i = 0; i != parser.GetParamCount(); ++i )
-        m_filesFromCmdLine.push_back(parser.GetParam(i));
+    m_filesFromCmdLine = parser.GetParams();
 
     return wxApp::OnCmdLineParsed(parser);
 }
@@ -190,8 +187,8 @@ bool MyApp::OnInit()
     ::wxInitAllImageHandlers();
 
     // Fill in the application information fields before creating wxConfig.
-    SetVendorName("wxWidgets");
-    SetAppName("wx_docview_sample");
+    SetVendorName("wxWidgets_Samples");
+    SetAppName("docview");
     SetAppDisplayName("wxWidgets DocView Sample");
 
     //// Create a document manager
@@ -221,12 +218,12 @@ bool MyApp::OnInit()
     }
 
     // create the main frame window
-    wxFrame *frame = NULL;
+    wxFrame *frame = nullptr;
     switch ( m_mode )
     {
 #if wxUSE_MDI_ARCHITECTURE
         case Mode_MDI:
-            frame = new wxDocMDIParentFrame(docManager, NULL, wxID_ANY,
+            frame = new wxDocMDIParentFrame(docManager, nullptr, wxID_ANY,
                                             GetAppDisplayName(),
                                             wxDefaultPosition,
                                             wxSize(500, 400));
@@ -237,7 +234,7 @@ bool MyApp::OnInit()
         case Mode_AUI:
             frame = new wxDocParentFrameAny<wxAuiMDIParentFrame>
                         (
-                            docManager, NULL, wxID_ANY,
+                            docManager, nullptr, wxID_ANY,
                             GetAppDisplayName(),
                             wxDefaultPosition,
                             wxSize(500, 400)
@@ -247,7 +244,7 @@ bool MyApp::OnInit()
 
         case Mode_SDI:
         case Mode_Single:
-            frame = new wxDocParentFrame(docManager, NULL, wxID_ANY,
+            frame = new wxDocParentFrame(docManager, nullptr, wxID_ANY,
                                          GetAppDisplayName(),
                                          wxDefaultPosition,
                                          wxSize(500, 400));
@@ -275,7 +272,7 @@ bool MyApp::OnInit()
 
     if ( m_mode == Mode_Single )
     {
-        m_canvas = new MyCanvas(NULL, frame);
+        m_canvas = new MyCanvas(nullptr, frame);
         m_menuEdit = CreateDrawingEditMenu();
     }
 
@@ -318,6 +315,7 @@ void MyApp::AppendDocumentFileCommands(wxMenu *menu, bool supportsPrinting)
     menu->Append(wxID_SAVE);
     menu->Append(wxID_SAVEAS);
     menu->Append(wxID_REVERT, _("Re&vert..."));
+    menu->Append(wxID_CLEAR, "&Force close all");
 
     if ( supportsPrinting )
     {
@@ -358,7 +356,7 @@ void MyApp::CreateMenuBarForFrame(wxFrame *frame, wxMenu *file, wxMenu *edit)
 wxFrame *MyApp::CreateChildFrame(wxView *view, bool isCanvas)
 {
     // create a child frame of appropriate class for the current mode
-    wxFrame *subframe = NULL;
+    wxFrame *subframe = nullptr;
     wxDocument *doc = view->GetDocument();
     switch ( GetMode() )
 #if wxUSE_MDI_ARCHITECTURE
@@ -438,6 +436,13 @@ wxFrame *MyApp::CreateChildFrame(wxView *view, bool isCanvas)
     subframe->SetIcon(isCanvas ? wxICON(chrt) : wxICON(notepad));
 
     return subframe;
+}
+
+void MyApp::OnForceCloseAll(wxCommandEvent& WXUNUSED(event))
+{
+    // Pass "true" here to force closing just for testing this functionality,
+    // there is no real reason to force the issue here.
+    wxDocManager::GetDocumentManager()->CloseDocuments(true);
 }
 
 void MyApp::OnAbout(wxCommandEvent& WXUNUSED(event))

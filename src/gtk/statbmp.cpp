@@ -24,14 +24,14 @@ wxStaticBitmap::wxStaticBitmap(void)
 {
 }
 
-wxStaticBitmap::wxStaticBitmap( wxWindow *parent, wxWindowID id, const wxBitmap &bitmap,
+wxStaticBitmap::wxStaticBitmap( wxWindow *parent, wxWindowID id, const wxBitmapBundle &bitmap,
       const wxPoint &pos, const wxSize &size,
       long style, const wxString &name )
 {
     Create( parent, id, bitmap, pos, size, style, name );
 }
 
-bool wxStaticBitmap::Create( wxWindow *parent, wxWindowID id, const wxBitmap &bitmap,
+bool wxStaticBitmap::Create( wxWindow *parent, wxWindowID id, const wxBitmapBundle &bitmap,
                              const wxPoint &pos, const wxSize &size,
                              long style, const wxString &name )
 {
@@ -54,13 +54,21 @@ bool wxStaticBitmap::Create( wxWindow *parent, wxWindowID id, const wxBitmap &bi
     return true;
 }
 
-void wxStaticBitmap::SetBitmap( const wxBitmap &bitmap )
+void wxStaticBitmap::SetBitmap( const wxBitmapBundle &bitmap )
 {
-    m_bitmap = bitmap;
+    const wxSize sizeOld(DoGetBestSize());
+
+    m_bitmapBundle = bitmap;
+
+    const wxSize sizeNew(DoGetBestSize());
+
     WX_GTK_IMAGE(m_widget)->Set(bitmap);
 
-    InvalidateBestSize();
-    SetSize(GetBestSize());
+    if (sizeNew != sizeOld)
+    {
+        InvalidateBestSize();
+        SetSize(GetBestSize());
+    }
 }
 
 // static

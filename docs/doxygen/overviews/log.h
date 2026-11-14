@@ -31,8 +31,9 @@ of arguments or a variable argument list pointer. Here are all of them:
 @li wxLogError() is the function to use for error messages, i.e. the messages
     that must be shown to the user. The default processing is to pop up a
     message box to inform the user about it.
-@li wxLogWarning() for warnings. They are also normally shown to the user, but
-    don't interrupt the program work.
+@li wxLogWarning() for warnings, i.e. messages that are less severe than errors
+    but still should normally be brought to the user's attention. The default
+    processing is to show them in a message box, just as for the errors.
 @li wxLogMessage() is for all normal, informational messages. They also appear in
     a message box by default (but it can be changed, see below).
 @li wxLogVerbose() is for verbose output. Normally, it is suppressed, but might
@@ -48,7 +49,7 @@ of arguments or a variable argument list pointer. Here are all of them:
     message. The second form of this function takes the error code explicitly
     as the first argument.
 @li wxLogDebug() is @b the right function for debug output. It only does anything
-    at all in the debug mode (when the preprocessor symbol @c __WXDEBUG__ is
+    at all in the debug mode (when the preprocessor symbol @c \__WXDEBUG__ is
     defined) and expands to nothing in release mode (otherwise).
     Note that under Windows, you must either run the program under debugger or
     use a 3rd party program such as DebugView

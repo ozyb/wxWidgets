@@ -12,10 +12,6 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
-
 #ifndef WX_PRECOMP
 #endif // WX_PRECOMP
 
@@ -59,30 +55,7 @@ private:
 // test class
 // --------------------------------------------------------------------------
 
-class TimerEventTestCase : public CppUnit::TestCase
-{
-public:
-    TimerEventTestCase() {}
-
-private:
-    CPPUNIT_TEST_SUITE( TimerEventTestCase );
-        CPPUNIT_TEST( OneShot );
-        CPPUNIT_TEST( Multiple );
-    CPPUNIT_TEST_SUITE_END();
-
-    void OneShot();
-    void Multiple();
-
-    wxDECLARE_NO_COPY_CLASS(TimerEventTestCase);
-};
-
-// register in the unnamed registry so that these tests are run by default
-CPPUNIT_TEST_SUITE_REGISTRATION( TimerEventTestCase );
-
-// also include in its own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( TimerEventTestCase, "TimerEventTestCase" );
-
-void TimerEventTestCase::OneShot()
+TEST_CASE("TimerEvent::OneShot", "[timer]")
 {
     class ExitOnTimerHandler : public TimerCounterHandler
     {
@@ -94,7 +67,7 @@ void TimerEventTestCase::OneShot()
         }
 
     private:
-        virtual void Tick() wxOVERRIDE { m_loop.Exit(); }
+        virtual void Tick() override { m_loop.Exit(); }
 
         wxEventLoopBase& m_loop;
 
@@ -109,15 +82,11 @@ void TimerEventTestCase::OneShot()
 
     loop.Run();
 
-    CPPUNIT_ASSERT_EQUAL( 1, handler.GetNumEvents() );
+    CHECK( handler.GetNumEvents() == 1 );
 }
 
-void TimerEventTestCase::Multiple()
+TEST_CASE("TimerEvent::Multiple", "[timer]")
 {
-    // FIXME: This test crashes on wxGTK ANSI build slave for unknown reason,
-    //        disable it here to let the rest of the test suite run until this
-    //        can be fixed.
-#if !defined(__WXGTK__) || wxUSE_UNICODE
     wxEventLoop loop;
 
     TimerCounterHandler handler;
@@ -136,12 +105,11 @@ void TimerEventTestCase::Multiple()
     // we can't count on getting exactly 20 ticks but we shouldn't get more
     // than this
     const int numTicks = handler.GetNumEvents();
-    CPPUNIT_ASSERT( numTicks <= 20 );
+    CHECK( numTicks <= 20 );
 
     // and we should get a decent number of them but if the system is very
     // loaded (as happens with build bot slaves running a couple of builds in
     // parallel actually) it may be much less than 20 so just check that we get
     // more than one
-    CPPUNIT_ASSERT( numTicks > 1 );
-#endif // !(wxGTK Unicode)
+    CHECK( numTicks > 1 );
 }

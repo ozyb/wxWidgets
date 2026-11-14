@@ -2,7 +2,7 @@
 #                                                                            *
 # Make file for VMS                                                          *
 # Author : J.Jansen (joukj@hrem.nano.tudelft.nl)                             *
-# Date : 30 November 2017                                                    *
+# Date : 6 January 2021                                                      *
 #                                                                            *
 #*****************************************************************************
 .first
@@ -97,6 +97,7 @@ TEST_OBJECTS =  \
 	test_typeinfotest.obj
 
 TEST_OBJECTS1=test_ipc.obj,\
+	test_ipc_test_server.obj,\
 	test_socket.obj,\
 	test_regextest.obj,\
 	test_wxregextest.obj,\
@@ -130,7 +131,6 @@ TEST_OBJECTS1=test_ipc.obj,\
 	test_ftp.obj,\
 	test_uris.obj,\
 	test_url.obj,\
-	test_vectors.obj,\
 	test_evtconnection.obj,\
 	test_weakref.obj,\
 	test_xlocale.obj,\
@@ -280,7 +280,16 @@ test_datetimetest.obj : [.datetime]datetimetest.cpp
 	[.datetime]datetimetest.cpp
 
 test_evthandler.obj : [.events]evthandler.cpp 
+.ifdef ALPHA
+	pipe gsed\
+	-e "s/handler.Connect(wxEVT_THREAD, wxThreadEventHandler(MyHandler::OnOverloadedHandler));//"\
+	-e "s/handler.Connect(wxEVT_IDLE, wxIdleEventHandler(MyHandler::OnOverloadedHandler));//" \
+	< [.events]evthandler.cpp > [.events]evthandler.cpp_
+	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.events]evthandler.cpp_
+	delete [.events]evthandler.cpp_;*
+.else
 	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.events]evthandler.cpp
+.endif
 
 test_evtsource.obj : [.events]evtsource.cpp 
 	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.events]evtsource.cpp
@@ -366,10 +375,13 @@ test_pathlist.obj : [.misc]pathlist.cpp
 test_typeinfotest.obj : [.misc]typeinfotest.cpp 
 	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.misc]typeinfotest.cpp
 
-test_ipc.obj : [.net]ipc.cpp 
+test_ipc.obj : [.net]ipc.cpp
 	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.net]ipc.cpp
 
-test_socket.obj : [.net]socket.cpp 
+test_ipc_test_server.obj : [.net]ipc_test_server.cpp
+	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.net]ipc_test_server.cpp
+
+test_socket.obj : [.net]socket.cpp
 	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS)/warn=(disable=REFTEMPORARY)\
 	[.net]socket.cpp
 
@@ -471,9 +483,6 @@ test_uris.obj : [.uris]uris.cpp
 test_url.obj : [.uris]url.cpp 
 	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.uris]url.cpp
 
-test_vectors.obj : [.vectors]vectors.cpp 
-	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.vectors]vectors.cpp
-
 test_evtconnection.obj : [.weakref]evtconnection.cpp 
 	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.weakref]evtconnection.cpp
 
@@ -486,7 +495,7 @@ test_xlocale.obj : [.xlocale]xlocale.cpp
 test_xmltest.obj : [.xml]xmltest.cpp 
 	$(CXXC) /object=[]$@ $(TEST_CXXFLAGS) [.xml]xmltest.cpp
 
-test_gui_sample_rc.obj : [...]samples]sample.rc 
+test_gui_test_rc.obj : test.rc
 	$(WINDRES) -i$< -o$@    --define __WX$(TOOLKIT)__ $(__WXUNIV_DEFINE_p_5) $(__DEBUG_DEFINE_p_5)  $(__EXCEPTIONS_DEFINE_p_5) $(__RTTI_DEFINE_p_5) $(__THREAD_DEFINE_p_5)   --include-dir $(srcdir) $(__DLLFLAG_p_5) --include-dir [...]samples $(__RCDEFDIR_p_1) --include-dir $(top_srcdir)]include
 
 test_gui_asserthelper.obj : asserthelper.cpp 
@@ -572,6 +581,9 @@ test_gui_itemcontainertest.obj : [.controls]itemcontainertest.cpp
 
 test_gui_label.obj : [.controls]label.cpp 
 	$(CXXC) /object=[]$@ $(TEST_GUI_CXXFLAGS) [.controls]label.cpp
+
+test_gui_infobar.obj : [.controls]infobar.cpp 
+	$(CXXC) /object=[]$@ $(TEST_GUI_CXXFLAGS) [.controls]infobar.cpp
 
 test_gui_listbasetest.obj : [.controls]listbasetest.cpp 
 	$(CXXC) /object=[]$@ $(TEST_GUI_CXXFLAGS) [.controls]listbasetest.cpp

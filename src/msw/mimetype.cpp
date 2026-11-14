@@ -2,18 +2,15 @@
 // Name:        src/msw/mimetype.cpp
 // Purpose:     classes and functions to manage MIME types
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     23.09.98
 // Copyright:   (c) 1998 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
+//              (c) 2026 wxWidgets development team
 // Licence:     wxWidgets licence (part of base library)
 /////////////////////////////////////////////////////////////////////////////
 
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_MIMETYPE
 
@@ -144,7 +141,7 @@ void wxFileTypeImpl::Init(const wxString& strFileType, const wxString& ext)
     m_ext << ext;
 
     m_strFileType = strFileType;
-    if ( !strFileType ) {
+    if ( strFileType.empty() ) {
         m_strFileType = m_ext.AfterFirst('.') + wxT("_auto_file");
     }
 
@@ -216,7 +213,7 @@ size_t wxFileTypeImpl::GetAllCommands(wxArrayString *verbs,
 void wxFileTypeImpl::MSWNotifyShell()
 {
     if (!m_suppressNotify)
-        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSHNOWAIT, NULL, NULL);
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSHNOWAIT, nullptr, nullptr);
 }
 
 void wxFileTypeImpl::MSWSuppressNotifications(bool supress)
@@ -269,7 +266,7 @@ wxString wxAssocQueryString(ASSOCSTR assoc,
                     wxASSOCF_NOTRUNCATE,// Fail if buffer is too small.
                     assoc,              // The association to retrieve.
                     ext.t_str(),        // The extension to retrieve it for.
-                    verb.empty() ? NULL
+                    verb.empty() ? nullptr
                                  : static_cast<const TCHAR*>(verb.t_str()),
                     bufOut,             // The buffer for output value.
                     &dwSize             // And its size
@@ -280,12 +277,8 @@ wxString wxAssocQueryString(ASSOCSTR assoc,
     if ( hr != S_OK )
     {
         // The only really expected error here is that no association is
-        // defined, anything else is not expected. The confusing thing is that
-        // different errors are returned for this expected error under
-        // different Windows versions: XP returns ERROR_FILE_NOT_FOUND while 7
-        // returns ERROR_NO_ASSOCIATION. Just check for both to be sure.
-        if ( hr != HRESULT_FROM_WIN32(ERROR_NO_ASSOCIATION) &&
-                hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) )
+        // defined, anything else is not expected.
+        if ( hr != HRESULT_FROM_WIN32(ERROR_NO_ASSOCIATION) )
         {
             wxLogApiError("AssocQueryString", hr);
         }
@@ -296,6 +289,55 @@ wxString wxAssocQueryString(ASSOCSTR assoc,
     return wxString(bufOut);
 }
 
+static bool MSWGetStockApplicationIconLocation(wxIconLocation *iconLoc)
+{
+#ifdef SHGSI_ICON
+    WinStruct<SHSTOCKICONINFO> sii;
+
+    if ( ::SHGetStockIconInfo(SIID_APPLICATION, SHGSI_ICONLOCATION, &sii) != S_OK ||
+            !sii.szPath[0] )
+        return false;
+
+    if ( iconLoc )
+    {
+        iconLoc->SetFileName(sii.szPath);
+        iconLoc->SetIndex(sii.iIcon);
+    }
+
+    return true;
+#else
+    wxUnusedVar(iconLoc);
+
+    return false;
+#endif // SHGSI_ICON
+}
+
+static bool MSWGetIconLocationForExtension(const wxString& ext,
+                                           wxIconLocation *iconLoc)
+{
+    SHFILEINFO fi = {};
+
+    if ( !::SHGetFileInfo(ext.t_str(), FILE_ATTRIBUTE_NORMAL,
+                          &fi, sizeof(SHFILEINFO),
+                          SHGFI_USEFILEATTRIBUTES | SHGFI_ICONLOCATION) )
+        return false;
+
+    if ( !fi.szDisplayName[0] )
+        return MSWGetStockApplicationIconLocation(iconLoc);
+
+    if ( iconLoc )
+    {
+        iconLoc->SetFileName(fi.szDisplayName);
+        iconLoc->SetIndex(fi.iIcon);
+    }
+
+    return true;
+}
+
+static bool MSWIsIconPlaceholder(const wxString& iconFile)
+{
+    return iconFile == "%1" || iconFile == "%L";
+}
 
 wxString wxFileTypeImpl::GetCommand(const wxString& verb) const
 {
@@ -421,10 +463,13 @@ bool wxFileTypeImpl::GetIcon(wxIconLocation *iconLoc) const
         if ( strFullPath.StartsWith('"') && strFullPath.EndsWith('"') )
             strFullPath = strFullPath.substr(1, strFullPath.length() - 2);
 
+        const wxString iconFile = wxExpandEnvVars(strFullPath);
+        if ( m_ext.CmpNoCase(".exe") == 0 && MSWIsIconPlaceholder(iconFile) )
+            return MSWGetIconLocationForExtension(m_ext, iconLoc);
+
         if ( iconLoc )
         {
-            iconLoc->SetFileName(wxExpandEnvVars(strFullPath));
-
+            iconLoc->SetFileName(iconFile);
             iconLoc->SetIndex(wxAtoi(strIndex));
         }
 
@@ -495,7 +540,7 @@ wxMimeTypesManagerImpl::GetFileTypeFromExtension(const wxString& ext)
     if ( !knownExtension )
     {
         // unknown extension
-        return NULL;
+        return nullptr;
     }
 
     return CreateFileType(wxEmptyString, ext);
@@ -520,7 +565,7 @@ wxMimeTypesManagerImpl::GetFileTypeFromMimeType(const wxString& mimeType)
     }
 
     // unknown MIME type
-    return NULL;
+    return nullptr;
 }
 
 size_t wxMimeTypesManagerImpl::EnumAllFileTypes(wxArrayString& mimetypes)
@@ -547,7 +592,7 @@ size_t wxMimeTypesManagerImpl::EnumAllFileTypes(wxArrayString& mimetypes)
 
 wxFileType *wxMimeTypesManagerImpl::Associate(const wxFileTypeInfo& ftInfo)
 {
-    wxCHECK_MSG( !ftInfo.GetExtensions().empty(), NULL,
+    wxCHECK_MSG( !ftInfo.GetExtensions().empty(), nullptr,
                  wxT("Associate() needs extension") );
 
     bool ok;
@@ -557,7 +602,7 @@ wxFileType *wxMimeTypesManagerImpl::Associate(const wxFileTypeInfo& ftInfo)
 
     wxString ext = ftInfo.GetExtensions()[iExtCount];
 
-    wxCHECK_MSG( !ext.empty(), NULL,
+    wxCHECK_MSG( !ext.empty(), nullptr,
                  wxT("Associate() needs non empty extension") );
 
     if ( ext[0u] != wxT('.') )

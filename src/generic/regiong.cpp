@@ -2,7 +2,6 @@
 // Name:        src/generic/regiong.cpp
 // Purpose:     generic wxRegion class
 // Author:      David Elliott
-// Modified by:
 // Created:     2004/04/12
 // Copyright:   (c) 2004 David Elliott
 // Licence:     wxWindows licence
@@ -12,9 +11,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/region.h"
 
@@ -52,7 +48,7 @@ public:
 
     BoxPtr GetBox(int i)
     {
-        return i < numRects ? rects + i : NULL;
+        return i < numRects ? rects + i : nullptr;
     }
 
     // X.org methods
@@ -270,17 +266,17 @@ wxRegionGeneric::wxRegionGeneric(const wxPoint& topLeft, const wxPoint& bottomRi
     m_refData = new wxRegionRefData(topLeft, bottomRight);
 }
 
-wxRegionGeneric::wxRegionGeneric(const wxBitmap& bmp)
+wxRegionGeneric::wxRegionGeneric(const wxBitmap& /*bmp*/)
 {
     wxFAIL_MSG("NOT IMPLEMENTED: wxRegionGeneric::wxRegionGeneric(const wxBitmap& bmp)");
 }
 
-wxRegionGeneric::wxRegionGeneric(size_t n, const wxPoint *points, wxPolygonFillMode fillStyle)
+wxRegionGeneric::wxRegionGeneric(size_t /*n*/, const wxPoint* /*points*/, wxPolygonFillMode /*fillStyle*/)
 {
     wxFAIL_MSG("NOT IMPLEMENTED: wxRegionGeneric::wxRegionGeneric(size_t n, const wxPoint *points, wxPolygonFillMode fillStyle)");
 }
 
-wxRegionGeneric::wxRegionGeneric(const wxBitmap& bmp, const wxColour& transp, int tolerance)
+wxRegionGeneric::wxRegionGeneric(const wxBitmap& /*bmp*/, const wxColour& /*transp*/, int /*tolerance*/)
 {
     wxFAIL_MSG("NOT IMPLEMENTED: wxRegionGeneric::wxRegionGeneric(const wxBitmap& bmp, const wxColour& transp, int tolerance)");
 }
@@ -379,7 +375,9 @@ bool wxRegionGeneric::DoOffset(wxCoord x, wxCoord y)
 
 bool wxRegionGeneric::IsEmpty() const
 {
-    wxASSERT(m_refData);
+    if ( m_refData == nullptr )
+        return false;
+
     return REGION::XEmptyRegion(M_REGIONDATA);
 }
 
@@ -610,14 +608,14 @@ Region REGION::XCreateRegion(void)
     Region temp = new REGION;
 
     if (!temp)
-        return (Region) NULL;
+        return nullptr;
 
     temp->rects = ( BOX * )malloc( (unsigned) sizeof( BOX ));
 
     if (!temp->rects)
     {
         delete temp;
-        return (Region) NULL;
+        return nullptr;
     }
     temp->numRects = 0;
     temp->extents.x1 = 0;
@@ -832,7 +830,7 @@ XIntersectRegion(
         newReg->numRects = 0;
     else
         miRegionOp (newReg, reg1, reg2,
-                    miIntersectO, NULL, NULL);
+                    miIntersectO, nullptr, nullptr);
 
     /*
      * Can't alter newReg's extents before we call miRegionOp because
@@ -1202,7 +1200,7 @@ miRegionOp(
             top = wxMax(r1->y1,ybot);
             bot = wxMin(r1->y2,r2->y1);
 
-            if ((top != bot) && (nonOverlap1Func != NULL))
+            if ((top != bot) && (nonOverlap1Func != nullptr))
             {
                 (* nonOverlap1Func) (newReg, r1, r1BandEnd, top, bot);
             }
@@ -1214,7 +1212,7 @@ miRegionOp(
             top = wxMax(r2->y1,ybot);
             bot = wxMin(r2->y2,r1->y1);
 
-            if ((top != bot) && (nonOverlap2Func != NULL))
+            if ((top != bot) && (nonOverlap2Func != nullptr))
             {
                 (* nonOverlap2Func) (newReg, r2, r2BandEnd, top, bot);
             }
@@ -1274,7 +1272,7 @@ miRegionOp(
     curBand = newReg->numRects;
     if (r1 != r1End)
     {
-        if (nonOverlap1Func != NULL)
+        if (nonOverlap1Func != nullptr)
         {
             do
             {
@@ -1289,7 +1287,7 @@ miRegionOp(
             } while (r1 != r1End);
         }
     }
-    else if ((r2 != r2End) && (nonOverlap2Func != NULL))
+    else if ((r2 != r2End) && (nonOverlap2Func != nullptr))
     {
         do
         {
@@ -1772,7 +1770,7 @@ bool REGION::XSubtractRegion(Region regM, Region regS, Region regD)
     }
 
     miRegionOp (regD, regM, regS, miSubtractO,
-                    miSubtractNonO1, NULL);
+                    miSubtractNonO1, nullptr);
 
     /*
      * Can't alter newReg's extents before we call miRegionOp because

@@ -70,6 +70,9 @@
     <ClCompile Include="streams\fileback.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="config\config.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="config\fileconf.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -119,6 +122,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="net\ipc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\ipc_test_server.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="streams\largefile.cpp">
@@ -235,13 +241,13 @@
     <ClCompile Include="strings\vararg.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="vectors\vectors.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="strings\vsnprintf.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="strings\hexconv.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="strings\utf8literals.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="weakref\weakref.cpp">
@@ -263,6 +269,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="streams\lzmastream.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\webrequest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\webrequest_local.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -46,25 +46,30 @@ public:
     mouse clicks, optionally with a tooltip above it to help provide information.
 
 
-    @section taskbaricon_xnote X Window System Note
+    @section taskbaricon_linux_note Linux Note
 
-    Under X Window System, the window manager must support either the
-    "System Tray Protocol" (see http://freedesktop.org/wiki/Specifications/systemtray-spec)
-    by freedesktop.org (WMs used by modern desktop environments such as GNOME >= 2,
-    KDE >= 3 and XFCE >= 4 all do) or the older methods used in GNOME 1.2 and KDE 1 and 2.
+    Taskbar is not supported by all window managers and desktop environments
+    under Linux and IsAvailable() function should be used to check whether it
+    is supported. In addition, even when the taskbar is supported, some
+    environments don't support showing the application-specified tooltip for
+    the icon in it.
 
-    If it doesn't, the icon will appear as a toplevel window on user's desktop.
-    Because not all window managers have system tray, there's no guarantee that
-    wxTaskBarIcon will work correctly under X Window System and so the applications
-    should use it only as an optional component of their user interface.
-    The user should be required to explicitly enable the taskbar icon on Unix,
-    it shouldn't be on by default.
+    Due to this, there's no guarantee that wxTaskBarIcon will work correctly
+    under Linux and so the applications should use it only as an optional
+    component of their user interface. The user should be required to
+    explicitly enable the taskbar icon on Unix, it shouldn't be on by default.
 
     @beginEventEmissionTable{wxTaskBarIconEvent}
     Note that not all ports are required to send these events and so it's better
     to override wxTaskBarIcon::CreatePopupMenu() or wxTaskBarIcon::GetPopupMenu()
     if all that the application does is that it shows a popup menu in reaction to
     mouse click.
+
+    In particular, under Linux when using AppIndicator library only
+    @c wxEVT_TASKBAR_LEFT_DCLICK may be sent as the other mouse events are
+    handled by the system itself to show the menu and even this event is only
+    sent if the system AppIndicator library version is 0.6.0 or later.
+
     @event{EVT_TASKBAR_MOVE(func)}
         Process a @c wxEVT_TASKBAR_MOVE event.
     @event{EVT_TASKBAR_LEFT_DOWN(func)}
@@ -139,7 +144,7 @@ public:
     /**
         Sets the icon, and optional tooltip text.
     */
-    virtual bool SetIcon(const wxIcon& icon,
+    virtual bool SetIcon(const wxBitmapBundle& icon,
                          const wxString& tooltip = wxEmptyString);
 
     /**
@@ -191,10 +196,17 @@ protected:
         clicked.
 
         If GetPopupMenu() returns @NULL (this happens by default),
-        CreatePopupMenu() is called next and its menu is used (if non-@NULL).
+        CreatePopupMenu() is called next and its menu is used (if non-null).
         Otherwise the menu returned by GetPopupMenu() is shown and, contrary to
         CreatePopupMenu(), not destroyed when the user dismisses it, allowing
         to reuse the same menu pointer multiple times.
+
+        @note When using AppIndicator-based implementation in wxGTK, this
+            method (or CreatePopupMenu() if it's not overridden) is also called
+            whenever the icon is shown or updated, not just when the user
+            requests the popup menu. Overriding GetPopupMenu() rather than
+            CreatePopupMenu() is especially recommended when using this
+            backend, to avoid recreating the menu on every icon update.
 
         @since 3.1.5
     */

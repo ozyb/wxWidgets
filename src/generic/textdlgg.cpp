@@ -2,7 +2,6 @@
 // Name:        src/generic/textdlgg.cpp
 // Purpose:     wxTextEntryDialog
 // Author:      Julian Smart
-// Modified by:
 // Created:     04/01/98
 // Copyright:   (c) Julian Smart
 // Licence:     wxWindows licence
@@ -19,16 +18,12 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_TEXTDLG
 
 #include "wx/generic/textdlgg.h"
 
 #ifndef WX_PRECOMP
-    #include "wx/utils.h"
     #include "wx/dialog.h"
     #include "wx/button.h"
     #include "wx/stattext.h"
@@ -69,38 +64,39 @@ bool wxTextEntryDialog::Create(wxWindow *parent,
                                      const wxString& caption,
                                      const wxString& value,
                                      long style,
-                                     const wxPoint& pos)
+                                     const wxPoint& pos,
+                                     const wxSize sz)
 {
     // Do not pass style to GetParentForModalDialog() as wxDIALOG_NO_PARENT
     // has the same numeric value as wxTE_MULTILINE and so attempting to create
     // a dialog for editing multiline text would also prevent it from having a
     // parent which is undesirable. As it is, we can't create a text entry
-    // dialog without a parent which is not ideal neither but is a much less
+    // dialog without a parent which is not ideal either but is a much less
     // important problem.
     if ( !wxDialog::Create(GetParentForModalDialog(parent, 0),
                            wxID_ANY, caption,
-                           pos, wxDefaultSize,
+                           pos, sz,
                            wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER) )
     {
         return false;
     }
 
+    SetMinSize( sz );
+
     m_dialogStyle = style;
     m_value = value;
 
-    wxBeginBusyCursor();
-
     wxBoxSizer *topsizer = new wxBoxSizer( wxVERTICAL );
-
-    wxSizerFlags flagsBorder2;
-    flagsBorder2.DoubleBorder();
-
 #if wxUSE_STATTEXT
     // 1) text message
-    topsizer->Add(CreateTextSizer(message), flagsBorder2);
+    topsizer->Add(CreateTextSizer(message), wxSizerFlags().DoubleBorder());
 #endif
 
-    // 2) text ctrl
+    // 2) text ctrl: create it with wxTE_RICH2 style to allow putting more than
+    // 64KiB of text into it
+    if ( style & wxTE_MULTILINE )
+        style |= wxTE_RICH2;
+
     m_textctrl = new wxTextCtrl(this, wxID_TEXT, value,
                                 wxDefaultPosition, wxSize(300, wxDefaultCoord),
                                 style & ~wxTextEntryDialogStyle);
@@ -114,19 +110,25 @@ bool wxTextEntryDialog::Create(wxWindow *parent,
     wxSizer *buttonSizer = CreateSeparatedButtonSizer(style & (wxOK | wxCANCEL));
     if ( buttonSizer )
     {
-        topsizer->Add(buttonSizer, wxSizerFlags(flagsBorder2).Expand());
+        topsizer->Add(buttonSizer, wxSizerFlags().Expand().DoubleBorder());
     }
 
-    SetAutoLayout( true );
     SetSizer( topsizer );
 
-    topsizer->SetSizeHints( this );
-    topsizer->Fit( this );
+    // Size returned by Fit() is the minimum size needed to fit the contents.
+    const wxSize minSize = topsizer->Fit( this );
+
+    // Prevent the dialog from being resized smaller than the minimum size.
+    SetMinSize(minSize);
+
+    // For single-line entry, also constrain max height to prevent vertical expansion
+    if ( !(style & wxTE_MULTILINE) )
+    {
+        SetMaxSize(wxSize(-1, minSize.GetHeight()));
+    }
 
     if ( style & wxCENTRE )
         Centre( wxBOTH );
-
-    wxEndBusyCursor();
 
     return true;
 }
@@ -178,6 +180,14 @@ void wxTextEntryDialog::SetValue(const wxString& val)
     }
 }
 
+void wxTextEntryDialog::SetHint(const wxString& hint)
+{
+    if ( m_textctrl )
+    {
+        m_textctrl->SetHint(hint);
+    }
+}
+
 void wxTextEntryDialog::ForceUpper()
 {
     if ( m_textctrl )
@@ -187,13 +197,6 @@ void wxTextEntryDialog::ForceUpper()
 }
 
 #if wxUSE_VALIDATORS
-
-#if WXWIN_COMPATIBILITY_2_8
-void wxTextEntryDialog::SetTextValidator( long style )
-{
-    SetTextValidator((wxTextValidatorStyle)style);
-}
-#endif
 
 void wxTextEntryDialog::SetTextValidator( wxTextValidatorStyle style )
 {

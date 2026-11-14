@@ -41,6 +41,8 @@ enum wxNumValidatorStyle
         With this style a value of zero in the associated variable is
         translated to an empty string and an empty value of the control is
         translated to a value of zero.
+
+        See also wxNUM_VAL_ALLOW_BLANK_AS_ZERO, which only does the latter.
      */
     wxNUM_VAL_ZERO_AS_BLANK = 2,
 
@@ -58,7 +60,48 @@ enum wxNumValidatorStyle
         of e.g. 1.567 will still be shown with all the three significant
         digits, of course).
      */
-    wxNUM_VAL_NO_TRAILING_ZEROES
+    wxNUM_VAL_NO_TRAILING_ZEROES = 4,
+
+    /**
+        Show non-negative values with a + prefix.
+
+        This style cannot be used with wxNUM_VAL_SIGN_SPACE.
+
+        @since 3.3.1
+     */
+    wxNUM_VAL_SIGN_PLUS = 0x8,
+
+    /**
+        Show non-negative values with a space prefix.
+
+        This style cannot be used with wxNUM_VAL_SIGN_PLUS.
+
+        @since 3.3.1
+     */
+    wxNUM_VAL_SIGN_SPACE = 0x10,
+
+    /**
+        Allow the control to be left empty and treat it as zero.
+
+        By default, an empty control is not considered to contain a valid
+        value and, if the user clears it, it is replaced with a valid value,
+        which is zero if it is in the validator range, when it loses focus.
+        With this style, an empty control is left empty and is translated to
+        a value of zero in the associated variable, if there is one.
+
+        Unlike with wxNUM_VAL_ZERO_AS_BLANK, a value of zero is still shown
+        as "0" and not as an empty string, so the user can distinguish
+        between a value of zero and no value at all.
+
+        Note that if zero is not in the range of the validator, an empty
+        control is still left empty, but it is considered to be invalid and
+        TransferFromWindow() returns @false for it. Derived classes can
+        override TransferFromWindow() to handle an empty control specially,
+        e.g. to use some non-zero default value for it.
+
+        @since 3.3.5
+     */
+    wxNUM_VAL_ALLOW_BLANK_AS_ZERO = 0x20,
 
 };
 
@@ -151,12 +194,65 @@ public:
         This method is called to check the correctness of user input and fill
         the associated variable with the controls numeric value. It returns
         false if it is not a number in the configured range or if the control
-        contents is empty for a validator without wxNUM_VAL_ZERO_AS_BLANK
-        style.
+        contents is empty for a validator without either
+        wxNUM_VAL_ZERO_AS_BLANK or wxNUM_VAL_ALLOW_BLANK_AS_ZERO style.
 
         It does nothing if there is no associated variable.
      */
     virtual bool TransferFromWindow();
+
+protected:
+    /**
+        Pointer to the value associated with this validator.
+
+        This is the same pointer which is passed to the validator class ctor,
+        so please note that it can be null.
+
+        This field can be useful for the derived classes overriding the base
+        class TransferToWindow() and/or TransferFromWindow() methods, for
+        example here is a class which treats the absent value as @c 1
+        (similarly to how using wxNUM_VAL_ALLOW_BLANK_AS_ZERO would treat it
+        as @c 0, and note that this style is still needed here to prevent the
+        validator from replacing an empty value with @c 0 on focus loss):
+
+        @code
+        class MyMultiplierValidator : public wxFloatingPointValidator<double>
+        {
+        public:
+            explicit MyMultiplierValidator(double& value)
+                : wxFloatingPointValidator(&value, wxNUM_VAL_ALLOW_BLANK_AS_ZERO)
+            {
+                SetMin(0); // Multiplier is always positive.
+            }
+
+            bool TransferFromWindow() override
+            {
+                if ( GetTextEntry()->IsEmpty() )
+                {
+                    *m_value = 1.0;
+                    return true;
+                }
+
+                if ( !wxFloatingPointValidator<double>::TransferFromWindow() )
+                    return false;
+
+                // Multiplier must be strictly positive.
+                if ( *m_value == 0 )
+                    return false;
+
+                return true;
+            }
+
+            wxObject* Clone() const override
+            {
+                return new MyMultiplierValidator(*this);
+            }
+        };
+        @endcode
+
+        @since 3.1.5
+     */
+    ValueType* const m_value;
 };
 
 /**
@@ -236,7 +332,26 @@ public:
             A combination of wxNumValidatorStyle enum values with the exception
             of wxNUM_VAL_NO_TRAILING_ZEROES which can't be used here.
     */
-    wxIntegerValidator(ValueType *value = NULL, int style = wxNUM_VAL_DEFAULT);
+    wxIntegerValidator(ValueType *value = nullptr, int style = wxNUM_VAL_DEFAULT);
+
+    /**
+        Validator constructor with specified range.
+
+        @param value
+            A pointer to the variable associated with the validator. This variable
+            should have a lifetime equal to or longer than the validator lifetime
+            (which is usually determined by the lifetime of the window).
+        @param min
+            The minimum value accepted by the validator.
+        @param max
+            The maximum value accepted by the validator.
+        @param style
+            A combination of wxNumValidatorStyle enum values with the exception
+            of wxNUM_VAL_NO_TRAILING_ZEROES which can't be used here.
+
+        @since 3.1.6
+    */
+    wxIntegerValidator(ValueType *value, ValueType min, ValueType max, int style = wxNUM_VAL_DEFAULT);
 };
 
 /**
@@ -335,7 +450,7 @@ public:
         @param style
             A combination of wxNumValidatorStyle enum values.
     */
-    wxFloatingPointValidator(ValueType *value = NULL,
+    wxFloatingPointValidator(ValueType *value = nullptr,
                              int style = wxNUM_VAL_DEFAULT);
 
     /**
@@ -353,7 +468,7 @@ public:
             and accept.
     */
     wxFloatingPointValidator(int precision,
-                             ValueType *value = NULL,
+                             ValueType *value = nullptr,
                              int style = wxNUM_VAL_DEFAULT);
 
 
@@ -389,7 +504,7 @@ public:
 
     @since 2.9.2
  */
-//@{
+///@{
 template <typename T>
 inline wxFloatingPointValidator<T>
 wxMakeFloatingPointValidator(T *value, int style = wxNUM_VAL_DEFAULT);
@@ -398,4 +513,4 @@ template <typename T>
 inline wxFloatingPointValidator<T>
 wxMakeFloatingPointValidator(int precision,
                              T *value, int style = wxNUM_VAL_DEFAULT);
-//@}
+///@}

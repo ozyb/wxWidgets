@@ -2,7 +2,6 @@
 // Name:        mediaplayer.cpp
 // Purpose:     wxMediaCtrl sample
 // Author:      Ryan Norton
-// Modified by:
 // Created:     11/10/04
 // Copyright:   (c) Ryan Norton
 // Licence:     wxWindows licence
@@ -15,7 +14,7 @@
 // of the wxMediaCtrl class in wxWidgets.
 //
 // To use this sample, simply select Open File from the file menu,
-// select the file you want to play - and MediaPlayer will play the file in a
+// select the file you want to play - and MediaPlayer will play the file in
 // the current notebook page, showing video if necessary.
 //
 // You can select one of the menu options, or move the slider around
@@ -39,9 +38,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
@@ -141,18 +137,18 @@ class wxMediaPlayerApp : public wxApp
 {
 public:
 #ifdef __WXMAC__
-    virtual void MacOpenFiles(const wxArrayString & fileNames ) wxOVERRIDE;
+    virtual void MacOpenFiles(const wxArrayString & fileNames ) override;
 #endif
 
 #if wxUSE_CMDLINE_PARSER
-    virtual void OnInitCmdLine(wxCmdLineParser& parser) wxOVERRIDE;
-    virtual bool OnCmdLineParsed(wxCmdLineParser& parser) wxOVERRIDE;
+    virtual void OnInitCmdLine(wxCmdLineParser& parser) override;
+    virtual bool OnCmdLineParsed(wxCmdLineParser& parser) override;
 
     // Files specified on the command line, if any.
-    wxVector<wxString> m_params;
+    std::vector<wxString> m_params;
 #endif // wxUSE_CMDLINE_PARSER
 
-    virtual bool OnInit() wxOVERRIDE;
+    virtual bool OnInit() override;
 
 protected:
     class wxMediaPlayerFrame* m_frame;
@@ -285,7 +281,7 @@ public:
     wxMediaPlayerTimer(wxMediaPlayerFrame* frame) {m_frame = frame;}
 
     // Called each time the timer's timeout expires
-    void Notify() wxOVERRIDE;
+    void Notify() override;
 
     wxMediaPlayerFrame* m_frame;       // The wxMediaPlayerFrame
 };
@@ -351,11 +347,11 @@ public:
     wxPlayListDropTarget(wxMediaPlayerListCtrl& list) : m_list(list) {}
     ~wxPlayListDropTarget(){}
         virtual bool OnDropFiles(wxCoord WXUNUSED(x), wxCoord WXUNUSED(y),
-                         const wxArrayString& files) wxOVERRIDE
+                         const wxArrayString& files) override
     {
-        for (size_t i = 0; i < files.GetCount(); ++i)
+        for ( const auto& file : files )
         {
-            m_list.AddToPlayList(files[i]);
+            m_list.AddToPlayList(file);
         }
         return true;
     }
@@ -434,8 +430,7 @@ bool wxMediaPlayerApp::OnCmdLineParsed(wxCmdLineParser& parser)
     if ( !wxApp::OnCmdLineParsed(parser) )
         return false;
 
-    for (size_t paramNr=0; paramNr < parser.GetParamCount(); ++paramNr)
-        m_params.push_back(parser.GetParam(paramNr));
+    m_params = parser.GetParams();
 
     return true;
 }
@@ -503,7 +498,7 @@ void wxMediaPlayerApp::MacOpenFiles(const wxArrayString & fileNames )
 // ----------------------------------------------------------------------------
 
 wxMediaPlayerFrame::wxMediaPlayerFrame(const wxString& title)
-       : wxFrame(NULL, wxID_ANY, title, wxDefaultPosition, wxSize(600,600))
+       : wxFrame(nullptr, wxID_ANY, title, wxDefaultPosition, wxSize(1366,768))
 {
     SetIcon(wxICON(sample));
 
@@ -909,7 +904,7 @@ void wxMediaPlayerFrame::DoOpenFile(const wxString& path, bool bNewPage)
 // ----------------------------------------------------------------------------
 // wxMediaPlayerFrame::DoPlayFile
 //
-// Pauses the file if its the currently playing file,
+// Pauses the file if it's the currently playing file,
 // otherwise it plays the file
 // ----------------------------------------------------------------------------
 void wxMediaPlayerFrame::DoPlayFile(const wxString& path)
@@ -1365,7 +1360,7 @@ void wxMediaPlayerFrame::OnVolumeUp(wxCommandEvent& WXUNUSED(event))
 // wxMediaPlayerTimer::Notify
 //
 // 1) Updates media information on the status bar
-// 2) Sets the max/min length of the slider and guage
+// 2) Sets the max/min length of the slider and gauge
 //
 // Note that the reason we continually do this and don't cache it is because
 // some backends such as GStreamer are dynamic change values all the time
@@ -1495,14 +1490,15 @@ wxMediaPlayerNotebookPage::wxMediaPlayerNotebookPage(wxMediaPlayerFrame* parentF
 
     //  Make sure creation was successful
     bool bOK = m_mediactrl->Create(this, wxID_MEDIACTRL, wxEmptyString,
-                                    wxDefaultPosition, wxDefaultSize, 0,
+                                   wxDefaultPosition, wxDefaultSize,
+                                   wxMC_NO_AUTORESIZE,
 // you could specify a macro backend here like
 //  wxMEDIABACKEND_WMP10);
 //        "wxPDFMediaBackend");
                                    szBackend);
 // you could change the cursor here like
 //    m_mediactrl->SetCursor(wxCURSOR_BLANK);
-// note that this may not effect it if SetPlayerControls
+// note that this may not affect it if SetPlayerControls
 // is set to something else than wxMEDIACTRLPLAYERCONTROLS_NONE
     wxASSERT_MSG(bOK, "Could not create media control!");
     wxUnusedVar(bOK);
@@ -1526,7 +1522,7 @@ wxMediaPlayerNotebookPage::wxMediaPlayerNotebookPage(wxMediaPlayerFrame* parentF
     //
     //  Where Column one is a character representing the state the file is in:
     //  * - not the current file
-    //  E - Error has occured
+    //  E - Error has occurred
     //  > - Currently Playing
     //  [] - Stopped
     //  || - Paused
@@ -1544,7 +1540,7 @@ wxMediaPlayerNotebookPage::wxMediaPlayerNotebookPage(wxMediaPlayerFrame* parentF
     m_playlist->SetDropTarget(new wxPlayListDropTarget(*m_playlist));
 #endif
 
-    sizer->Add(m_playlist, 0, wxALIGN_CENTER_HORIZONTAL|wxALL|wxEXPAND, 5);
+    sizer->Add(m_playlist, wxSizerFlags().CentreHorizontal().Expand().Border());
 
     //
     //  Create the control buttons
@@ -1574,14 +1570,14 @@ wxMediaPlayerNotebookPage::wxMediaPlayerNotebookPage(wxMediaPlayerFrame* parentF
     m_vuButton->Create(this, wxID_BUTTONVU, "))");
     m_vuButton->SetToolTip("Volume up");
 
-    vertsizer->Add(m_prevButton, 0, wxALIGN_CENTER_VERTICAL|wxALL, 5);
-    vertsizer->Add(m_playButton, 0, wxALIGN_CENTER_VERTICAL|wxALL, 5);
-    vertsizer->Add(m_stopButton, 0, wxALIGN_CENTER_VERTICAL|wxALL, 5);
-    vertsizer->Add(m_nextButton, 0, wxALIGN_CENTER_VERTICAL|wxALL, 5);
-    vertsizer->Add(m_vdButton, 0, wxALIGN_CENTER_VERTICAL|wxALL, 5);
-    vertsizer->Add(m_vuButton, 0, wxALIGN_CENTER_VERTICAL|wxALL, 5);
-    horsizer1->Add(vertsizer, 0, wxALIGN_CENTER_VERTICAL|wxALL, 5);
-    sizer->Add(horsizer1, 0, wxALIGN_CENTER_VERTICAL|wxALIGN_CENTER_HORIZONTAL|wxALL, 5);
+    vertsizer->Add(m_prevButton, wxSizerFlags().CentreVertical().Border());
+    vertsizer->Add(m_playButton, wxSizerFlags().CentreVertical().Border());
+    vertsizer->Add(m_stopButton, wxSizerFlags().CentreVertical().Border());
+    vertsizer->Add(m_nextButton, wxSizerFlags().CentreVertical().Border());
+    vertsizer->Add(m_vdButton, wxSizerFlags().CentreVertical().Border());
+    vertsizer->Add(m_vuButton, wxSizerFlags().CentreVertical().Border());
+    horsizer1->Add(vertsizer, wxSizerFlags().CentreVertical().Border());
+    sizer->Add(horsizer1, wxSizerFlags().Centre().Border());
 
 
     //
@@ -1592,7 +1588,7 @@ wxMediaPlayerNotebookPage::wxMediaPlayerNotebookPage(wxMediaPlayerFrame* parentF
                             1, // end, dummy but must be greater than start
                             wxDefaultPosition, wxDefaultSize,
                             wxSL_HORIZONTAL );
-    sizer->Add(m_slider, 0, wxALIGN_CENTER_HORIZONTAL|wxALL|wxEXPAND , 5);
+    sizer->Add(m_slider, wxSizerFlags().CentreHorizontal().Expand().Border());
 
     //
     //  Create the gauge
@@ -1600,7 +1596,7 @@ wxMediaPlayerNotebookPage::wxMediaPlayerNotebookPage(wxMediaPlayerFrame* parentF
     m_gauge = new wxGauge();
     m_gauge->Create(this, wxID_GAUGE, 0, wxDefaultPosition, wxDefaultSize,
                         wxGA_HORIZONTAL | wxGA_SMOOTH);
-    sizer->Add(m_gauge, 0, wxALIGN_CENTER_HORIZONTAL|wxALL|wxEXPAND , 5);
+    sizer->Add(m_gauge, wxSizerFlags().CentreHorizontal().Expand().Border());
 
 
     //
@@ -1611,17 +1607,17 @@ wxMediaPlayerNotebookPage::wxMediaPlayerNotebookPage(wxMediaPlayerFrame* parentF
     m_volSlider = new wxSlider(this, wxID_VOLSLIDER, 100, // init
                             0, // start
                             100, // end
-                            wxDefaultPosition, wxSize(250,20),
+                            wxDefaultPosition, wxDefaultSize,
                             wxSL_HORIZONTAL );
-    horsizer3->Add(m_volSlider, 1, wxALL, 5);
+    horsizer3->Add(m_volSlider, wxSizerFlags(1).Border());
 
     m_pbSlider = new wxSlider(this, wxID_PBSLIDER, 4, // init
                             1, // start
                             16, // end
-                            wxDefaultPosition, wxSize(250,20),
+                            wxDefaultPosition, wxDefaultSize,
                             wxSL_HORIZONTAL );
-    horsizer3->Add(m_pbSlider, 1, wxALL, 5);
-    sizer->Add(horsizer3, 1, wxCENTRE | wxALL, 5);
+    horsizer3->Add(m_pbSlider, wxSizerFlags(1).Border());
+    sizer->Add(horsizer3, wxSizerFlags(1).Centre().Border());
 
     // Now that we have all our rows make some of them growable
     sizer->AddGrowableRow(0);

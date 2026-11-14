@@ -13,9 +13,6 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
@@ -68,6 +65,11 @@ TEST_CASE("StringPrintf", "[wxString][Printf][vararg]")
 
     wxGCC_WARNING_RESTORE(write-strings)
     wxCLANG_WARNING_RESTORE(c++11-compat-deprecated-writable-strings)
+
+#ifdef __cpp_lib_string_view
+    CHECK( wxString::Format("%s", std::string_view{"foobar", 3}) == "foo" );
+    CHECK( wxString::Format("%s", std::string_view{"bar"}) == "bar" );
+#endif // __cpp_lib_string_view
 }
 
 TEST_CASE("CharPrintf", "[wxString][Printf][vararg]")
@@ -82,6 +84,10 @@ TEST_CASE("CharPrintf", "[wxString][Printf][vararg]")
     // test wxUniCharRef:
     s.Printf("string[1] is %c", foo[1]);
     CHECK( s == "string[1] is o" );
+
+    // test wxUniChar, including a non-ASCII one:
+    s.Printf("%c%c", wxUniChar('a'), wxUniChar(0xE9));
+    CHECK( s == wxString::FromUTF8("a\xC3\xA9") );
 
     // test char
     char c = 'z';
@@ -108,6 +114,59 @@ TEST_CASE("CharPrintf", "[wxString][Printf][vararg]")
     CHECK( s == "value is 240 (int)" );
 }
 
+TEST_CASE("NonBMPCharPrintf", "[wxString][Printf][vararg]")
+{
+    // GRINNING FACE U+1F600 lies outside of the BMP and so can't be
+    // represented by a single wchar_t when the latter is 16 bits, as is the
+    // case under MSW, so such characters are formatted into the format string
+    // itself instead of being passed as an argument.
+    const wxUniChar grin(0x1F600);
+
+    const wxString expected(grin);
+    REQUIRE( expected.utf8_string() == "\xF0\x9F\x98\x80" );
+
+    CHECK( wxString::Format("[%c]", grin) == "[" + expected + "]" );
+
+    // Check that it still works when combined with the other arguments, both
+    // before and after it, and when used more than once.
+    CHECK( wxString::Format("%s%c%d", "a", grin, 17) == "a" + expected + "17" );
+    CHECK( wxString::Format("%c%c", grin, grin) == expected + expected );
+
+    // The width is the number of characters, not of the wchar_t values used to
+    // represent them.
+    CHECK( wxString::Format("[%3c]", grin) == "[  " + expected + "]" );
+    CHECK( wxString::Format("[%-3c]", grin) == "[" + expected + "  ]" );
+
+    // Using such characters with the integer conversions must keep working
+    // too, as it does for the characters inside the BMP.
+    CHECK( wxString::Format("%d", grin) == "128512" );
+    CHECK( wxString::Format("%x", grin) == "1f600" );
+    CHECK( wxString::Format("[%8d]", grin) == "[  128512]" );
+
+    // Positional arguments must keep working too, including when the same
+    // character is used by more than one conversion specifier.
+    CHECK( wxString::Format("%1$c%1$c", grin) == expected + expected );
+    CHECK( wxString::Format("%2$c[%1$d]", 7, grin) == expected + "[7]" );
+
+    // Finally check that a wxUniCharRef argument works as well: this only
+    // makes sense when the string uses UTF-8 or UTF-32 internally, as with
+    // UTF-16 indexing the string gives a lone surrogate.
+    if ( expected.length() == 1 )
+        CHECK( wxString::Format("[%c]", expected[0]) == "[" + expected + "]" );
+}
+
+TEST_CASE("PositionalArgOverflow", "[wxString][Printf][vararg]")
+{
+    // A positional argument number is taken directly from the format string
+    // and so may be larger than the maximum number of arguments the format
+    // parser can handle (wxMAX_SVNPRINTF_ARGUMENTS). Such a value used to be
+    // used to index the parser's fixed-size internal arrays without any bounds
+    // check, writing past their end, while now it must be reported as an
+    // error. Note that the assert happens when validating the format string,
+    // so the invalid format is never passed on to the underlying printf().
+    WX_ASSERT_FAILS_WITH_ASSERT( wxString::Format("%100$d", 5) );
+}
+
 TEST_CASE("SizetPrintf", "[wxString][Printf][vararg]")
 {
     size_t  i =  1;
@@ -120,7 +179,6 @@ TEST_CASE("SizetPrintf", "[wxString][Printf][vararg]")
                 == "size_t=0xA0" );
 }
 
-#if wxUSE_STD_STRING
 TEST_CASE("StdString", "[wxString][Printf][vararg]")
 {
     // test passing std::[w]string
@@ -135,9 +193,7 @@ TEST_CASE("StdString", "[wxString][Printf][vararg]")
     s.Printf("string %s(%i).", wc, 2);
     CHECK( s == "string widechar(2)." );
 }
-#endif // wxUSE_STD_STRING
 
-#if wxUSE_LONGLONG
 TEST_CASE("LongLongPrintf", "[wxString][Printf][vararg]")
 {
     const char * const llfmt = "%" wxLongLongFmtSpec "d";
@@ -147,7 +203,6 @@ TEST_CASE("LongLongPrintf", "[wxString][Printf][vararg]")
     wxLongLong ll = 1234567890;
     CHECK( wxString::Format(llfmt, ll) == "1234567890" );
 }
-#endif // wxUSE_LONGLONG
 
 TEST_CASE("Sscanf", "[wxSscanf][vararg]")
 {
@@ -194,24 +249,23 @@ TEST_CASE("ArgsValidation", "[wxString][vararg][error]")
 {
     int written;
     void *ptr = &written;
-    short int swritten;
+    short int swritten = 0;
+    wxUnusedVar(swritten); // We're not really going to use it.
 
     // these are valid:
     wxString::Format("a string(%s,%s), ptr %p, int %i",
                      wxString(), "foo", "char* as pointer", 1);
 
-#if __cplusplus >= 201103 || wxCHECK_VISUALC_VERSION(10)
     // Unfortunately we can't check the result as different standard libraries
     // implementations format it in different ways, so just check that it
     // compiles.
     wxString::Format("null pointer is %p", nullptr);
-#endif
 
     // Microsoft has helpfully disabled support for "%n" in their CRT by
     // default starting from VC8 and somehow even calling
     // _set_printf_count_output() doesn't help here, so don't use "%n" at all
     // with it.
-#if wxCHECK_VISUALC_VERSION(8)
+#if defined(__VISUALC__)
     #define wxNO_PRINTF_PERCENT_N
 #endif // VC8+
 
@@ -233,6 +287,7 @@ TEST_CASE("ArgsValidation", "[wxString][vararg][error]")
 #endif
 
     // but these are not:
+    WX_ASSERT_FAILS_WITH_ASSERT( wxString::Format("%d + %d = %d", 2, 2) );
     WX_ASSERT_FAILS_WITH_ASSERT( wxString::Format("%i", "foo") );
     WX_ASSERT_FAILS_WITH_ASSERT( wxString::Format("%s", (void*)&written) );
     WX_ASSERT_FAILS_WITH_ASSERT( wxString::Format("%d", ptr) );
@@ -243,18 +298,13 @@ TEST_CASE("ArgsValidation", "[wxString][vararg][error]")
     WX_ASSERT_FAILS_WITH_ASSERT( wxString::Format("foo%n", ptr) );
     WX_ASSERT_FAILS_WITH_ASSERT( wxString::Format("foo%i%n", 42, &swritten) );
 
-    // the following test (correctly) fails at compile-time with <type_traits>
-#if !defined(HAVE_TYPE_TRAITS) && !defined(HAVE_TR1_TYPE_TRAITS)
-    wxObject obj;
-    WX_ASSERT_FAILS_WITH_ASSERT( wxString::Format("%s", obj) );
-
-    wxObject& ref = obj;
-    WX_ASSERT_FAILS_WITH_ASSERT( wxString::Format("%s", ref) );
-#endif
-
     // %c should accept integers too
     wxString::Format("%c", 80);
     wxString::Format("%c", wxChar(80) + wxChar(1));
+
+    // and wxUniChar should be accepted by both %c and the integer conversions
+    wxString::Format("%c", wxUniChar(80));
+    wxString::Format("%d", wxUniChar(80));
 
     // check size_t handling
     size_t len = sizeof(ptr);
@@ -276,4 +326,30 @@ TEST_CASE("VeryLongArg", "[wxString][Format][vararg]")
     // Check the length first to avoid very long output if this fails.
     REQUIRE( s.length() == LENGTH );
     CHECK( s == veryLongString );
+}
+
+namespace
+{
+
+// Helpers for the "PrintfError" test: we must pass by these functions
+// because specifying "%c" directly inline would convert it to "%lc" and avoid
+// the error.
+wxString CallPrintfV(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    wxString s;
+    s.PrintfV(wxString::FromAscii(format), ap);
+    va_end(ap);
+    return s;
+}
+
+} // anonymous namespace
+
+TEST_CASE("PrintfError", "[wxString][Format][vararg][error]")
+{
+    // Check that using invalid argument doesn't keep doubling the buffer until
+    // we run out of memory and die.
+    const int invalidChar = 0x1780;
+    REQUIRE_NOTHROW( CallPrintfV("%c", invalidChar) );
 }

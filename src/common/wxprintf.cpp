@@ -15,19 +15,16 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/string.h"
-    #include "wx/hash.h"
     #include "wx/utils.h"     // for wxMin and wxMax
     #include "wx/log.h"
 #endif
 
 #include "wx/private/wxprintf.h"
 
+#include <errno.h>
 
 // ============================================================================
 // printf() implementation
@@ -97,6 +94,12 @@ static int wxDoVsnprintf(CharType *buf, size_t lenMax,
     wprintf(L"Using wxCRT_VsnprintfW\n");
 #endif
 
+    // If the output buffer is of size 0 we can't write anything to it, not
+    // even the terminating NUL, so just bail out: continuing would underflow
+    // lenCur below and access buf[(size_t)-1], writing out of bounds.
+    if ( lenMax == 0 )
+        return -1;
+
     wxPrintfConvSpecParser<CharType> parser(format);
 
     wxPrintfArg argdata[wxMAX_SVNPRINTF_ARGUMENTS];
@@ -109,6 +112,9 @@ static int wxDoVsnprintf(CharType *buf, size_t lenMax,
     if (parser.posarg_present && parser.nonposarg_present)
     {
         buf[0] = 0;
+        // Indicate to the caller that it's an unrecoverable error and not just
+        // due to the buffer being too small.
+        errno = EINVAL;
         return -1;      // format strings with both positional and
     }                   // non-positional conversion specifier are unsupported !!
 
@@ -134,6 +140,7 @@ static int wxDoVsnprintf(CharType *buf, size_t lenMax,
     if (!ok)
     {
         buf[0] = 0;
+        errno = EINVAL;
         return -1;
     }
 
@@ -157,7 +164,7 @@ static int wxDoVsnprintf(CharType *buf, size_t lenMax,
         if (lenCur == lenMax)
         {
             buf[lenMax - 1] = 0;
-            return lenMax+1;      // not enough space in the output buffer !
+            return -1;      // not enough space in the output buffer !
         }
 
         // process this specifier directly in the output buffer
@@ -166,7 +173,7 @@ static int wxDoVsnprintf(CharType *buf, size_t lenMax,
         if (n == -1)
         {
             buf[lenMax-1] = wxT('\0');  // be sure to always NUL-terminate the string
-            return lenMax+1;      // not enough space in the output buffer !
+            return -1;      // not enough space in the output buffer !
         }
         lenCur += n;
 
@@ -186,12 +193,12 @@ static int wxDoVsnprintf(CharType *buf, size_t lenMax,
     if (buf[lenCur])
     {
         buf[lenCur] = 0;
-        return lenMax+1;     // not enough space in the output buffer !
+        return -1;     // not enough space in the output buffer !
     }
 
     // Don't do:
     //      wxASSERT(lenCur == wxStrlen(buf));
-    // in fact if we embedded NULLs in the output buffer (using %c with a '\0')
+    // in fact if we embedded NULs in the output buffer (using %c with a '\0')
     // such check would fail
 
     return lenCur;

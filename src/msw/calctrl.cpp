@@ -17,9 +17,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_CALENDARCTRL
 
@@ -32,6 +29,9 @@
 #include "wx/calctrl.h"
 
 #include "wx/msw/private/datecontrols.h"
+#include "wx/msw/private/custompaint.h"
+#include "wx/msw/private/darkmode.h"
+#include <uxtheme.h>
 
 // ----------------------------------------------------------------------------
 // constants
@@ -95,7 +95,7 @@ wxCalendarCtrl::Create(wxWindow *parent,
     {
         // get a copy of standard class and modify it
         WNDCLASS wc;
-        if ( ::GetClassInfo(NULL, MONTHCAL_CLASS, &wc) )
+        if ( ::GetClassInfo(nullptr, MONTHCAL_CLASS, &wc) )
         {
             wc.lpszClassName = wxT("_wx_SysMonthCtl32");
             wc.style |= CS_DBLCLKS;
@@ -180,14 +180,6 @@ wxCalendarCtrl::HitTest(const wxPoint& pos,
                         wxDateTime::WeekDay *wd)
 {
     WinStruct<MCHITTESTINFO> hti;
-
-    // Vista and later SDKs add a few extra fields to MCHITTESTINFO which are
-    // not supported by the previous versions, as we don't use them anyhow we
-    // should pretend that we always use the old struct format to make the call
-    // below work on pre-Vista systems (see #11057)
-#ifdef MCHITTESTINFO_V1_SIZE
-    hti.cbSize = MCHITTESTINFO_V1_SIZE;
-#endif
 
     hti.pt.x = pos.x;
     hti.pt.y = pos.y;
@@ -397,7 +389,7 @@ void wxCalendarCtrl::UpdateMarks()
     // possibility that we can display several of them: one before the current
     // one and up to 12 after it.
     MONTHDAYSTATE states[14] = { 0 };
-    const DWORD nMonths = MonthCal_GetMonthRange(GetHwnd(), GMR_DAYSTATE, NULL);
+    const DWORD nMonths = MonthCal_GetMonthRange(GetHwnd(), GMR_DAYSTATE, nullptr);
 
     // although in principle the calendar might not show any days from the
     // preceding months, it seems like it always does, consider e.g. Feb 2010
@@ -515,6 +507,100 @@ void wxCalendarCtrl::MSWOnClick(wxMouseEvent& event)
     SetFocus();
 
     event.Skip();
+}
+
+void wxCalendarCtrl::MSWSetDarkOrLightMode()
+{
+    wxCalendarCtrlBase::MSWSetDarkOrLightMode();
+
+    auto bg = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW).GetPixel();
+    if ( wxMSWDarkMode::IsActive() )
+    {
+        // Disable visual themes so that MCM_SETCOLOR takes effect.
+        ::SetWindowTheme(m_hWnd, L"", L"");
+        auto fg = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT).GetPixel();
+        ::SendMessage(m_hWnd, MCM_SETCOLOR, MCSC_MONTHBK, bg);
+        ::SendMessage(m_hWnd, MCM_SETCOLOR, MCSC_TEXT, fg);
+        ::SendMessage(m_hWnd, MCM_SETCOLOR, MCSC_TITLETEXT, fg);
+        auto grayText = wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT).GetPixel();
+        ::SendMessage(m_hWnd, MCM_SETCOLOR, MCSC_TRAILINGTEXT, grayText);
+        // Unfortunately, MCSC_TITLEBK specifies both a background and text
+        // colour. It controls the text for the days of the week and the week
+        // numbers as well as the background of the header and the selected
+        // cell. Use the midpoint between the background and foreground for
+        // contrast with both.
+        COLORREF middle = RGB(
+            (GetRValue(bg) + GetRValue(fg)) / 2,
+            (GetGValue(bg) + GetGValue(fg)) / 2,
+            (GetBValue(bg) + GetBValue(fg)) / 2);
+        ::SendMessage(m_hWnd, MCM_SETCOLOR, MCSC_TITLEBK, middle);
+    }
+    // The MCSC_BACKGROUND setting takes affect both with and without visual
+    // themes.
+    ::SendMessage(m_hWnd, MCM_SETCOLOR, MCSC_BACKGROUND, bg);
+}
+
+WXLRESULT wxCalendarCtrl::MSWWindowProc(WXUINT nMsg, WXWPARAM wParam, WXLPARAM lParam)
+{
+    // In dark mode, redraw the header to make the background dark and to
+    // improve the appearance of the buttons. The control draws light-mode
+    // buttons.
+    if ( nMsg == WM_PAINT && wxMSWDarkMode::IsActive() )
+    {
+        // Paint the control into a memory DC, specified by wParam.
+        auto defPaint = [this](HWND WXUNUSED(hwnd), WPARAM wParam)
+            {
+                MSWDefWindowProc(WM_PAINT, wParam, 0);
+            };
+        // Redraw the header.
+        auto postProcess = [this](const wxBitmap& bmpIn)
+            {
+                wxBitmap bmpOut(bmpIn);
+                bmpOut.SetScaleFactor(GetDPIScaleFactor());
+                wxMemoryDC dc(bmpOut);
+                dc.SetLayoutDirection(GetLayoutDirection());
+
+                // Erase the header to dark background instead of the
+                // MCSC_TITLEBK colour, which is gray.
+                WinStruct<MCGRIDINFO> info;
+                info.dwPart = MCGIP_CALENDARHEADER;
+                info.dwFlags = MCGIF_NAME | MCGIF_RECT;
+                wchar_t textHead[128] = { };
+                info.pszName = textHead;
+                info.cchName = WXSIZEOF(textHead);
+                ::SendMessage(m_hWnd, MCM_GETCALENDARGRIDINFO, 0, (LPARAM)&info);
+                COLORREF bg = ::SendMessage(m_hWnd, MCM_GETCOLOR, MCSC_BACKGROUND, 0);
+                dc.SetBrush(wxBrush(wxColour(bg)));
+                dc.SetPen(*wxTRANSPARENT_PEN);
+                wxRect rcHead = wxRectFromRECT(info.rc);
+                dc.DrawRectangle(rcHead);
+
+                // Redraw header text.
+                COLORREF fg = ::SendMessage(m_hWnd, MCM_GETCOLOR, MCSC_TITLETEXT, 0);
+                dc.SetTextForeground(wxColour(fg));
+                int center = wxALIGN_CENTER_HORIZONTAL | wxALIGN_CENTER_VERTICAL;
+                dc.DrawLabel(textHead, rcHead, center);
+
+                // Draw the left button.
+                info.dwFlags = MCGIF_RECT;
+                info.dwPart = MCGIP_PREV;
+                ::SendMessage(m_hWnd, MCM_GETCALENDARGRIDINFO, 0, (LPARAM)&info);
+                // Draw a left-pointing triangle.
+                dc.DrawLabel(L"\u25C0", wxRectFromRECT(info.rc), center);
+
+                // Draw the right button.
+                info.dwPart = MCGIP_NEXT;
+                ::SendMessage(m_hWnd, MCM_GETCALENDARGRIDINFO, 0, (LPARAM)&info);
+                // Draw a right-pointing triangle.
+                dc.DrawLabel(L"\u25B6", wxRectFromRECT(info.rc), center);
+
+                return bmpOut;
+            };
+        wxMSWImpl::CustomPaint(m_hWnd, defPaint, postProcess);
+        return 0;
+    }
+
+    return wxCalendarCtrlBase::MSWWindowProc(nMsg, wParam, lParam);
 }
 
 #endif // wxUSE_CALENDARCTRL

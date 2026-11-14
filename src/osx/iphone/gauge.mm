@@ -2,7 +2,6 @@
 // Name:        src/osx/iphone/gauge.mm
 // Purpose:     wxGauge class
 // Author:      Stefan Csomor
-// Modified by:
 // Created:     1998-01-01
 // Copyright:   (c) Stefan Csomor
 // Licence:       wxWindows licence
@@ -74,7 +73,7 @@ wxWidgetImplType* wxWidgetImpl::CreateGauge( wxWindowMac* wxpeer,
                                     wxWindowMac* WXUNUSED(parent),
                                     wxWindowID WXUNUSED(id),
                                     wxInt32 value,
-                                    wxInt32 minimum,
+                                    wxInt32 /*minimum*/,
                                     wxInt32 maximum,
                                     const wxPoint& pos,
                                     const wxSize& size,

@@ -2,7 +2,6 @@
 // Name:        renddll.cpp
 // Purpose:     Example of a renderer implemented in a DLL
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     04.08.03
 // Copyright:   (c) 2003 Vadim Zeitlin <vadim@wxwidgets.org>
 // Licence:     wxWindows licence
@@ -10,9 +9,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/renderer.h"
 
@@ -31,17 +27,17 @@ public:
                                  const wxRect& rect,
                                  int WXUNUSED(flags) = 0,
                                  wxHeaderSortIconType WXUNUSED(sortArrow) = wxHDR_SORT_ICON_NONE,
-                                 wxHeaderButtonParams* WXUNUSED(params) = NULL) wxOVERRIDE
+                                 wxHeaderButtonParams* WXUNUSED(params) = nullptr) override
     {
-        dc.SetBrush(*wxCYAN_BRUSH);
-        dc.SetTextForeground(*wxRED);
+        wxDCBrushChanger brushChanger(dc, *wxCYAN_BRUSH);
+        wxDCTextColourChanger textFgChanger(dc, *wxRED);
         dc.DrawRoundedRectangle(rect, 10);
         dc.DrawLabel("MyDllRenderer", wxNullBitmap, rect, wxALIGN_CENTER);
 
         return dc.GetTextExtent("MyDllRenderer").x;
     }
 
-    virtual wxRendererVersion GetVersion() const wxOVERRIDE
+    virtual wxRendererVersion GetVersion() const override
     {
         return wxRendererVersion(wxRendererVersion::Current_Version,
                                  wxRendererVersion::Current_Age);

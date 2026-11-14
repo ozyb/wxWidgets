@@ -28,10 +28,6 @@ wxQtDialog::wxQtDialog( wxWindow *parent, wxDialog *handler )
 {
 }
 
-wxDialog::wxDialog()
-{
-}
-
 wxDialog::wxDialog( wxWindow *parent, wxWindowID id,
         const wxString &title,
         const wxPoint &pos,
@@ -44,6 +40,8 @@ wxDialog::wxDialog( wxWindow *parent, wxWindowID id,
 
 wxDialog::~wxDialog()
 {
+    // this will also reenable all the other windows for a modal dialog
+    Show(false);
 }
 
 
@@ -63,50 +61,67 @@ bool wxDialog::Create( wxWindow *parent, wxWindowID id,
 
     // Qt adds the context help button by default and we need to explicitly
     // remove it to avoid having it if it's not explicitly requested.
-    if ( !HasExtraStyle(wxDIALOG_EX_CONTEXTHELP) )
-    {
-        Qt::WindowFlags qtFlags = m_qtWindow->windowFlags();
-        qtFlags &= ~Qt::WindowContextHelpButtonHint;
-        m_qtWindow->setWindowFlags(qtFlags);
-    }
+    m_qtWindow->setWindowFlag(Qt::WindowContextHelpButtonHint,
+                              HasExtraStyle(wxDIALOG_EX_CONTEXTHELP));
 
-    if ( !wxTopLevelWindow::Create( parent, id, title, pos, size, style, name ) )
-        return false;
+    GetDialogHandle()->setSizeGripEnabled((style & wxRESIZE_BORDER) != 0);
 
-    PostCreation();
-
-    return true;
+    return wxTopLevelWindow::Create( parent, id, title, pos, size, style, name );
 }
 
 int wxDialog::ShowModal()
 {
     WX_HOOK_MODAL_DIALOG();
-    wxCHECK_MSG( GetHandle() != NULL, -1, "Invalid dialog" );
+    wxCHECK_MSG( GetHandle() != nullptr, -1, "Invalid dialog" );
+    wxASSERT_MSG( !IsModal(), "ShowModal() can't be called twice" );
 
-    QDialog *qDialog = GetDialogHandle();
-    qDialog->setModal(true);
+    // Release the mouse if it's currently captured as the window having it
+    // will be disabled when this dialog is shown -- but will still keep the
+    // capture making it impossible to do anything in the modal dialog itself
+    QtReleaseMouseAndNotify();
+
+    // Reset the return code to avoid it being interpreted as an indication that
+    // EndModal() was called from InitDialog() when Show() is called below.
+    // Otherwise, subsequent calls to ShowModal() on the same wxDialog object
+    // would fail to show the dialog again.
+    SetReturnCode(0);
+
+    GetDialogHandle()->setModal(true);
 
     Show(true);
 
-    bool ret = qDialog->exec();
-    if ( GetReturnCode() == 0 )
-        return ret ? wxID_OK : wxID_CANCEL;
+    // EndModal may have been called from InitDialog handler (called from
+    // inside Show()) and hidden the dialog back again
+
+    if ( IsShown() )
+    {
+        bool ret = GetDialogHandle()->exec();
+        if ( GetReturnCode() == 0 )
+            return ret ? wxID_OK : wxID_CANCEL;
+    }
+
     return GetReturnCode();
 }
 
 void wxDialog::EndModal(int retCode)
 {
-    wxCHECK_RET( GetDialogHandle() != NULL, "Invalid dialog" );
+    wxCHECK_RET( GetDialogHandle() != nullptr, "Invalid dialog" );
 
     SetReturnCode(retCode);
-    GetDialogHandle()->done( QDialog::Accepted );
+
+    if ( IsShown() )
+    {
+        wxASSERT_MSG( IsModal(), wxT("EndModal() called for non modal dialog") );
+
+        Hide();
+    }
 }
 
 bool wxDialog::IsModal() const
 {
-    wxCHECK_MSG( GetDialogHandle() != NULL, false, "Invalid dialog" );
+    wxCHECK_MSG( GetDialogHandle() != nullptr, false, "Invalid dialog" );
 
-    return GetDialogHandle()->isModal();
+    return GetDialogHandle()->isModal() && GetDialogHandle()->isVisible();
 }
 
 bool wxDialog::Show(bool show)
@@ -114,18 +129,29 @@ bool wxDialog::Show(bool show)
     if ( show == IsShown() )
         return false;
 
-    if ( !show && IsModal() )
-        EndModal(wxID_CANCEL);
+    if ( show )
+    {
+        if ( CanDoLayoutAdaptation() )
+            DoLayoutAdaptation();
 
-    if ( show && CanDoLayoutAdaptation() )
-        DoLayoutAdaptation();
-
-    const bool ret = wxDialogBase::Show(show);
-
-    if (show)
+        // this usually will result in TransferDataToWindow() being called
+        // which will change the controls values so do it before showing as
+        // otherwise we could have some flicker
         InitDialog();
 
-    return ret;
+        // Don't show the dialog if EndModal() has been called from InitDialog()
+        show = GetReturnCode() == 0;
+    }
+    else
+    {
+        if ( IsModal() )
+        {
+            GetDialogHandle()->done( QDialog::Accepted );
+            GetDialogHandle()->setModal(false);
+        }
+    }
+
+    return wxDialogBase::Show(show);
 }
 
 QDialog *wxDialog::GetDialogHandle() const

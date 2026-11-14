@@ -4,34 +4,139 @@
 #include "wx/wxprec.h"
 #include "wx/evtloop.h"
 
-// This needs to be included before catch.hpp to be taken into account.
-#include "testdate.h"
+// This provides std::make_unique() even when using C++11 compilers.
+#include "wx/private/make_unique.h"
 
-#include "wx/catch_cppunit.h"
+// It is used often enough in the tests to make it worth avoiding the need to
+// qualify it with "std::" every time.
+using std::make_unique;
 
-// Custom test macro that is only defined when wxUIActionSimulator is available
-// this allows the tests that do not rely on it to run on platforms that don't
-// support it.
-//
-// Unfortunately, currently too many of the UI tests fail on non-MSW platforms,
-// so they're disabled there by default. This really, really needs to be fixed,
-// but for now having the UI tests always failing is not helpful as it prevents
-// other test failures from being noticed, so disable them there.
-#if wxUSE_UIACTIONSIMULATOR
-    #define WXUISIM_TEST(test) if ( EnableUITests() ) { CPPUNIT_TEST(test) }
-#else
-    #define WXUISIM_TEST(test)
+// This header must be included before catch.hpp to be taken into account.
+#include "asserthelper.h"
+
+// This needs to be defined before including catch.hpp for PCH support.
+#define CATCH_CONFIG_ALL_PARTS
+
+#include "catch2/catch.hpp"
+
+#if wxUSE_VARIANT
+    #include "wx/variant.h"
 #endif
 
-// define wxHAVE_U_ESCAPE if the compiler supports \uxxxx character constants
-#if defined(__VISUALC__) || \
-    (defined(__GNUC__) && (__GNUC__ >= 3))
-    #define wxHAVE_U_ESCAPE
+// Define conversions to strings for some common wxWidgets types.
+namespace Catch
+{
+    template <>
+    struct StringMaker<wxUniChar>
+    {
+        static std::string convert(wxUniChar uc)
+        {
+            return wxString(uc).ToStdString(wxConvUTF8);
+        }
+    };
 
-    // and disable warning that using them results in with MSVC 8+
-    #if wxCHECK_VISUALC_VERSION(8)
-        // universal-character-name encountered in source
-        #pragma warning(disable:4428)
+    template <>
+    struct StringMaker<wxUniCharRef>
+    {
+        static std::string convert(wxUniCharRef ucr)
+        {
+            return wxString(ucr).ToStdString(wxConvUTF8);
+        }
+    };
+
+    // While this conversion already works due to the existence of the stream
+    // insertion operator for wxString, define a custom one making it more
+    // obvious when strings containing non-printable characters differ.
+    template <>
+    struct StringMaker<wxString>
+    {
+        static std::string convert(const wxString& wxs)
+        {
+            std::string s;
+            s.reserve(wxs.length() + 2);
+            s += '"';
+            for ( auto c : wxs )
+            {
+                if ( c >= 128 || !iswprint(c) )
+                    s += wxString::Format(wxASCII_STR("\\u%04X"), c).ToAscii();
+                else
+                    s += c;
+            }
+            s += '"';
+
+            return s;
+        }
+    };
+
+#if wxUSE_VARIANT
+    template <>
+    struct StringMaker<wxVariant>
+    {
+        static std::string convert(const wxVariant& v)
+        {
+            return v.MakeString().ToStdString(wxConvUTF8);
+        }
+    };
+#endif // wxUSE_VARIANT
+}
+
+// Return the name of the test being currently executed or an empty string if
+// no test is running, e.g. if we're called before or after the tests.
+//
+// Note that we can't use Catch::getResultCapture() here because it throws if
+// there is no active test run and this function is called from the callbacks
+// which can't let exceptions escape from them.
+inline std::string wxGetCurrentTestName()
+{
+    auto* const capture = Catch::getCurrentContext().getResultCapture();
+
+    return capture ? capture->getCurrentTestName() : std::string();
+}
+
+// Convenient variant of INFO() which uses wxString::Format() internally.
+#define wxINFO_FMT_HELPER(fmt, ...) \
+    wxString::Format(fmt, __VA_ARGS__).ToStdString(wxConvUTF8)
+
+#define wxINFO_FMT(...) INFO(wxINFO_FMT_HELPER(__VA_ARGS__))
+
+// Use these macros to check the given condition with the given formatted
+// message (it should contain the format string and arguments in a separate
+// pair of parentheses).
+//
+// Note that using INFO() disallows putting more than one of these macros on
+// the same line but this can happen if they're used inside another macro, so
+// wrap it inside a scope.
+#define WX_ASSERT_MESSAGE(msg, cond)                             \
+    wxSTATEMENT_MACRO_BEGIN                                      \
+    INFO(std::string(wxString::Format msg .mb_str(wxConvLibc))); \
+    REQUIRE(cond);                                               \
+    wxSTATEMENT_MACRO_END
+
+#define WX_ASSERT_EQUAL_MESSAGE(msg, expected, actual)           \
+    wxSTATEMENT_MACRO_BEGIN                                      \
+    INFO(std::string(wxString::Format msg .mb_str(wxConvLibc))); \
+    REQUIRE((actual) == (expected));                             \
+    wxSTATEMENT_MACRO_END
+
+// Define a test case with the given name and tags simply calling the given
+// method of the given test class.
+//
+// This is useful for running the same tests for several different fixtures,
+// e.g. for testing both single and multi-line wxTextCtrl.
+#define wxTEST_CASE_FOR_METHOD(testclass, prefix, name, tags) \
+    TEST_CASE_METHOD(testclass, prefix "::" #name, tags)      \
+    {                                                         \
+        name();                                               \
+    }
+
+#if defined(__VISUALC__)
+    #if _MSC_VER < 1910
+        // MSVS 2015 doesn't handle literal Unicode characters in wide strings
+        // correctly, so use \uxxxx escapes for it instead.
+        //
+        // When support for MSVS 2015 is dropped, this symbol and all code
+        // guarded by it should be removed.
+        #define wxMUST_USE_U_ESCAPE
     #endif
 #endif
 
@@ -49,8 +154,7 @@
         (__MINGW64_VERSION_MAJOR == 5 && __MINGW64_VERSION_MINOR == 0 && __MINGW64_VERSION_BUGFIX >= 4)))
 #define wxMINGW_WITH_FIXED_MANTISSA
 #endif
-#if (defined(__VISUALC__) && !wxCHECK_VISUALC_VERSION(14)) || \
-        (defined(__MINGW32__) && !defined(wxMINGW_WITH_FIXED_MANTISSA) && \
+#if (defined(__MINGW32__) && !defined(wxMINGW_WITH_FIXED_MANTISSA) && \
         (!defined(__USE_MINGW_ANSI_STDIO) || !__USE_MINGW_ANSI_STDIO))
     #define wxDEFAULT_MANTISSA_SIZE_3
 #endif
@@ -97,6 +201,8 @@ public:
     {
     }
 
+    TestAssertFailure(const TestAssertFailure&) = default;
+
     const wxString m_file;
     const int m_line;
     const wxString m_func;
@@ -108,15 +214,15 @@ public:
 
 // macro to use for the functions which are supposed to fail an assertion
 #if wxDEBUG_LEVEL
-    // some old cppunit versions don't define CPPUNIT_ASSERT_THROW so roll our
-    // own
     #define WX_ASSERT_FAILS_WITH_ASSERT_MESSAGE(msg, code) \
         wxSTATEMENT_MACRO_BEGIN \
             bool throwsAssert = false; \
             try { code ; } \
             catch ( const TestAssertFailure& ) { throwsAssert = true; } \
-            if ( !throwsAssert ) \
-                CPPUNIT_FAIL(msg); \
+            if ( throwsAssert ) \
+                SUCCEED("assert triggered"); \
+            else \
+                FAIL_CHECK(msg); \
         wxSTATEMENT_MACRO_END
 
     #define WX_ASSERT_FAILS_WITH_ASSERT(code) \
@@ -129,6 +235,7 @@ public:
     // normal build with wxDEBUG_LEVEL != 0 we can pass something not
     // evaluating to a bool at all but it then would fail to compile in
     // wxDEBUG_LEVEL == 0 case, so just don't do anything at all now).
+    #define WX_ASSERT_FAILS_WITH_ASSERT_MESSAGE(msg, code)
     #define WX_ASSERT_FAILS_WITH_ASSERT(cond)
 #endif
 
@@ -146,47 +253,37 @@ extern bool IsNetworkAvailable();
 
 extern bool IsAutomaticTest();
 
+#if wxUSE_GUI
+
+extern bool IsRunningUnderWayland();
+
 extern bool IsRunningUnderXVFB();
 
-#ifdef __LINUX__
-extern bool IsRunningInLXC();
-#endif // __LINUX__
+#endif // wxUSE_GUI
 
-// Helper class setting the locale to the given one for its lifetime.
-class LocaleSetter
+#if wxUSE_LOG
+// Logging is disabled by default when running the tests, but sometimes it can
+// be helpful to see the errors in case of unexpected failure, so this class
+// re-enables logs in its scope.
+//
+// It's a counterpart to wxLogNull.
+class TestLogEnabler
 {
 public:
-    LocaleSetter(const char *loc)
-        : m_locOld(wxStrdupA(setlocale(LC_ALL, NULL)))
-    {
-        setlocale(LC_ALL, loc);
-    }
-
-    ~LocaleSetter()
-    {
-        setlocale(LC_ALL, m_locOld);
-        free(m_locOld);
-    }
+    TestLogEnabler();
+    ~TestLogEnabler();
 
 private:
-    char * const m_locOld;
-
-    wxDECLARE_NO_COPY_CLASS(LocaleSetter);
+    wxDECLARE_NO_COPY_CLASS(TestLogEnabler);
 };
-
-// An even simpler helper for setting the locale to "C" one during its lifetime.
-class CLocaleSetter : private LocaleSetter
-{
-public:
-    CLocaleSetter() : LocaleSetter("C") { }
-
-private:
-    wxDECLARE_NO_COPY_CLASS(CLocaleSetter);
-};
+#else // !wxUSE_LOG
+class TestLogEnabler { };
+#endif // wxUSE_LOG/!wxUSE_LOG
 
 #if wxUSE_GUI
 
-// Return true if the UI tests are enabled, used by WXUISIM_TEST().
+// Return true if the UI tests, i.e. the ones using wxUIActionSimulator, are
+// enabled: the tests using it must check for this and return early if not.
 extern bool EnableUITests();
 
 // Helper function deleting the window without asserts (and hence exceptions
@@ -194,10 +291,5 @@ extern bool EnableUITests();
 void DeleteTestWindow(wxWindow* win);
 
 #endif // wxUSE_GUI
-
-// Convenience macro which registers a test case using just its "base" name,
-// i.e. without the common "TestCase" suffix, as its tag.
-#define wxREGISTER_UNIT_TEST(testclass) \
-    wxREGISTER_UNIT_TEST_WITH_TAGS(testclass ## TestCase, "[" #testclass "]")
 
 #endif

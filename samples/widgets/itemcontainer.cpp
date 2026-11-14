@@ -17,9 +17,6 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 // for all others, include the necessary headers
 #ifndef WX_PRECOMP
@@ -43,6 +40,8 @@ public:
     {
         m_tracker->StartTrackingData();
     }
+    TrackedClientData(const TrackedClientData&) = delete;
+    TrackedClientData& operator=(const TrackedClientData&) = delete;
 
     virtual ~TrackedClientData()
     {
@@ -57,8 +56,6 @@ public:
 private:
     ItemContainerWidgetsPage *m_tracker;
     int m_value;
-
-    wxDECLARE_NO_COPY_CLASS(TrackedClientData);
 };
 
 // ============================================================================
@@ -66,9 +63,9 @@ private:
 // ============================================================================
 
 ItemContainerWidgetsPage::ItemContainerWidgetsPage(WidgetsBookCtrl *book,
-                                                   wxImageList *image_list,
-                                                   const char *const icon[])
-: WidgetsPage(book, image_list, icon)
+                                                   wxVector<wxBitmapBundle>& imaglist,
+                                                   WidgetsIcon icon)
+: WidgetsPage(book, imaglist, icon)
 #if defined(__WXMSW__) || defined(__WXGTK__)
 // Reference data needs to be sorted in a dictionary order
 // since control's items are sorted in this order too.

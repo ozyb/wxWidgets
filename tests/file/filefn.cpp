@@ -12,9 +12,6 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_FILE
 
@@ -22,6 +19,7 @@
 #include "wx/filefn.h"
 #include "wx/textfile.h"
 #include "wx/filesys.h"
+#include "wx/utils.h"
 
 #include "testfile.h"
 
@@ -29,51 +27,11 @@
 // test class
 // ----------------------------------------------------------------------------
 
-class FileFunctionsTestCase : public CppUnit::TestCase
+class FileFunctionsTestCase
 {
-public:
-    FileFunctionsTestCase() { }
-    void setUp() wxOVERRIDE;
-    void tearDown() wxOVERRIDE;
-
-private:
-    CPPUNIT_TEST_SUITE( FileFunctionsTestCase );
-        CPPUNIT_TEST( GetTempFolder );
-        CPPUNIT_TEST( CopyFile );
-        CPPUNIT_TEST( CreateFile );
-        CPPUNIT_TEST( FileExists );
-        CPPUNIT_TEST( FindFile );
-        CPPUNIT_TEST( FindFileNext );
-        CPPUNIT_TEST( RemoveFile );
-        CPPUNIT_TEST( RenameFile );
-        CPPUNIT_TEST( ConcatenateFiles );
-        CPPUNIT_TEST( GetCwd );
-        CPPUNIT_TEST( FileEof );
-        CPPUNIT_TEST( FileError );
-        CPPUNIT_TEST( DirExists );
-        CPPUNIT_TEST( IsAbsolutePath );
-        CPPUNIT_TEST( PathOnly );
-        CPPUNIT_TEST( Mkdir );
-        CPPUNIT_TEST( Rmdir );
-    CPPUNIT_TEST_SUITE_END();
-
-    void GetTempFolder();
-    void CopyFile();
-    void CreateFile();
-    void FileExists();
-    void FindFile();
-    void FindFileNext();
-    void RemoveFile();
-    void RenameFile();
-    void ConcatenateFiles();
-    void GetCwd();
-    void FileEof();
-    void FileError();
-    void DirExists();
-    void IsAbsolutePath();
-    void PathOnly();
-    void Mkdir();
-    void Rmdir();
+protected:
+    FileFunctionsTestCase();
+    ~FileFunctionsTestCase();
 
     // Helper methods
     void DoCreateFile(const wxString& filePath);
@@ -88,6 +46,7 @@ private:
                       const wxString& filePath2,
                       const wxString& destFilePath);
 
+    TempDir m_tempDir;
     wxString m_fileNameASCII;
     wxString m_fileNameNonASCII;
     wxString m_fileNameWork;
@@ -96,86 +55,85 @@ private:
 };
 
 // ----------------------------------------------------------------------------
-// CppUnit macros
+// test fixture implementation
 // ----------------------------------------------------------------------------
 
-CPPUNIT_TEST_SUITE_REGISTRATION( FileFunctionsTestCase );
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( FileFunctionsTestCase, "FileFunctionsTestCase" );
-
-// ----------------------------------------------------------------------------
-// tests implementation
-// ----------------------------------------------------------------------------
-
-void FileFunctionsTestCase::setUp()
+static wxString GetFileFunctionsTempDirPrefix()
 {
+    // Put the varying part first because MSW uses the leading prefix
+    // characters for temporary names.
+    return wxString::Format("%03lx-filefn", wxGetProcessId() & 0xfff);
+}
+
+FileFunctionsTestCase::FileFunctionsTestCase()
+    : m_tempDir(GetFileFunctionsTempDirPrefix())
+{
+    m_tempDir.RequireOk();
+
     // Initialize local data
 
-    wxFileName fn1(wxFileName::GetTempDir(), wxT("wx_file_mask.txt"));
+    wxFileName fn1(m_tempDir.GetName(), "wx_file_mask.txt");
     m_fileNameASCII = fn1.GetFullPath();
 
     // This file name is 'wx_file_mask.txt' in Russian.
-    wxFileName fn2(wxFileName::GetTempDir(),
+    wxFileName fn2(m_tempDir.GetName(),
       wxT("wx_\u043C\u0430\u0441\u043A\u0430_\u0444\u0430\u0439\u043B\u0430.txt"));
     m_fileNameNonASCII = fn2.GetFullPath();
 
-    wxFileName fn3(wxFileName::GetTempDir(), wxT("wx_test_copy"));
+    wxFileName fn3(m_tempDir.GetName(), "wx_test_copy");
     m_fileNameWork = fn3.GetFullPath();
 }
 
-void FileFunctionsTestCase::tearDown()
+FileFunctionsTestCase::~FileFunctionsTestCase()
 {
-    // Remove all remaining temporary files
-    if ( wxFileExists(m_fileNameASCII) )
-    {
-        wxRemoveFile(m_fileNameASCII);
-    }
-    if ( wxFileExists(m_fileNameNonASCII) )
-    {
-        wxRemoveFile(m_fileNameNonASCII);
-    }
-    if ( wxFileExists(m_fileNameWork) )
-    {
-        wxRemoveFile(m_fileNameWork);
-    }
+    m_tempDir.Remove();
 }
 
-void FileFunctionsTestCase::GetTempFolder()
+// ----------------------------------------------------------------------------
+// tests themselves start here
+// ----------------------------------------------------------------------------
+
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::GetTempFolder",
+                 "[filefn]")
 {
     // Verify that obtained temporary folder is not empty.
     wxString tmpDir = wxFileName::GetTempDir();
 
-    CPPUNIT_ASSERT( !tmpDir.IsEmpty() );
+    CHECK( !tmpDir.IsEmpty() );
 }
 
-void FileFunctionsTestCase::CopyFile()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::CopyFile",
+                 "[filefn]")
 {
     const wxString filename1(wxS("horse.xpm"));
     const wxString& filename2 = m_fileNameWork;
 
-    const std::string msg =
-        wxString::Format("File 1: %s  File 2:%s", filename1, filename2)
-            .ToStdString();
+    INFO("File 1: " << filename1 << "  File 2: " << filename2);
 
-    CPPUNIT_ASSERT_MESSAGE( msg, wxCopyFile(filename1, filename2) );
+    REQUIRE( wxCopyFile(filename1, filename2) );
 
     // verify that the two files have the same contents!
     wxFFile f1(filename1, wxT("rb")),
             f2(filename2, wxT("rb"));
 
-    CPPUNIT_ASSERT_MESSAGE( msg, f1.IsOpened() );
-    CPPUNIT_ASSERT_MESSAGE( msg, f2.IsOpened() );
+    REQUIRE( f1.IsOpened() );
+    REQUIRE( f2.IsOpened() );
 
     wxString s1, s2;
-    CPPUNIT_ASSERT_MESSAGE( msg, f1.ReadAll(&s1) );
-    CPPUNIT_ASSERT_MESSAGE( msg, f2.ReadAll(&s2) );
-    CPPUNIT_ASSERT_MESSAGE( msg, s1 == s2 );
+    REQUIRE( f1.ReadAll(&s1) );
+    REQUIRE( f2.ReadAll(&s2) );
+    CHECK( s1 == s2 );
 
-    CPPUNIT_ASSERT_MESSAGE( msg, f1.Close() );
-    CPPUNIT_ASSERT_MESSAGE( msg, f2.Close() );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxRemoveFile(filename2) );
+    CHECK( f1.Close() );
+    CHECK( f2.Close() );
+    CHECK( wxRemoveFile(filename2) );
 }
 
-void FileFunctionsTestCase::CreateFile()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::CreateFile",
+                 "[filefn]")
 {
     // Create file name containing ASCII characters only.
     DoCreateFile(m_fileNameASCII);
@@ -185,20 +143,22 @@ void FileFunctionsTestCase::CreateFile()
 
 void FileFunctionsTestCase::DoCreateFile(const wxString& filePath)
 {
-    const std::string msg = wxString::Format("File: %s", filePath).ToStdString();
+    INFO("File: " << filePath);
 
     // Create temporary file.
     wxTextFile file;
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Create(filePath) );
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Close() );
+    REQUIRE( file.Create(filePath) );
+    CHECK( file.Close() );
 
     wxRemoveFile(filePath);
 }
 
-void FileFunctionsTestCase::FileExists()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::FileExists",
+                 "[filefn]")
 {
-    CPPUNIT_ASSERT( wxFileExists(wxT("horse.png")) );
-    CPPUNIT_ASSERT( !wxFileExists(wxT("horse.___")) );
+    CHECK( wxFileExists(wxT("horse.png")) );
+    CHECK( !wxFileExists(wxT("horse.___")) );
 
     // Check file name containing ASCII characters only.
     DoFileExists(m_fileNameASCII);
@@ -208,21 +168,23 @@ void FileFunctionsTestCase::FileExists()
 
 void FileFunctionsTestCase::DoFileExists(const wxString& filePath)
 {
-    const std::string msg = wxString::Format("File: %s", filePath).ToStdString();
+    INFO("File: " << filePath);
 
     // Create temporary file.
     wxTextFile file;
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Create(filePath) );
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Close() );
+    REQUIRE( file.Create(filePath) );
+    CHECK( file.Close() );
 
     // Verify that file exists with 2 methods.
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Exists() );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxFileExists(filePath) );
+    CHECK( file.Exists() );
+    CHECK( wxFileExists(filePath) );
 
     wxRemoveFile(filePath);
 }
 
-void FileFunctionsTestCase::FindFile()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::FindFile",
+                 "[filefn]")
 {
     // Find file name containing ASCII characters only.
     DoFindFile(m_fileNameASCII);
@@ -232,28 +194,30 @@ void FileFunctionsTestCase::FindFile()
 
 void FileFunctionsTestCase::DoFindFile(const wxString& filePath)
 {
-    const std::string msg = wxString::Format("File: %s", filePath).ToStdString();
+    INFO("File: " << filePath);
 
     // Create temporary file.
     wxTextFile file;
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Create(filePath) );
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Close() );
+    REQUIRE( file.Create(filePath) );
+    CHECK( file.Close() );
 
     // Check if file can be found (method 1).
     wxString foundFile = wxFindFirstFile(filePath, wxFILE);
-    CPPUNIT_ASSERT_MESSAGE( msg, foundFile == filePath );
+    CHECK( foundFile == filePath );
 
     // Check if file can be found (method 2).
     wxFileSystem fs;
     wxString furl = fs.FindFirst(filePath, wxFILE);
     wxFileName fname = wxFileName::URLToFileName(furl);
     foundFile = fname.GetFullPath();
-    CPPUNIT_ASSERT_MESSAGE( msg, foundFile == filePath );
+    CHECK( foundFile == filePath );
 
     wxRemoveFile(filePath);
 }
 
-void FileFunctionsTestCase::FindFileNext()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::FindFileNext",
+                 "[filefn]")
 {
     // Construct file name containing ASCII characters only.
     const wxString fileMask(wxT("horse.*"));
@@ -264,9 +228,9 @@ void FileFunctionsTestCase::FindFileNext()
     wxFileName fn1(foundFile1);
     wxFileName fn2(foundFile2);
     // Full names must be different.
-    CPPUNIT_ASSERT( foundFile1 != foundFile2 );
+    CHECK( foundFile1 != foundFile2 );
     // Base names must be the same.
-    CPPUNIT_ASSERT( fn1.GetName() == fn2.GetName() );
+    CHECK( fn1.GetName() == fn2.GetName() );
 
     // Check using method 2.
     wxFileSystem fs;
@@ -277,12 +241,14 @@ void FileFunctionsTestCase::FindFileNext()
     fn2 = wxFileName::URLToFileName(furl);
     foundFile2 = fn2.GetFullPath();
     // Full names must be different.
-    CPPUNIT_ASSERT( fn1.GetFullPath() != fn2.GetFullPath() );
+    CHECK( fn1.GetFullPath() != fn2.GetFullPath() );
     // Base names must be the same.
-    CPPUNIT_ASSERT( fn1.GetName() == fn2.GetName() );
+    CHECK( fn1.GetName() == fn2.GetName() );
 }
 
-void FileFunctionsTestCase::RemoveFile()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::RemoveFile",
+                 "[filefn]")
 {
     // Create & remove file with name containing ASCII characters only.
     DoRemoveFile(m_fileNameASCII);
@@ -292,19 +258,44 @@ void FileFunctionsTestCase::RemoveFile()
 
 void FileFunctionsTestCase::DoRemoveFile(const wxString& filePath)
 {
-    const std::string msg = wxString::Format("File: %s", filePath).ToStdString();
+    INFO("File: " << filePath);
 
     // Create temporary file.
     wxTextFile file;
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Create(filePath) );
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Close() );
+    REQUIRE( file.Create(filePath) );
+    CHECK( file.Close() );
 
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Exists() );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxRemoveFile(filePath) );
-    CPPUNIT_ASSERT_MESSAGE( msg, !file.Exists() );
+    CHECK( file.Exists() );
+    CHECK( wxRemoveFile(filePath) );
+    CHECK( !file.Exists() );
 }
 
-void FileFunctionsTestCase::RenameFile()
+namespace
+{
+
+void CreateFileWithContents(const wxString& path, const wxString& contents)
+{
+    wxFFile f(path, "w");
+    REQUIRE( f.IsOpened() );
+    REQUIRE( f.Write(contents) );
+}
+
+wxString GetFileContents(const wxString& path)
+{
+    wxFFile f(path, "r");
+    REQUIRE( f.IsOpened() );
+
+    wxString contents;
+    REQUIRE( f.ReadAll(&contents) );
+
+    return contents;
+}
+
+} // anonymous namespace
+
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::RenameFile",
+                 "[filefn]")
 {
     // Verify renaming file with/without overwriting
     // when new file already exist/don't exist.
@@ -324,23 +315,22 @@ FileFunctionsTestCase::DoRenameFile(const wxString& oldFilePath,
                                     bool overwrite,
                                     bool withNew)
 {
-    const std::string msg =
-        wxString::Format(wxT("File 1: %s  File 2:%s"), oldFilePath, newFilePath)
-            .ToStdString();
+    INFO("File 1:" << oldFilePath << "  File 2: " << newFilePath);
+
+    // Use different contents for the two files to allow checking which of
+    // them the destination file has at the end.
+    const wxString contentsSrc("source");
+    const wxString contentsDst("destination");
 
     // Create temporary source file.
-    wxTextFile file;
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Create(oldFilePath) );
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Close() );
+    CreateFileWithContents(oldFilePath, contentsSrc);
 
     if ( withNew )
     {
         // Create destination file to test overwriting.
-        wxTextFile file2;
-        CPPUNIT_ASSERT_MESSAGE( msg, file2.Create(newFilePath) );
-        CPPUNIT_ASSERT_MESSAGE( msg, file2.Close() );
+        CreateFileWithContents(newFilePath, contentsDst);
 
-        CPPUNIT_ASSERT_MESSAGE( msg, wxFileExists(newFilePath) );
+        CHECK( wxFileExists(newFilePath) );
     }
     else
     {
@@ -350,36 +340,44 @@ FileFunctionsTestCase::DoRenameFile(const wxString& oldFilePath,
             wxRemoveFile(newFilePath);
         }
 
-        CPPUNIT_ASSERT_MESSAGE( msg, !wxFileExists(newFilePath) );
+        CHECK( !wxFileExists(newFilePath) );
     }
 
-    CPPUNIT_ASSERT_MESSAGE( msg, wxFileExists(oldFilePath) );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxFileExists(oldFilePath) );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxFileExists(oldFilePath) );
+    CHECK( wxFileExists(oldFilePath) );
+
     bool shouldFail = !overwrite && withNew;
     if ( shouldFail )
     {
-        CPPUNIT_ASSERT_MESSAGE( msg, !wxRenameFile(oldFilePath, newFilePath, overwrite));
+        CHECK( !wxRenameFile(oldFilePath, newFilePath, overwrite));
         // Verify that file has not been renamed.
-        CPPUNIT_ASSERT_MESSAGE( msg, wxFileExists(oldFilePath) );
-        CPPUNIT_ASSERT_MESSAGE( msg, wxFileExists(newFilePath) );
+        CHECK( wxFileExists(oldFilePath) );
+        CHECK( wxFileExists(newFilePath) );
+
+        // Neither file should have been modified.
+        CHECK( GetFileContents(oldFilePath) == contentsSrc );
+        CHECK( GetFileContents(newFilePath) == contentsDst );
 
         // Cleanup.
         wxRemoveFile(oldFilePath);
     }
     else
     {
-        CPPUNIT_ASSERT_MESSAGE( msg, wxRenameFile(oldFilePath, newFilePath, overwrite) );
+        CHECK( wxRenameFile(oldFilePath, newFilePath, overwrite) );
         // Verify that file has been renamed.
-        CPPUNIT_ASSERT_MESSAGE( msg, !wxFileExists(oldFilePath) );
-        CPPUNIT_ASSERT_MESSAGE( msg, wxFileExists(newFilePath) );
+        CHECK( !wxFileExists(oldFilePath) );
+        CHECK( wxFileExists(newFilePath) );
+
+        // And that it really has the contents of the source file.
+        CHECK( GetFileContents(newFilePath) == contentsSrc );
     }
 
     // Cleanup.
     wxRemoveFile(newFilePath);
 }
 
-void FileFunctionsTestCase::ConcatenateFiles()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::ConcatenateFiles",
+                 "[filefn]")
 {
     DoConcatFile(m_fileNameASCII, m_fileNameNonASCII, m_fileNameWork);
     DoConcatFile(m_fileNameNonASCII, m_fileNameASCII, m_fileNameWork);
@@ -389,160 +387,174 @@ void FileFunctionsTestCase::DoConcatFile(const wxString& filePath1,
                                          const wxString& filePath2,
                                          const wxString& destFilePath)
 {
-    const std::string msg =
-        wxString::Format("File 1: %s  File 2:%s  File 3: %s",
-                         filePath1, filePath2, destFilePath)
-            .ToStdString();
+    INFO("File 1:" << filePath1
+         << "  File 2: " << filePath2
+         << "  File 3: " << destFilePath);
 
     // Prepare source data
     wxFFile f1(filePath1, wxT("wb")),
             f2(filePath2, wxT("wb"));
-    CPPUNIT_ASSERT_MESSAGE( msg, f1.IsOpened() );
-    CPPUNIT_ASSERT_MESSAGE( msg, f2.IsOpened() );
+    REQUIRE( f1.IsOpened() );
+    REQUIRE( f2.IsOpened() );
 
     wxString s1(wxT("1234567890"));
     wxString s2(wxT("abcdefghij"));
-    CPPUNIT_ASSERT_MESSAGE( msg, f1.Write(s1) );
-    CPPUNIT_ASSERT_MESSAGE( msg, f2.Write(s2) );
+    CHECK( f1.Write(s1) );
+    CHECK( f2.Write(s2) );
 
-    CPPUNIT_ASSERT_MESSAGE( msg, f1.Close() );
-    CPPUNIT_ASSERT_MESSAGE( msg, f2.Close() );
+    CHECK( f1.Close() );
+    CHECK( f2.Close() );
 
     // Concatenate source files
-    CPPUNIT_ASSERT_MESSAGE( msg, wxConcatFiles(filePath1, filePath2, destFilePath) );
+    CHECK( wxConcatFiles(filePath1, filePath2, destFilePath) );
 
     // Verify content of destination file
-    CPPUNIT_ASSERT_MESSAGE( msg, wxFileExists(destFilePath) );
+    REQUIRE( wxFileExists(destFilePath) );
     wxString sSrc = s1 + s2;
     wxString s3;
     wxFFile f3(destFilePath, wxT("rb"));
-    CPPUNIT_ASSERT_MESSAGE( msg, f3.ReadAll(&s3) );
-    CPPUNIT_ASSERT_MESSAGE( msg, sSrc.length() == s3.length() );
-    CPPUNIT_ASSERT_MESSAGE( msg, memcmp(sSrc.c_str(), s3.c_str(), sSrc.length()) == 0 );
-    CPPUNIT_ASSERT_MESSAGE( msg, f3.Close() );
+    CHECK( f3.ReadAll(&s3) );
+    CHECK( sSrc.length() == s3.length() );
+    CHECK( memcmp(sSrc.c_str(), s3.c_str(), sSrc.length()) == 0 );
+    CHECK( f3.Close() );
 
-    CPPUNIT_ASSERT_MESSAGE( msg, wxRemoveFile(filePath1) );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxRemoveFile(filePath2) );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxRemoveFile(destFilePath) );
+    CHECK( wxRemoveFile(filePath1) );
+    CHECK( wxRemoveFile(filePath2) );
+    CHECK( wxRemoveFile(destFilePath) );
 }
 
-void FileFunctionsTestCase::GetCwd()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::GetCwd",
+                 "[filefn]")
 {
     // Verify that obtained working directory is not empty.
     wxString cwd = wxGetCwd();
 
-    CPPUNIT_ASSERT( !cwd.IsEmpty() );
+    CHECK( !cwd.IsEmpty() );
 }
 
-void FileFunctionsTestCase::FileEof()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::Eof",
+                 "[filefn]")
 {
     const wxString filename(wxT("horse.bmp"));
-    const std::string msg = wxString::Format("File: %s", filename).ToStdString();
+    INFO("File: " << filename);
 
     wxFFile file(filename, wxT("r"));
     // wxFFile::Eof must be false at start
-    CPPUNIT_ASSERT_MESSAGE( msg, !file.Eof() );
-    CPPUNIT_ASSERT_MESSAGE( msg, file.SeekEnd() );
+    CHECK( !file.Eof() );
+    CHECK( file.SeekEnd() );
     // wxFFile::Eof returns true only after attempt to read last byte
     char array[1];
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Read(array, 1) == 0 );
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Eof() );
+    CHECK( file.Read(array, 1) == 0 );
+    CHECK( file.Eof() );
 
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Close() );
+    CHECK( file.Close() );
     // wxFFile::Eof after close should not cause crash but fail instead
-    bool failed = true;
-    try
-    {
-    file.Eof();
-        failed = false;
-    }
-    catch (...)
-    {
-    }
-    CPPUNIT_ASSERT_MESSAGE( msg, failed );
+    WX_ASSERT_FAILS_WITH_ASSERT( file.Eof() );
 }
 
-void FileFunctionsTestCase::FileError()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::Error",
+                 "[filefn]")
 {
     const wxString filename(wxT("horse.bmp"));
-    const std::string msg = wxString::Format("File: %s", filename).ToStdString();
+    INFO("File: " << filename);
 
     wxFFile file(filename, wxT("r"));
     // wxFFile::Error must be false at start assuming file "horse.bmp" exists.
-    CPPUNIT_ASSERT_MESSAGE( msg, !file.Error() );
+    CHECK( !file.Error() );
     // Attempt to write to file opened in readonly mode should cause error
-    CPPUNIT_ASSERT_MESSAGE( msg, !file.Write(filename) );
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Error() );
+    CHECK( !file.Write(filename) );
+    CHECK( file.Error() );
 
-    CPPUNIT_ASSERT_MESSAGE( msg, file.Close() );
+    CHECK( file.Close() );
     // wxFFile::Error after close should not cause crash but fail instead
-    bool failed = true;
-    try
-    {
-        file.Error();
-        failed = false;
-    }
-    catch (...)
-    {
-    }
-    CPPUNIT_ASSERT_MESSAGE( msg, failed );
+    WX_ASSERT_FAILS_WITH_ASSERT( file.Error() );
 }
 
-
-void FileFunctionsTestCase::DirExists()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::DirExists",
+                 "[filefn]")
 {
     wxString cwd = wxGetCwd();
-    const std::string msg = wxString::Format("CWD: %s", cwd).ToStdString();
+    INFO("CWD: " << cwd);
 
     // Current working directory must exist
-    CPPUNIT_ASSERT_MESSAGE( msg, wxDirExists(cwd));
+    CHECK(wxDirExists(cwd));
 }
 
-void FileFunctionsTestCase::IsAbsolutePath()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::IsAbsolutePath",
+                 "[filefn]")
 {
     wxString name = wxT("horse.bmp");
-    const std::string msg = wxString::Format("File: %s", name).ToStdString();
+    INFO("File: " << name);
 
     // File name is given as relative path
-    CPPUNIT_ASSERT_MESSAGE( msg, !wxIsAbsolutePath(name) );
+    CHECK( !wxIsAbsolutePath(name) );
 
     wxFileName filename(name);
-    CPPUNIT_ASSERT( filename.MakeAbsolute() );
+    CHECK( filename.MakeAbsolute() );
     // wxFileName::GetFullPath returns absolute path
-    CPPUNIT_ASSERT_MESSAGE( msg, wxIsAbsolutePath(filename.GetFullPath()));
+    CHECK( wxIsAbsolutePath(filename.GetFullPath()));
+
+#ifdef __WINDOWS__
+    CHECK( wxIsAbsolutePath("\\"));
+    CHECK( wxIsAbsolutePath("c:"));
+    CHECK( !wxIsAbsolutePath("c"));
+#endif
 }
 
-void FileFunctionsTestCase::PathOnly()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::PathOnly",
+                 "[filefn]")
 {
     wxString name = wxT("horse.bmp");
     // Get absolute path to horse.bmp
     wxFileName filename(name);
-    CPPUNIT_ASSERT( filename.MakeAbsolute() );
+    CHECK( filename.MakeAbsolute() );
 
     wxString pathOnly = wxPathOnly(filename.GetFullPath());
     if ( !wxDirExists(pathOnly) )
-        CPPUNIT_ASSERT( pathOnly == wxString() );
+        CHECK( pathOnly == wxString() );
+
+    CHECK( wxPathOnly(wxString{}) == "" );
+    CHECK( wxPathOnly("foo") == "" );
+    CHECK( wxPathOnly("foo/") == "foo" );
+    CHECK( wxPathOnly("/foo/") == wxString(wxFILE_SEP_PATH) + "foo" );
+
+#ifdef __WINDOWS__
+    CHECK( wxPathOnly("c:\\foo.exe") == "c:" );
+    CHECK( wxPathOnly("c:foo.exe") == "c:." );
+    CHECK( wxPathOnly("foo\\bar.dll") == "foo" );
+#endif
 }
 
 // Unit tests for Mkdir and Rmdir doesn't cover non-ASCII directory names.
 // Rmdir fails on them on Linux. See ticket #17644.
-void FileFunctionsTestCase::Mkdir()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::Mkdir",
+                 "[filefn]")
 {
-    wxString dirname = wxString::FromUTF8("__wxMkdir_test_dir_with_\xc3\xb6");
-    const std::string msg = wxString::Format("Dir: %s", dirname).ToStdString();
-    CPPUNIT_ASSERT_MESSAGE( msg, wxMkdir(dirname) );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxDirExists(dirname) );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxRmdir(dirname) );
+    wxString dirname = wxString::FromUTF8("__wxMkdir_test_dir_with_ö");
+    INFO("Dir: " << dirname);
+
+    CHECK( wxMkdir(dirname) );
+    CHECK( wxDirExists(dirname) );
+    CHECK( wxRmdir(dirname) );
 }
 
-void FileFunctionsTestCase::Rmdir()
+TEST_CASE_METHOD(FileFunctionsTestCase,
+                 "FileFunctions::Rmdir",
+                 "[filefn]")
 {
-    wxString dirname = wxString::FromUTF8("__wxRmdir_test_dir_with_\xc3\xb6");
-    const std::string msg = wxString::Format("Dir: %s", dirname).ToStdString();
+    wxString dirname = wxString::FromUTF8("__wxRmdir_test_dir_with_ö");
+    INFO("Dir: " << dirname);
 
-    CPPUNIT_ASSERT_MESSAGE( msg, wxMkdir(dirname) );
-    CPPUNIT_ASSERT_MESSAGE( msg, wxRmdir(dirname) );
-    CPPUNIT_ASSERT_MESSAGE( msg, !wxDirExists(dirname) );
+    CHECK( wxMkdir(dirname) );
+    CHECK( wxRmdir(dirname) );
+    CHECK( !wxDirExists(dirname) );
 }
 
 /*
@@ -566,3 +578,25 @@ bool wxIsExecutable(const wxString &path);
 */
 
 #endif // wxUSE_FILE
+
+#if wxUSE_FSVOLUME
+
+#include "wx/volume.h"
+
+TEST_CASE("FSVolume", "[fs][volume]")
+{
+    wxFSVolumeBase vol;
+    CHECK( !vol.IsOk() );
+
+    const auto& volumes = wxFSVolumeBase::GetVolumes();
+    if ( volumes.empty() )
+    {
+        WARN("No volumes found, skipping wxFSVolume tests.");
+        return;
+    }
+
+    vol.Create(volumes[0]);
+    REQUIRE( vol.IsOk() );
+}
+
+#endif // wxUSE_FSVOLUME

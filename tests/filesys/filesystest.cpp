@@ -1,9 +1,10 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Name:        tests/filesys/filesys.cpp
 // Purpose:     wxFileSystem unit test
-// Author:      Vaclav Slavik
+// Author:      Vaclav Slavik, Vyacheslav Lisovski
 // Created:     2004-03-28
 // Copyright:   (c) 2004 Vaclav Slavik
+//              (c) 2026 wxWidgets development team
 ///////////////////////////////////////////////////////////////////////////////
 
 // ----------------------------------------------------------------------------
@@ -12,19 +13,27 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
 #endif // WX_PRECOMP
 
 #include "wx/filesys.h"
+#include "wx/sysopt.h"
 
 #if wxUSE_FILESYSTEM
 
+#include "wx/fs_data.h"
 #include "wx/fs_mem.h"
+#include "wx/sstream.h"
+
+#if wxUSE_FS_ARCHIVE && wxUSE_ZIPSTREAM
+    #include "wx/fs_arc.h"
+    #include "wx/mstream.h"
+    #include "wx/zipstrm.h"
+#endif
+
+#include <memory>
 
 // ----------------------------------------------------------------------------
 // helpers
@@ -41,12 +50,38 @@ public:
     wxString RightLocation(const wxString& p) { return GetRightLocation(p); }
     wxString Anchor(const wxString& p) { return GetAnchor(p); }
 
-    bool CanOpen(const wxString& WXUNUSED(url)) wxOVERRIDE { return false; }
+    bool CanOpen(const wxString& WXUNUSED(url)) override { return false; }
     wxFSFile *OpenFile(wxFileSystem& WXUNUSED(fs),
-                       const wxString& WXUNUSED(url)) wxOVERRIDE { return NULL; }
+                       const wxString& WXUNUSED(url)) override { return nullptr; }
 
 
 };
+
+
+#if wxUSE_SYSTEM_OPTIONS
+class TempSystemOption
+{
+public:
+    TempSystemOption(const wxString& name, int value)
+        : m_name(name),
+          m_value(wxSystemOptions::GetOption(name)),
+          m_hadValue(wxSystemOptions::HasOption(name))
+    {
+        wxSystemOptions::SetOption(name, value);
+    }
+
+    ~TempSystemOption()
+    {
+        wxSystemOptions::SetOption(m_name,
+                                   m_hadValue ? m_value : wxString());
+    }
+
+private:
+    const wxString m_name;
+    const wxString m_value;
+    const bool m_hadValue;
+};
+#endif // wxUSE_SYSTEM_OPTIONS
 
 
 // ----------------------------------------------------------------------------
@@ -136,6 +171,20 @@ TEST_CASE("wxFileSystem::URLParsing", "[filesys][url][parse]")
     }
 }
 
+TEST_CASE("wxFileSystem::HTMLMimeFallback", "[filesys][mime]")
+{
+#if wxUSE_MIMETYPE && wxUSE_SYSTEM_OPTIONS
+    TempSystemOption noMimeManager("filesys.no-mimetypesmanager", 1);
+#endif
+
+    CHECK(wxFileSystemHandler::GetMimeTypeFromExt("index.htm") ==
+          "text/html");
+    CHECK(wxFileSystemHandler::GetMimeTypeFromExt("index.html") ==
+          "text/html");
+    CHECK(wxFileSystemHandler::GetMimeTypeFromExt("INDEX.HTML") ==
+          "text/html");
+}
+
 TEST_CASE("wxFileSystem::FileNameToUrlConversion", "[filesys][url][filename]")
 {
     const static struct Data {
@@ -178,8 +227,53 @@ TEST_CASE("wxFileSystem::UnicodeFileNameToUrlConversion", "[filesys][url][filena
     CHECK( filename.SameAs(wxFileName::URLToFileName(url)) );
 }
 
+TEST_CASE("wxFileSystem::DataSchemeFSHandler", "[filesys][dataschemefshandler][openfile]")
+{
+    // Install wxDataSchemeFSHandler just for the duration of this test.
+    class AutoDataSchemeFSHandler
+    {
+    public:
+        AutoDataSchemeFSHandler() : m_handler(make_unique<wxDataSchemeFSHandler>())
+        {
+            wxFileSystem::AddHandler(m_handler.get());
+        }
+        ~AutoDataSchemeFSHandler()
+        {
+            wxFileSystem::RemoveHandler(m_handler.get());
+        }
+    private:
+        std::unique_ptr<wxDataSchemeFSHandler> const m_handler;
+    } autoDataSchemeFSHandler;
+
+    wxFileSystem fs;
+
+    const struct wxTestCaseData
+    {
+        const char *info, *input, *result1, *result2;
+    } testData[] =
+    {
+        { "Testing minimal URI with data",
+            "data:,the%20data", "text/plain", "the data" },
+        { "Testing base64 encoded",
+            "data:x-t1/x-s1;base64,SGVsbG8sIFdvcmxkIQ==", "x-t1/x-s1", "Hello, World!" },
+        { "Testing complex media type",
+            "data:image/svg+xml;utf8,<svg width='10'... </svg>", "image/svg+xml;utf8", "<svg width='10'... </svg>" }
+    };
+
+    for ( const auto& dataItem : testData )
+    {
+        INFO(dataItem.info);
+        std::unique_ptr<wxFSFile> file(fs.OpenFile(dataItem.input));
+        CHECK(file->GetMimeType() == dataItem.result1);
+
+        wxStringOutputStream sos;
+        sos.Write(*file->GetStream());
+        CHECK(sos.GetString () == dataItem.result2);
+    }
+}
+
 // Test that using FindFirst() after removing a previously found URL works:
-// this used to be broken, see https://trac.wxwidgets.org/ticket/18744
+// this used to be broken, see https://github.com/wxWidgets/wxWidgets/issues/18744
 TEST_CASE("wxFileSystem::MemoryFSHandler", "[filesys][memoryfshandler][find]")
 {
     // Install wxMemoryFSHandler just for the duration of this test.
@@ -187,18 +281,18 @@ TEST_CASE("wxFileSystem::MemoryFSHandler", "[filesys][memoryfshandler][find]")
     {
     public:
         AutoMemoryFSHandler()
-            : m_handler(new wxMemoryFSHandler())
+            : m_handler(make_unique<wxMemoryFSHandler>())
         {
-            wxFileSystem::AddHandler(m_handler);
+            wxFileSystem::AddHandler(m_handler.get());
         }
 
         ~AutoMemoryFSHandler()
         {
-            wxFileSystem::RemoveHandler(m_handler);
+            wxFileSystem::RemoveHandler(m_handler.get());
         }
 
     private:
-        wxMemoryFSHandler* const m_handler;
+        std::unique_ptr<wxMemoryFSHandler> const m_handler;
     } autoMemoryFSHandler;
 
     wxMemoryFSHandler::AddFile("foo.txt", "foo contents");
@@ -225,5 +319,85 @@ TEST_CASE("wxFileSystem::MemoryFSHandler", "[filesys][memoryfshandler][find]")
     CHECK( fs.FindFirst(url) == url );
     CHECK( fs.FindNext() == "" );
 }
+
+#if wxUSE_FS_ARCHIVE && wxUSE_ZIPSTREAM
+
+// An archive may contain several entries with the same name. The archive file
+// system used to store the entries in a hash keyed by name that owned them,
+// while also keeping a separate list of raw aliases, so a duplicate name freed
+// the first entry while the list kept pointing at it. Re-enumerating the
+// (cached) archive then dereferenced the dangling pointer, see the discussion
+// in https://github.com/wxWidgets/wxWidgets/pull/26492 for the sibling class.
+TEST_CASE("wxFileSystem::ArchiveDuplicateNames", "[filesys][fs_arc][zip][find]")
+{
+    class AutoHandlers
+    {
+    public:
+        AutoHandlers()
+            : m_mem(make_unique<wxMemoryFSHandler>()),
+              m_arc(make_unique<wxArchiveFSHandler>())
+        {
+            wxFileSystem::AddHandler(m_mem.get());
+            wxFileSystem::AddHandler(m_arc.get());
+        }
+
+        ~AutoHandlers()
+        {
+            wxFileSystem::RemoveHandler(m_arc.get());
+            wxFileSystem::RemoveHandler(m_mem.get());
+        }
+
+    private:
+        std::unique_ptr<wxMemoryFSHandler> const m_mem;
+        std::unique_ptr<wxArchiveFSHandler> const m_arc;
+    } autoHandlers;
+
+    // Build a zip with two entries sharing the same name.
+    wxMemoryOutputStream mos;
+    {
+        wxZipOutputStream zos(mos);
+        REQUIRE( zos.PutNextEntry("dup.txt") );
+        zos.Write("one", 3);
+        REQUIRE( zos.PutNextEntry("dup.txt") );
+        zos.Write("two", 3);
+        REQUIRE( zos.Close() );
+    }
+
+    const size_t zipLen = mos.GetSize();
+    auto zipData = make_unique<unsigned char[]>(zipLen);
+    mos.CopyTo(zipData.get(), zipLen);
+    wxMemoryFSHandler::AddFile("dup.zip", zipData.get(), zipLen);
+
+    wxFileSystem fs;
+
+    // First enumeration reads and caches the whole archive; adding the second
+    // "dup.txt" is what used to free the first entry.
+    int firstCount = 0;
+    for ( wxString url = fs.FindFirst("memory:dup.zip#zip:*", wxFILE);
+          !url.empty();
+          url = fs.FindNext() )
+    {
+        firstCount++;
+    }
+    CHECK( firstCount == 2 );
+
+    // Second enumeration walks the cached list of entries: with the bug this
+    // reads the freed first entry (an ASAN use-after-free) and can return a
+    // bogus name; with the fix both entries are still alive.
+    int secondCount = 0;
+    for ( wxString url = fs.FindFirst("memory:dup.zip#zip:*", wxFILE);
+          !url.empty();
+          url = fs.FindNext() )
+    {
+        INFO("Found URL was: " << url);
+        CHECK( url.EndsWith("dup.txt") );
+        secondCount++;
+    }
+    CHECK( secondCount == 2 );
+
+    wxMemoryFSHandler::RemoveFile("dup.zip");
+}
+
+#endif // wxUSE_FS_ARCHIVE && wxUSE_ZIPSTREAM
 
 #endif // wxUSE_FILESYSTEM

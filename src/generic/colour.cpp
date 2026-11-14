@@ -1,8 +1,7 @@
 /////////////////////////////////////////////////////////////////////////////
 // Name:        src/generic/colour.cpp
-// Purpose:     wxColour class
+// Purpose:     wxColourImpl class
 // Author:      Julian Smart
-// Modified by:
 // Created:     01/02/97
 // Copyright:   (c) Julian Smart
 // Licence:     wxWindows licence
@@ -11,9 +10,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/colour.h"
 
@@ -23,16 +19,7 @@
 
 // Colour
 
-void wxColour::Init()
-{
-    m_red =
-    m_blue =
-    m_green = 0;
-    m_alpha = wxALPHA_OPAQUE;
-    m_isInit = false;
-}
-
-void wxColour::InitRGBA(unsigned char r,
+void wxColourImpl::InitRGBA(unsigned char r,
                         unsigned char g,
                         unsigned char b,
                         unsigned char a)
@@ -44,7 +31,7 @@ void wxColour::InitRGBA(unsigned char r,
     m_isInit = true;
 }
 
-wxColour& wxColour::operator=(const wxColour& col)
+wxColourImpl& wxColourImpl::operator=(const wxColourImpl& col)
 {
     m_red = col.m_red;
     m_green = col.m_green;

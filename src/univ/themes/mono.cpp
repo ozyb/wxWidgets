@@ -2,7 +2,6 @@
 // Name:        src/univ/themes/mono.cpp
 // Purpose:     wxUniversal theme for monochrome displays
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     2006-08-27
 // Copyright:   (c) 2006 REA Elektronik GmbH
 // Licence:     wxWindows licence
@@ -19,9 +18,6 @@
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/univ/theme.h"
 
@@ -59,7 +55,7 @@ public:
                            int flags = 0,
                            int alignment = wxALIGN_LEFT | wxALIGN_TOP,
                            int indexAccel = -1,
-                           wxRect *rectBounds = NULL);
+                           wxRect *rectBounds = nullptr);
     virtual void DrawButtonLabel(wxDC& dc,
                                  const wxString& label,
                                  const wxBitmap& image,
@@ -67,14 +63,14 @@ public:
                                  int flags = 0,
                                  int alignment = wxALIGN_LEFT | wxALIGN_TOP,
                                  int indexAccel = -1,
-                                 wxRect *rectBounds = NULL);
+                                 wxRect *rectBounds = nullptr);
 
     virtual void DrawFocusRect(wxWindow* win, wxDC& dc, const wxRect& rect, int flags = 0);
 
     virtual void DrawButtonBorder(wxDC& dc,
                                   const wxRect& rect,
                                   int flags = 0,
-                                  wxRect *rectIn = NULL);
+                                  wxRect *rectIn = nullptr);
 
     virtual void DrawHorizontalLine(wxDC& dc,
                                     wxCoord y, wxCoord x1, wxCoord x2);
@@ -122,7 +118,7 @@ public:
                                  wxOrientation orient,
                                  int flags = 0,
                                  long style = 0,
-                                 wxRect *rectShaft = NULL);
+                                 wxRect *rectShaft = nullptr);
 
     virtual void DrawSliderThumb(wxDC& dc,
                                  const wxRect& rect,
@@ -521,9 +517,9 @@ WX_IMPLEMENT_THEME(wxMonoTheme, mono, wxTRANSLATE("Simple monochrome theme"));
 
 wxMonoTheme::wxMonoTheme()
 {
-    m_scheme = NULL;
-    m_renderer = NULL;
-    m_artProvider = NULL;
+    m_scheme = nullptr;
+    m_renderer = nullptr;
+    m_artProvider = nullptr;
 }
 
 wxMonoTheme::~wxMonoTheme()
@@ -567,7 +563,7 @@ wxInputHandler *wxMonoTheme::GetInputHandler(const wxString& WXUNUSED(control),
                                              wxInputConsumer *consumer)
 {
     // no special input handlers so far
-    return consumer->DoGetStdInputHandler(NULL);
+    return consumer->DoGetStdInputHandler(nullptr);
 }
 
 // ============================================================================
@@ -613,7 +609,7 @@ wxColour wxMonoColourScheme::Get(wxMonoColourScheme::StdColour col) const
         case MAX:
         default:
             wxFAIL_MSG(wxT("invalid standard colour"));
-            // fall through
+            wxFALLTHROUGH;
 
         case SHADOW_DARK:
         case SHADOW_HIGHLIGHT:
@@ -667,7 +663,7 @@ wxRect wxMonoRenderer::GetBorderDimensions(wxBorder border) const
    */
         default:
             wxFAIL_MSG(wxT("unknown border type"));
-            // fall through
+            wxFALLTHROUGH;
 
         case wxBORDER_DEFAULT:
         case wxBORDER_NONE:
@@ -942,7 +938,7 @@ wxMenuGeometryInfo *wxMonoRenderer::GetMenuGeometry(wxWindow *WXUNUSED(win),
 {
     wxFAIL_MSG(wxT("TODO"));
 
-    return NULL;
+    return nullptr;
 }
 
 #endif // wxUSE_MENUS

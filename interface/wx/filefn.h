@@ -101,7 +101,7 @@ public:
 // ============================================================================
 
 /** @addtogroup group_funcmacro_file */
-//@{
+///@{
 
 /**
     A special return value of many wxWidgets classes to indicate that
@@ -199,7 +199,7 @@ bool wxDirExists(const wxString& dirname);
     separators under Windows, however it will not consider backslashes as path
     separators under Unix (where backslash is a valid character in a filename).
 
-    On entry, @a fullname should be non-@NULL (it may be empty though).
+    On entry, @a fullname should be non-null (it may be empty though).
 
     On return, @a path contains the file path (without the trailing separator),
     @a name contains the file name and @c ext contains the file extension
@@ -227,10 +227,23 @@ time_t wxFileModificationTime(const wxString& filename);
 /**
     Renames @a oldpath to @e newpath, returning @true if successful.
 
-    If @a newpath is a directory, @a oldpath is moved into it (@a overwrite is
-    ignored in this case). Otherwise, if @a newpath is an existing file, it is
-    overwritten if @a overwrite is @true (default) and the function fails if @a
-    overwrite is @false.
+    If @a newpath is an existing file, it is overwritten if @a overwrite is
+    @true (default) and the function fails if @a overwrite is @false.
+
+    Since wxWidgets 3.3.4, `MoveFileEx()` is used under MSW, which makes
+    replacing the existing @a newpath atomic if both files are on the same
+    volume. Note that this function does @e not preserve the attributes of the
+    replaced file: use wxFileName::CopyAttributesFrom() before renaming if you
+    need to keep them.
+
+    @param oldpath
+        The path of the existing file to rename.
+    @param newpath
+        The new path for the file. Must be a file, not a directory.
+    @param overwrite
+        If @a newpath exists, it will be overwritten if @a overwrite is @true,
+        otherwise the function will fail. If it doesn't exist, this parameter
+        is ignored.
 
     @header{wx/filefn.h}
 */
@@ -263,6 +276,9 @@ bool wxFileExists(const wxString& filename);
     @true, filenames beginning with a dot are not matched with wildcard
     characters.
 
+    @note Matching is always case-sensitive, even on platforms where paths
+          are generally treated as case-insensitive.
+
     @see wxIsWild()
 
     @header{wx/filefn.h}
@@ -282,10 +298,23 @@ bool wxMatchWild(const wxString& pattern,
 
     @header{wx/filefn.h}
 */
-wxString wxGetWorkingDirectory(char* buf = NULL, int sz = 1000);
+wxString wxGetWorkingDirectory(char* buf = nullptr, int sz = 1000);
 
 /**
     Returns the directory part of the filename.
+
+    @deprecated Please use wxFileName::GetPath() instead.
+
+    Note that the behaviour of this function is slightly different for Windows
+    paths including drive letters: it returns a string without trailing
+    backslash for the absolute paths with drive letters and a string with
+    trailing dot for the relative paths with drive letters.
+
+    Since wxWidgets 3.3.3 all path separators are normalized to the current
+    platform path separator in the returned path, i.e. under Windows forward
+    slashes in @a path will be replaced with backslashes in the returned value.
+    Previous versions of wxWidgets didn't perform this normalization and
+    returned the path with the same separators as in @a path.
 
     @header{wx/filefn.h}
 */
@@ -342,6 +371,31 @@ bool wxConcatFiles(const wxString& src1,
 bool wxRemoveFile(const wxString& file);
 
 /**
+    Moves @a path to the system trash or recycle bin.
+
+    This works for both files and directories. The item is not permanently
+    deleted and can be restored by the user from the platform's trash
+    facility.
+
+    Preprocessor symbol @c wxHAS_MOVE_TO_TRASH is defined if this function is
+    available on the current platform.
+
+    Implementation details:
+    - Under Windows, this uses @c SHFileOperation with @c FOF_ALLOWUNDO.
+    - Under macOS, this uses @c NSFileManager's @c trashItemAtURL method.
+    - Under Unix systems (including Linux and BSD), this uses @c g_file_trash.
+
+    @returns @true on success or @false if the operation failed in which case
+        an error message will have been logged using wxLogError() and the file
+        or directory at @a path is left in place.
+
+    @since 3.3.3
+
+    @header{wx/filefn.h}
+*/
+bool wxMoveToTrash(const wxString& path);
+
+/**
     File permission bit names.
 
     We define these constants in wxWidgets because S_IREAD &c are not standard.
@@ -350,7 +404,7 @@ bool wxRemoveFile(const wxString& file);
 enum wxPosixPermissions
 {
     /// Standard POSIX names for these permission flags with "wx" prefix.
-    //@{
+    ///@{
     wxS_IRUSR = 00400,
     wxS_IWUSR = 00200,
     wxS_IXUSR = 00100,
@@ -362,10 +416,10 @@ enum wxPosixPermissions
     wxS_IROTH = 00004,
     wxS_IWOTH = 00002,
     wxS_IXOTH = 00001,
-    //@}
+    ///@}
 
     /// Longer but more readable synonyms for the constants above.
-    //@{
+    ///@{
     wxPOSIX_USER_READ = wxS_IRUSR,
     wxPOSIX_USER_WRITE = wxS_IWUSR,
     wxPOSIX_USER_EXECUTE = wxS_IXUSR,
@@ -377,7 +431,7 @@ enum wxPosixPermissions
     wxPOSIX_OTHERS_READ = wxS_IROTH,
     wxPOSIX_OTHERS_WRITE = wxS_IWOTH,
     wxPOSIX_OTHERS_EXECUTE = wxS_IXOTH,
-    //@}
+    ///@}
 
     /// Default mode for the new files: allow reading/writing them to everybody but
     /// the effective file mode will be set after ANDing this value with umask and
@@ -487,10 +541,25 @@ enum wxFileKind
     wxFILE_KIND_PIPE      ///< A pipe
 };
 
-//@}
+///@}
 
 /** @addtogroup group_funcmacro_file */
-//@{
+///@{
+/**
+    Returns the file descriptor for the given @a fp.
+
+    @param fp
+        A valid pointer to a @c FILE.
+    @returns
+        The file descriptor for the given @a fp, or -1 on error.
+
+    @since 3.3.4
+ */
+int wxGetFileDescriptor(FILE *fp);
+///@}
+
+/** @addtogroup group_funcmacro_file */
+///@{
 /**
     Returns the type of an open file. Possible return values are enumerations
     of ::wxFileKind.
@@ -499,10 +568,10 @@ enum wxFileKind
 */
 wxFileKind wxGetFileKind(int fd);
 wxFileKind wxGetFileKind(FILE* fp);
-//@}
+///@}
 
 /** @addtogroup group_funcmacro_file */
-//@{
+///@{
 /**
     @deprecated
         This function is obsolete, please use wxFileName::SplitPath() instead.
@@ -514,17 +583,17 @@ wxFileKind wxGetFileKind(FILE* fp);
 */
 wxString wxFileNameFromPath(const wxString& path);
 char* wxFileNameFromPath(char* path);
-//@}
+///@}
 
 /** @addtogroup group_funcmacro_file */
-//@{
+///@{
 /**
     @deprecated
         This function is obsolete, please use wxFileName::CreateTempFileName() instead.
 
     @header{wx/filefn.h}
 */
-char* wxGetTempFileName(const wxString& prefix, char* buf = NULL);
+char* wxGetTempFileName(const wxString& prefix, char* buf = nullptr);
 bool wxGetTempFileName(const wxString& prefix, wxString& buf);
-//@}
+///@}
 

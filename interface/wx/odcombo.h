@@ -89,7 +89,7 @@ public:
     wxOwnerDrawnComboBox();
 
     /**
-        Constructor, creating and showing a owner-drawn combobox.
+        Constructor, creating and showing an owner-drawn combobox.
 
         @param parent
             Parent window. Must not be @NULL.
@@ -120,12 +120,12 @@ public:
                          const wxPoint& pos = wxDefaultPosition,
                          const wxSize& size = wxDefaultSize,
                          int n = 0,
-                         const wxString choices[] = NULL,
+                         const wxString choices[] = nullptr,
                          long style = 0,
                          const wxValidator& validator = wxDefaultValidator,
                          const wxString& name = "comboBox");
     /**
-        Constructor, creating and showing a owner-drawn combobox.
+        Constructor, creating and showing an owner-drawn combobox.
 
         @param parent
             Parent window. Must not be @NULL.
@@ -159,11 +159,46 @@ public:
                          const wxString& name = "comboBox");
 
     /**
+        Constructor, creating and showing an owner-drawn combobox.
+
+        This overload creates a combobox with no initial items. It has been
+        added in wxWindow 3.3.1.
+
+        @param parent
+            Parent window. Must not be @NULL.
+        @param id
+            Window identifier. The value @c wxID_ANY indicates a default value.
+        @param value
+            Initial selection string. An empty string indicates no selection.
+        @param pos
+            Window position.
+        @param size
+            Window size.
+            If ::wxDefaultSize is specified then the window is sized appropriately.
+        @param style
+            Window style. See wxOwnerDrawnComboBox.
+        @param validator
+            Window validator.
+        @param name
+            Window name.
+
+        @see Create(), wxValidator
+     */
+    wxOwnerDrawnComboBox(wxWindow *parent,
+                         wxWindowID id,
+                         const wxString& value = wxEmptyString,
+                         const wxPoint& pos = wxDefaultPosition,
+                         const wxSize& size = wxDefaultSize,
+                         long style = 0,
+                         const wxValidator& validator = wxDefaultValidator,
+                         const wxString& name = wxComboBoxNameStr);
+
+    /**
         Destructor, destroying the owner-drawn combobox.
     */
     virtual ~wxOwnerDrawnComboBox();
 
-    //@{
+    ///@{
     /**
         Creates the combobox for two-step construction.
         See wxOwnerDrawnComboBox() for further details.
@@ -197,7 +232,7 @@ public:
                 long style = 0,
                 const wxValidator& validator = wxDefaultValidator,
                 const wxString& name = wxComboBoxNameStr);
-    //@}
+    ///@}
 
     /**
         IsEmpty() is not available in this class.

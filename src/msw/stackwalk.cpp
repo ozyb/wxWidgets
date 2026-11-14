@@ -18,9 +18,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_STACKWALKER
 
@@ -58,6 +55,11 @@ void wxStackFrame::OnGetName()
                         ) )
     {
         wxDbgHelpDLL::LogError(wxT("SymFromAddr"));
+    }
+    else
+    {
+        // make the offset relative to the frame address and not GetSymAddr()
+        m_offset += m_symAddrAdjust;
     }
 }
 
@@ -156,7 +158,7 @@ void wxStackFrame::OnGetParam()
                         (
                             ::GetCurrentProcess(),
                             &imagehlpStackFrame,
-                            0           // unused
+                            nullptr // unused
                         ) )
     {
         // for symbols from kernel DLL we might not have access to their
@@ -233,6 +235,16 @@ void wxStackWalker::WalkFrom(const CONTEXT *pCtx, size_t skip, size_t maxDepth)
     sf.AddrFrame.Mode      = AddrModeFlat;
 
     dwMachineType = IMAGE_FILE_MACHINE_AMD64;
+#elif defined(_M_ARM)
+    // TODO: Verify this code on ARM
+    sf.AddrPC.Offset       = ctx.Pc;
+    sf.AddrPC.Mode         = AddrModeFlat;
+    sf.AddrStack.Offset    = ctx.Sp;
+    sf.AddrStack.Mode      = AddrModeFlat;
+    sf.AddrFrame.Offset    = ctx.R11;
+    sf.AddrFrame.Mode      = AddrModeFlat;
+
+    dwMachineType = IMAGE_FILE_MACHINE_ARM;
 #elif defined(_M_ARM64)
     // TODO: Verify this code once Windows 10 for ARM64 is commercially available
     sf.AddrPC.Offset       = ctx.Pc;
@@ -267,10 +279,10 @@ void wxStackWalker::WalkFrom(const CONTEXT *pCtx, size_t skip, size_t maxDepth)
                                 ::GetCurrentThread(),
                                 &sf,
                                 &ctx,
-                                NULL,       // read memory function (default)
+                                nullptr,       // read memory function (default)
                                 wxDbgHelpDLL::SymFunctionTableAccess,
                                 wxDbgHelpDLL::SymGetModuleBase,
-                                NULL        // address translator for 16 bit
+                                nullptr        // address translator for 16 bit
                             ) )
         {
             if ( ::GetLastError() )
@@ -282,9 +294,15 @@ void wxStackWalker::WalkFrom(const CONTEXT *pCtx, size_t skip, size_t maxDepth)
         // don't show this frame itself in the output
         if ( nLevel >= skip )
         {
+            // only the innermost frame address comes from the context, all the
+            // other ones are return addresses (this is not true for the frame
+            // interrupted by an exception if we're called from an exception
+            // handler and not via WalkFromException(), but we can't detect it)
             wxStackFrame frame(nLevel - skip,
                                wxUIntToPtr(sf.AddrPC.Offset),
-                               sf.AddrFrame.Offset);
+                               sf.AddrFrame.Offset,
+                               nLevel == 0 ? wxStackFrame::AddrKind::Current
+                                           : wxStackFrame::AddrKind::Return);
 
             OnStackFrame(frame);
         }
@@ -316,17 +334,12 @@ void wxStackWalker::WalkFromException(size_t maxDepth)
 
 #endif // wxUSE_ON_FATAL_EXCEPTION
 
-#ifdef __VISUALC__
-    #pragma warning(push)
-
-    // "warning C4740: flow in or out of inline asm code suppresses global
-    //  optimization"
-    #pragma warning(disable: 4740)
-
-    // "warning C4748: /GS can not protect parameters and local variables from
-    //  local buffer overrun because optimizations are disabled in function"
-    #pragma warning(disable: 4748)
-#endif
+// "warning C4740: flow in or out of inline asm code suppresses global
+//  optimization"
+//
+// "warning C4748: /GS can not protect parameters and local variables from
+//  local buffer overrun because optimizations are disabled in function"
+wxMSVC_WARNING_SUPPRESS(4740 4748)
 
 void wxStackWalker::Walk(size_t skip, size_t maxDepth)
 {
@@ -335,7 +348,7 @@ void wxStackWalker::Walk(size_t skip, size_t maxDepth)
     // Software License.
 
     CONTEXT ctx;
-#ifdef __WIN64__
+#if defined(__WIN64__) || defined(_M_ARM)
     RtlCaptureContext(&ctx);
 #else // Win32
     // RtlCaptureContext() is not implemented correctly for x86 and can even
@@ -370,9 +383,7 @@ void wxStackWalker::Walk(size_t skip, size_t maxDepth)
     WalkFrom(&ctx, skip, maxDepth);
 }
 
-#ifdef __VISUALC__
-    #pragma warning(pop)
-#endif
+wxMSVC_WARNING_RESTORE(4740 4748)
 
 #endif // wxUSE_STACKWALKER
 

@@ -3,7 +3,6 @@
 // Purpose:     wxFile - encapsulates low-level "file descriptor"
 //              wxTempFile - safely replace the old file
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     29/01/98
 // Copyright:   (c) 1998 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 // Licence:     wxWindows licence
@@ -130,6 +129,7 @@ private:
 
   int m_fd; // file descriptor or INVALID_FD if not opened
   int m_lasterror; // errno value of last error
+  wxString m_filename; // filename is only used for error messages
 };
 
 // ----------------------------------------------------------------------------
@@ -145,7 +145,7 @@ class WXDLLIMPEXP_BASE wxTempFile
 public:
   // ctors
     // default
-  wxTempFile() { }
+  wxTempFile() = default;
     // associates the temp file with the file to be replaced and opens it
   explicit wxTempFile(const wxString& strName);
 

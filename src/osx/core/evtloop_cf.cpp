@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/evtloop.h"
 
@@ -34,9 +31,13 @@
 
 #include "wx/scopedptr.h"
 
+#include "wx/scopeguard.h"
+
 #include "wx/osx/private.h"
 #include "wx/osx/core/cfref.h"
 #include "wx/thread.h"
+
+#include "wx/private/safecall.h"
 
 #if wxUSE_GUI
     #include "wx/nonownedwnd.h"
@@ -68,21 +69,21 @@ wxCFEventLoopSource::~wxCFEventLoopSource()
 
 #endif // wxUSE_EVENTLOOP_SOURCE
 
-void wxCFEventLoop::OSXCommonModeObserverCallBack(CFRunLoopObserverRef observer, int activity, void *info)
+void wxCFEventLoop::OSXCommonModeObserverCallBack(CFRunLoopObserverRef observer, unsigned long activity, void *info)
 {
     wxCFEventLoop * eventloop = static_cast<wxCFEventLoop *>(info);
     if ( eventloop && eventloop->IsRunning() )
         eventloop->CommonModeObserverCallBack(observer, activity);
 }
 
-void wxCFEventLoop::OSXDefaultModeObserverCallBack(CFRunLoopObserverRef observer, int activity, void *info)
+void wxCFEventLoop::OSXDefaultModeObserverCallBack(CFRunLoopObserverRef observer, unsigned long activity, void *info)
 {
     wxCFEventLoop * eventloop = static_cast<wxCFEventLoop *>(info);
     if ( eventloop && eventloop->IsRunning() )
         eventloop->DefaultModeObserverCallBack(observer, activity);
 }
 
-void wxCFEventLoop::CommonModeObserverCallBack(CFRunLoopObserverRef WXUNUSED(observer), int activity)
+void wxCFEventLoop::CommonModeObserverCallBack(CFRunLoopObserverRef WXUNUSED(observer), unsigned long activity)
 {
     if ( activity & kCFRunLoopBeforeTimers )
     {
@@ -115,13 +116,13 @@ void wxCFEventLoop::CommonModeObserverCallBack(CFRunLoopObserverRef WXUNUSED(obs
 
 void
 wxCFEventLoop::DefaultModeObserverCallBack(CFRunLoopObserverRef WXUNUSED(observer),
-                                           int WXUNUSED(activity))
+                                           unsigned long WXUNUSED(activity))
 {
     /*
     if ( activity & kCFRunLoopBeforeTimers )
     {
     }
-    
+
     if ( activity & kCFRunLoopBeforeWaiting )
     {
     }
@@ -137,18 +138,18 @@ wxCFEventLoop::wxCFEventLoop()
 #if wxUSE_UIACTIONSIMULATOR
     m_shouldWaitForEvent = false;
 #endif
-    
+
     m_runLoop = CFGetCurrentRunLoop();
 
     CFRunLoopObserverContext ctxt;
     bzero( &ctxt, sizeof(ctxt) );
     ctxt.info = this;
     m_commonModeRunLoopObserver = CFRunLoopObserverCreate( kCFAllocatorDefault, kCFRunLoopBeforeTimers | kCFRunLoopBeforeWaiting , true /* repeats */, 0,
-                                                          (CFRunLoopObserverCallBack) wxCFEventLoop::OSXCommonModeObserverCallBack, &ctxt );
+                                                          wxCFEventLoop::OSXCommonModeObserverCallBack, &ctxt );
     CFRunLoopAddObserver(m_runLoop, m_commonModeRunLoopObserver, kCFRunLoopCommonModes);
 
     m_defaultModeRunLoopObserver = CFRunLoopObserverCreate( kCFAllocatorDefault, kCFRunLoopBeforeTimers | kCFRunLoopBeforeWaiting , true /* repeats */, 0,
-                                                           (CFRunLoopObserverCallBack) wxCFEventLoop::OSXDefaultModeObserverCallBack, &ctxt );
+                                                           wxCFEventLoop::OSXDefaultModeObserverCallBack, &ctxt );
     CFRunLoopAddObserver(m_runLoop, m_defaultModeRunLoopObserver, kCFRunLoopDefaultMode);
 }
 
@@ -252,10 +253,8 @@ int wxCFEventLoop::DoDispatchTimeout(unsigned long timeout)
             break;
         case kCFRunLoopRunStopped:
             return 0;
-            break;
         case kCFRunLoopRunTimedOut:
             return -1;
-            break;
         case kCFRunLoopRunHandledSource:
         default:
             break;
@@ -316,56 +315,47 @@ void wxCFEventLoop::OSXDoStop()
 // terminating when Exit() is called
 int wxCFEventLoop::DoRun()
 {
+#if wxUSE_EXCEPTIONS
     // we must ensure that OnExit() is called even if an exception is thrown
     // from inside ProcessEvents() but we must call it from Exit() in normal
     // situations because it is supposed to be called synchronously,
-    // wxModalEventLoop depends on this (so we can't just use ON_BLOCK_EXIT or
-    // something similar here)
-#if wxUSE_EXCEPTIONS
-    for ( ;; )
-    {
-        try
-        {
+    // wxModalEventLoop depends on this, so we can't just use ON_BLOCK_EXIT and
+    // need a named guard to be able to dismiss it if it was called normally
+    wxScopeGuard guardOnExit = wxMakeObjGuard(*this, &wxCFEventLoop::OnExit);
 #endif // wxUSE_EXCEPTIONS
 
+    // This loop is only used when exceptions are used, but it should hopefully
+    // be optimized away completely when they are not, so use it in any case to
+    // make the code simpler.
+    for ( bool stop = false; !stop; )
+    {
+        wxSafeCall<void>([&, this]
+        {
             OSXDoRun();
 
 #if wxUSE_EXCEPTIONS
-            // exit the outer loop as well
-            break;
-        }
-        catch ( ... )
-        {
-            try
-            {
-                if ( !wxTheApp || !wxTheApp->OnExceptionInMainLoop() )
-                {
-                    OnExit();
-                    break;
-                }
-                //else: continue running the event loop
-            }
-            catch ( ... )
-            {
-                // OnException() throwed, possibly rethrowing the same
-                // exception again: very good, but we still need OnExit() to
-                // be called
-                OnExit();
-                throw;
-            }
-        }
-    }
+            guardOnExit.Dismiss();
 #endif // wxUSE_EXCEPTIONS
+
+            stop = true;
+        }, [&]()
+        {
+#if wxUSE_EXCEPTIONS
+            if ( !wxTheApp || !wxTheApp->OnExceptionInMainLoop() )
+            {
+                stop = true;
+            }
+            //else: continue running the event loop
+#endif // wxUSE_EXCEPTIONS
+        });
+    }
 
     return m_exitcode;
 }
 
-// sets the "should exit" flag and wakes up the loop so that it terminates
-// soon
-void wxCFEventLoop::ScheduleExit(int rc)
+void wxCFEventLoop::DoStop(int rc)
 {
     m_exitcode = rc;
-    m_shouldExit = true;
     OSXDoStop();
 }
 
@@ -402,10 +392,10 @@ static bool gs_bGuiOwnedByMainThread = true;
 // critical section which controls access to all GUI functions: any secondary
 // thread (i.e. except the main one) must enter this crit section before doing
 // any GUI calls
-static wxCriticalSection *gs_critsectGui = NULL;
+static wxCriticalSection *gs_critsectGui = nullptr;
 
 // critical section which protects gs_nWaitingForGui variable
-static wxCriticalSection *gs_critsectWaitingForGui = NULL;
+static wxCriticalSection *gs_critsectWaitingForGui = nullptr;
 
 // number of threads waiting for GUI in wxMutexGuiEnter()
 static size_t gs_nWaitingForGui = 0;

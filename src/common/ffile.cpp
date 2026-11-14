@@ -2,7 +2,6 @@
 // Name:        src/common/ffile.cpp
 // Purpose:     wxFFile encapsulates "FILE *" IO stream
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     14.07.99
 // Copyright:   (c) 1998 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 // Licence:     wxWindows licence
@@ -19,9 +18,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-  #pragma hdrstop
-#endif
 
 #if wxUSE_FFILE
 
@@ -33,6 +29,7 @@
 
 #include "wx/filename.h"
 #include "wx/ffile.h"
+#include "wx/private/filename.h"
 
 // ============================================================================
 // implementation of wxFFile
@@ -44,7 +41,7 @@
 
 wxFFile::wxFFile(const wxString& filename, const wxString& mode)
 {
-    m_fp = NULL;
+    m_fp = nullptr;
 
     (void)Open(filename, mode);
 }
@@ -73,12 +70,12 @@ bool wxFFile::Close()
     {
         if ( fclose(m_fp) != 0 )
         {
-            wxLogSysError(_("can't close file '%s'"), m_name.c_str());
+            wxLogSysError(_("can't close file '%s'"), m_name);
 
             return false;
         }
 
-        m_fp = NULL;
+        m_fp = nullptr;
     }
 
     return true;
@@ -107,7 +104,7 @@ bool wxFFile::ReadAll(wxString *str, const wxMBConv& conv)
 
     if ( Error() )
     {
-        wxLogSysError(_("Read error on file '%s'"), m_name.c_str());
+        wxLogSysError(_("Read error on file '%s'"), m_name);
 
         return false;
     }
@@ -132,7 +129,7 @@ size_t wxFFile::Read(void *pBuf, size_t nCount)
     size_t nRead = fread(pBuf, 1, nCount, m_fp);
     if ( (nRead < nCount) && Error() )
     {
-        wxLogSysError(_("Read error on file '%s'"), m_name.c_str());
+        wxLogSysError(_("Read error on file '%s'"), m_name);
     }
 
     return nRead;
@@ -149,7 +146,7 @@ size_t wxFFile::Write(const void *pBuf, size_t nCount)
     size_t nWritten = fwrite(pBuf, 1, nCount, m_fp);
     if ( nWritten < nCount )
     {
-        wxLogSysError(_("Write error on file '%s'"), m_name.c_str());
+        wxLogSysError(_("Write error on file '%s'"), m_name);
     }
 
     return nWritten;
@@ -164,7 +161,6 @@ bool wxFFile::Write(const wxString& s, const wxMBConv& conv)
 
     const wxWX2MBbuf buf = s.mb_str(conv);
 
-#if wxUSE_UNICODE
     const size_t size = buf.length();
 
     if ( !size )
@@ -174,9 +170,6 @@ bool wxFFile::Write(const wxString& s, const wxMBConv& conv)
         // must fail too to indicate that we can't save the data.
         return false;
     }
-#else
-    const size_t size = s.length();
-#endif
 
     return Write(buf, size) == size;
 }
@@ -187,11 +180,34 @@ bool wxFFile::Flush()
     {
         if ( fflush(m_fp) != 0 )
         {
-            wxLogSysError(_("failed to flush the file '%s'"), m_name.c_str());
+            wxLogSysError(_("failed to flush the file '%s'"), m_name);
 
             return false;
         }
     }
+
+    return true;
+}
+
+bool wxFFile::FlushAndSync()
+{
+    if ( !Flush() )
+        return false;
+
+#ifdef HAVE_FSYNC
+    // As in wxFile::Flush(), don't call fsync() for the files for which it
+    // doesn't work, such as pipes.
+    if ( IsOpened() && GetKind() == wxFILE_KIND_DISK )
+    {
+        const int fd = wxGetFileDescriptor(m_fp);
+        if ( fd != -1 && wxFsync(fd) != 0 )
+        {
+            wxLogSysError(_("failed to sync data of the file '%s'"), m_name);
+
+            return false;
+        }
+    }
+#endif // HAVE_FSYNC
 
     return true;
 }
@@ -227,7 +243,7 @@ bool wxFFile::Seek(wxFileOffset ofs, wxSeekMode mode)
 #ifndef wxHAS_LARGE_FFILES
     if ((long)ofs != ofs)
     {
-        wxLogError(_("Seek error on file '%s' (large files not supported by stdio)"), m_name.c_str());
+        wxLogError(_("Seek error on file '%s' (large files not supported by stdio)"), m_name);
 
         return false;
     }
@@ -237,7 +253,7 @@ bool wxFFile::Seek(wxFileOffset ofs, wxSeekMode mode)
     if ( wxFseek(m_fp, ofs, origin) != 0 )
 #endif
     {
-        wxLogSysError(_("Seek error on file '%s'"), m_name.c_str());
+        wxLogSysError(_("Seek error on file '%s'"), m_name);
 
         return false;
     }
@@ -253,8 +269,7 @@ wxFileOffset wxFFile::Tell() const
     wxFileOffset rc = wxFtell(m_fp);
     if ( rc == wxInvalidOffset )
     {
-        wxLogSysError(_("Can't find current position in file '%s'"),
-                      m_name.c_str());
+        wxLogSysError(_("Can't find current position in file '%s'"), m_name);
     }
 
     return rc;
@@ -335,29 +350,7 @@ bool wxTempFFile::Open(const wxString& strName)
         return false;
     }
 
-#ifdef __UNIX__
-    // the temp file should have the same permissions as the original one
-    mode_t mode;
-
-    wxStructStat st;
-    if ( stat( (const char*) m_strName.fn_str(), &st) == 0 )
-    {
-        mode = st.st_mode;
-    }
-    else
-    {
-        // file probably didn't exist, just give it the default mode _using_
-        // user's umask (new files creation should respect umask)
-        mode_t mask = umask(0777);
-        mode = 0666 & ~mask;
-        umask(mask);
-    }
-
-    if ( chmod( (const char*) m_strTemp.fn_str(), mode) == -1 )
-    {
-        wxLogSysError(_("Failed to set temporary file permissions"));
-    }
-#endif // Unix
+    wxInitTempFile(m_strTemp, m_strName);
 
     return true;
 }
@@ -374,15 +367,21 @@ wxTempFFile::~wxTempFFile()
 
 bool wxTempFFile::Commit()
 {
+    // Ensure that the data really reaches the disk, see the comment in
+    // wxTempFile::Commit().
+    const bool flushed = m_file.FlushAndSync();
+
     m_file.Close();
 
-    if ( wxFile::Exists(m_strName) && wxRemove(m_strName) != 0 ) {
-        wxLogSysError(_("can't remove file '%s'"), m_strName.c_str());
+    if ( !flushed )
+    {
+        // Don't replace the old file if we're not sure that the new contents
+        // was written successfully.
         return false;
     }
 
-    if ( !wxRenameFile(m_strTemp, m_strName)  ) {
-        wxLogSysError(_("can't commit changes to file '%s'"), m_strName.c_str());
+    if ( !wxRenameFile(m_strTemp, m_strName) ) {
+        wxLogSysError(_("can't commit changes to file '%s'"), m_strName);
         return false;
     }
 
@@ -394,7 +393,7 @@ void wxTempFFile::Discard()
     m_file.Close();
     if ( wxRemove(m_strTemp) != 0 )
     {
-        wxLogSysError(_("can't remove temporary file '%s'"), m_strTemp.c_str());
+        wxLogSysError(_("can't remove temporary file '%s'"), m_strTemp);
     }
 }
 

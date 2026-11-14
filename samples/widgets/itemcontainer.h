@@ -15,8 +15,8 @@ class ItemContainerWidgetsPage : public WidgetsPage
 {
 public:
     ItemContainerWidgetsPage(WidgetsBookCtrl *book,
-                             wxImageList *image_list,
-                             const char *const icon[]);
+                             wxVector<wxBitmapBundle>& imaglist,
+                             WidgetsIcon icon);
     virtual ~ItemContainerWidgetsPage();
 
     void OnButtonTestItemContainer(wxCommandEvent& event);

@@ -3,7 +3,6 @@
 // Purpose:     Definition of the wxToggleButton class, which implements a
 //              toggle button under wxMac.
 // Author:      Stefan Csomor
-// Modified by:
 // Created:     08.02.01
 // Copyright:   (c) Stefan Csomor
 // Licence:     wxWindows licence
@@ -23,14 +22,7 @@
 
 #include "wx/tglbtn.h"
 #include "wx/osx/private.h"
-
-// from button.mm
-
-extern "C" void SetBezelStyleFromBorderFlags(NSButton *v,
-                                             long style,
-                                             wxWindowID winid = wxID_ANY,
-                                             const wxString& label = wxString(),
-                                             const wxBitmap& bitmap = wxBitmap());
+#include "wx/private/bmpbndl.h"
 
 wxWidgetImplType* wxWidgetImpl::CreateToggleButton( wxWindowMac* wxpeer,
                                     wxWindowMac* WXUNUSED(parent),
@@ -44,9 +36,8 @@ wxWidgetImplType* wxWidgetImpl::CreateToggleButton( wxWindowMac* wxpeer,
     NSRect r = wxOSXGetFrameForControl( wxpeer, pos , size ) ;
     wxNSButton* v = [[wxNSButton alloc] initWithFrame:r];
 
-    SetBezelStyleFromBorderFlags(v, style, winid, label);
+    wxOSXSetBezelStyleFromBorderFlags(v, style, winid, label, wxBitmapBundle(), wxpeer);
 
-    [v setButtonType:NSOnOffButton];
     wxWidgetCocoaImpl* c = new wxButtonCocoaImpl( wxpeer, v );
     return c;
 }
@@ -54,7 +45,7 @@ wxWidgetImplType* wxWidgetImpl::CreateToggleButton( wxWindowMac* wxpeer,
 wxWidgetImplType* wxWidgetImpl::CreateBitmapToggleButton( wxWindowMac* wxpeer,
                                     wxWindowMac* WXUNUSED(parent),
                                     wxWindowID winid,
-                                    const wxBitmap& label,
+                                    const wxBitmapBundle& bundle,
                                     const wxPoint& pos,
                                     const wxSize& size,
                                     long style,
@@ -63,13 +54,13 @@ wxWidgetImplType* wxWidgetImpl::CreateBitmapToggleButton( wxWindowMac* wxpeer,
     NSRect r = wxOSXGetFrameForControl( wxpeer, pos , size ) ;
     wxNSButton* v = [[wxNSButton alloc] initWithFrame:r];
 
-    SetBezelStyleFromBorderFlags(v, style, winid, wxString(), label);
-    
-    if (label.IsOk())
-        [v setImage:label.GetNSImage() ];
+    wxOSXSetBezelStyleFromBorderFlags(v, style, winid, wxEmptyString, bundle, wxpeer);
 
-    [v setButtonType:NSOnOffButton];
+    if (bundle.IsOk())
+        [v setImage: wxOSXGetImageFromBundle(bundle) ];
+
     wxWidgetCocoaImpl* c = new wxButtonCocoaImpl( wxpeer, v );
+
     return c;
 }
 

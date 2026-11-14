@@ -3,14 +3,12 @@
 // Purpose:     wxHtmlCell - basic element of HTML output
 // Author:      Vaclav Slavik
 // Copyright:   (c) 1999 Vaclav Slavik
+//              (c) 2026 wxWidgets development team
 // Licence:     wxWindows licence
 /////////////////////////////////////////////////////////////////////////////
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_HTML && wxUSE_STREAMS
 
@@ -79,17 +77,6 @@ GetSelectedTextBgColour(const wxColour& WXUNUSED(clr))
 //-----------------------------------------------------------------------------
 
 wxIMPLEMENT_ABSTRACT_CLASS(wxHtmlCell, wxObject);
-
-wxHtmlCell::wxHtmlCell() : wxObject()
-{
-    m_Next = NULL;
-    m_Parent = NULL;
-    m_Width = m_Height = m_Descent = 0;
-    m_ScriptMode = wxHTML_SCRIPT_NORMAL;        // <sub> or <sup> mode
-    m_ScriptBaseline = 0;                       // <sub> or <sup> baseline
-    m_CanLiveOnPagebreak = true;
-    m_Link = NULL;
-}
 
 wxHtmlCell::~wxHtmlCell()
 {
@@ -194,9 +181,12 @@ void wxHtmlCell::Layout(int WXUNUSED(w))
 
 
 
-const wxHtmlCell* wxHtmlCell::Find(int WXUNUSED(condition), const void* WXUNUSED(param)) const
+const wxHtmlCell* wxHtmlCell::Find(int condition, const void* param) const
 {
-    return NULL;
+    if ( CheckIsAnchor(condition, param) )
+        return this;
+
+    return nullptr;
 }
 
 
@@ -216,7 +206,7 @@ wxHtmlCell *wxHtmlCell::FindCellByPos(wxCoord x, wxCoord y,
                 (y >= 0+m_Height || (y >= 0 && x >= 0)))
             return wxConstCast(this, wxHtmlCell);
         else
-            return NULL;
+            return nullptr;
     }
 }
 
@@ -317,6 +307,18 @@ wxString wxHtmlCell::Dump(int indent) const
 
 wxIMPLEMENT_ABSTRACT_CLASS(wxHtmlWordCell, wxHtmlCell);
 
+static constexpr unsigned NBSP_VALUE = 0x00a0;
+
+static bool wxHtmlIsNBSP(wxUniChar c)
+{
+    return c == wxUniChar(NBSP_VALUE);
+}
+
+static bool wxHtmlIsLineBreakingSpace(wxUniChar c)
+{
+    return !wxHtmlIsNBSP(c) && wxIsspace(c);
+}
+
 wxHtmlWordCell::wxHtmlWordCell(const wxString& word, const wxDC& dc) : wxHtmlCell()
     , m_Word(word)
 {
@@ -327,12 +329,15 @@ wxHtmlWordCell::wxHtmlWordCell(const wxString& word, const wxDC& dc) : wxHtmlCel
     m_Descent = d;
     SetCanLiveOnPagebreak(false);
     m_allowLinebreak = true;
+    if ( !m_Word.empty() && wxHtmlIsNBSP(m_Word[0u]) )
+        m_allowLinebreak = false;
 }
 
 void wxHtmlWordCell::SetPreviousWord(wxHtmlWordCell *cell)
 {
     if ( cell && m_Parent == cell->m_Parent &&
-         !wxIsspace(cell->m_Word.Last()) && !wxIsspace(m_Word[0u]) )
+         !wxHtmlIsLineBreakingSpace(cell->m_Word.Last()) &&
+         !wxHtmlIsLineBreakingSpace(m_Word[0u]) )
     {
         m_allowLinebreak = false;
     }
@@ -482,7 +487,7 @@ void wxHtmlWordCell::Draw(wxDC& dc, int x, int y,
         }
 
         int part1 = s->GetFromCell()==this ? s->GetFromCharacterPos() : 0;
-        int part2 = s->GetToCell()==this   ? s->GetToCharacterPos()   : m_Word.Length();
+        int part2 = s->GetToCell()==this   ? s->GetToCharacterPos()   : m_Word.length();
 
         if ( part1 > 0 )
         {
@@ -584,7 +589,7 @@ wxString wxHtmlWordCell::ConvertToText(wxHtmlSelection *s) const
         if ( s->AreFromToCharacterPosSet() )
         {
             const int part1 = s->GetFromCell()==this ? s->GetFromCharacterPos() : 0;
-            const int part2 = s->GetToCell()==this   ? s->GetToCharacterPos()   : m_Word.Length();
+            const int part2 = s->GetToCell()==this   ? s->GetToCharacterPos()   : m_Word.length();
             if ( part1 == part2 )
                 return wxEmptyString;
             return GetPartAsText(part1, part2);
@@ -640,7 +645,7 @@ wxString wxHtmlWordWithTabsCell::GetPartAsText(int begin, int end) const
     // copy the content until we reach 'end':
     for ( ; pos < end; ++i )
     {
-        const wxChar c = *i;
+        const wxUniChar c = *i;
         sel += c;
 
         if ( c == '\t' )
@@ -669,20 +674,22 @@ wxString wxHtmlWordCell::GetDescription() const
 
 wxIMPLEMENT_ABSTRACT_CLASS(wxHtmlContainerCell, wxHtmlCell);
 
+void wxHtmlContainerCell::InitParent(wxHtmlContainerCell *parent)
+{
+    m_Parent = parent;
+    if (m_Parent) m_Parent->InsertCell(this);
+}
+
 wxHtmlContainerCell::wxHtmlContainerCell(wxHtmlContainerCell *parent) : wxHtmlCell()
 {
-    m_Cells = m_LastCell = NULL;
-    m_Parent = parent;
-    m_MaxTotalWidth = 0;
-    if (m_Parent) m_Parent->InsertCell(this);
-    m_AlignHor = wxHTML_ALIGN_LEFT;
-    m_AlignVer = wxHTML_ALIGN_BOTTOM;
-    m_IndentLeft = m_IndentRight = m_IndentTop = m_IndentBottom = 0;
-    m_WidthFloat = 100; m_WidthFloatUnits = wxHTML_UNITS_PERCENT;
-    m_Border = 0;
-    m_MinHeight = 0;
-    m_MinHeightAlign = wxHTML_ALIGN_TOP;
-    m_LastLayout = -1;
+    InitParent(parent);
+}
+
+wxHtmlContainerCell::wxHtmlContainerCell(const wxHtmlTag& tag,
+                                         wxHtmlContainerCell *parent)
+    : wxHtmlCell(tag)
+{
+    InitParent(parent);
 }
 
 wxHtmlContainerCell::~wxHtmlContainerCell()
@@ -758,16 +765,20 @@ void wxHtmlContainerCell::Layout(int w)
 {
     wxHtmlCell::Layout(w);
 
-    if (m_LastLayout == w)
-        return;
-    m_LastLayout = w;
-
     // VS: Any attempt to layout with negative or zero width leads to hell,
     // but we can't ignore such attempts completely, since it sometimes
     // happen (e.g. when trying how small a table can be), so use at least one
     // pixel width, this will at least give us the correct height sometimes.
+    //
+    // Note that this must be done before checking m_LastLayout, as its
+    // initial value is -1 and so the check below would skip the layout of a
+    // never laid out cell if we were called with w == -1.
     if (w < 1)
         w = 1;
+
+    if (m_LastLayout == w)
+        return;
+    m_LastLayout = w;
 
     wxHtmlCell *nextCell;
     long xpos = 0, ypos = m_IndentTop;
@@ -817,7 +828,7 @@ void wxHtmlContainerCell::Layout(int w)
     // my own layout:
     wxHtmlCell *cell = m_Cells,
                *line = m_Cells;
-    while (cell != NULL)
+    while (cell != nullptr)
     {
         switch (m_AlignVer)
         {
@@ -865,7 +876,7 @@ void wxHtmlContainerCell::Layout(int w)
         }
 
         // force new line if occurred:
-        if ((cell == NULL) ||
+        if ((cell == nullptr) ||
             (xpos + nextWordWidth > s_width && cell->IsLinebreakAllowed()))
         {
             if (xpos > MaxLineWidth) MaxLineWidth = xpos;
@@ -888,7 +899,7 @@ void wxHtmlContainerCell::Layout(int w)
 
             ypos += ysizeup;
 
-            if (m_AlignHor != wxHTML_ALIGN_JUSTIFY || cell == NULL)
+            if (m_AlignHor != wxHTML_ALIGN_JUSTIFY || cell == nullptr)
             {
                 while (line != cell)
                 {
@@ -1180,10 +1191,13 @@ wxHtmlLinkInfo *wxHtmlContainerCell::GetLink(int x, int y) const
 {
     wxHtmlCell *cell = FindCellByPos(x, y);
 
-    // VZ: I don't know if we should pass absolute or relative coords to
-    //     wxHtmlCell::GetLink()? As the base class version just ignores them
-    //     anyhow, it hardly matters right now but should still be clarified
-    return cell ? cell->GetLink(x, y) : NULL;
+    if ( !cell )
+        return nullptr;
+
+    wxPoint relpos(x, y);
+    relpos -= cell->GetAbsPos(this);
+
+    return cell->GetLink(relpos.x, relpos.y);
 }
 
 
@@ -1210,7 +1224,7 @@ void wxHtmlContainerCell::Detach(wxHtmlCell *cell)
     {
         m_Cells = cell->GetNext();
         if ( m_LastCell == cell )
-            m_LastCell = NULL;
+            m_LastCell = nullptr;
     }
     else // Not the first child.
     {
@@ -1234,8 +1248,8 @@ void wxHtmlContainerCell::Detach(wxHtmlCell *cell)
         }
     }
 
-    cell->SetParent(NULL);
-    cell->SetNext(NULL);
+    cell->SetParent(nullptr);
+    cell->SetNext(nullptr);
 }
 
 
@@ -1282,6 +1296,9 @@ void wxHtmlContainerCell::SetWidthFloat(const wxHtmlTag& tag, double pixel_scale
 
 const wxHtmlCell* wxHtmlContainerCell::Find(int condition, const void* param) const
 {
+    if ( CheckIsAnchor(condition, param) )
+        return this;
+
     if (m_Cells)
     {
         for (wxHtmlCell *cell = m_Cells; cell; cell = cell->GetNext())
@@ -1290,7 +1307,7 @@ const wxHtmlCell* wxHtmlContainerCell::Find(int condition, const void* param) co
             if (r) return r;
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 
@@ -1329,7 +1346,7 @@ wxHtmlCell *wxHtmlContainerCell::FindCellByPos(wxCoord x, wxCoord y,
     }
     else if ( flags & wxHTML_FIND_NEAREST_BEFORE )
     {
-        wxHtmlCell *c2, *c = NULL;
+        wxHtmlCell *c2, *c = nullptr;
         for ( const wxHtmlCell *cell = m_Cells; cell; cell = cell->GetNext() )
         {
             if ( cell->IsFormattingCell() )
@@ -1345,7 +1362,7 @@ wxHtmlCell *wxHtmlContainerCell::FindCellByPos(wxCoord x, wxCoord y,
         if (c) return c;
     }
 
-    return NULL;
+    return nullptr;
 }
 
 
@@ -1356,7 +1373,11 @@ bool wxHtmlContainerCell::ProcessMouseClick(wxHtmlWindowInterface *window,
     bool retval = false;
     wxHtmlCell *cell = FindCellByPos(pos.x, pos.y);
     if ( cell )
-        retval = cell->ProcessMouseClick(window, pos, event);
+    {
+        wxPoint relpos(pos);
+        relpos -= cell->GetAbsPos(this);
+        retval = cell->ProcessMouseClick(window, relpos, event);
+    }
 
     return retval;
 }
@@ -1374,7 +1395,7 @@ wxHtmlCell *wxHtmlContainerCell::GetFirstTerminal() const
                 return c2;
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 wxHtmlCell *wxHtmlContainerCell::GetLastTerminal() const
@@ -1387,7 +1408,7 @@ wxHtmlCell *wxHtmlContainerCell::GetLastTerminal() const
             return c;
 
         wxHtmlCell *ctmp;
-        wxHtmlCell *c2 = NULL;
+        wxHtmlCell *c2 = nullptr;
         for (c = m_Cells; c; c = c->GetNext())
         {
             ctmp = c->GetLastTerminal();
@@ -1397,7 +1418,7 @@ wxHtmlCell *wxHtmlContainerCell::GetLastTerminal() const
         return c2;
     }
     else
-        return NULL;
+        return nullptr;
 }
 
 
@@ -1591,7 +1612,8 @@ wxHtmlWidgetCell::wxHtmlWidgetCell(wxWindow *wnd, int w)
     int sx, sy;
     m_Wnd = wnd;
     m_Wnd->GetSize(&sx, &sy);
-    m_Width = sx, m_Height = sy;
+    m_Width = sx;
+    m_Height = sy;
     m_WidthFloat = w;
 }
 
@@ -1664,14 +1686,14 @@ void wxHtmlWidgetCell::Layout(int w)
 const wxHtmlCell* wxHtmlTerminalCellsInterator::operator++()
 {
     if ( !m_pos )
-        return NULL;
+        return nullptr;
 
     do
     {
         if ( m_pos == m_to )
         {
-            m_pos = NULL;
-            return NULL;
+            m_pos = nullptr;
+            return nullptr;
         }
 
         if ( m_pos->GetNext() )
@@ -1680,15 +1702,15 @@ const wxHtmlCell* wxHtmlTerminalCellsInterator::operator++()
         {
             // we must go up the hierarchy until we reach container where this
             // is not the last child, and then go down to first terminal cell:
-            while ( m_pos->GetNext() == NULL )
+            while ( m_pos->GetNext() == nullptr )
             {
                 m_pos = m_pos->GetParent();
                 if ( !m_pos )
-                    return NULL;
+                    return nullptr;
             }
             m_pos = m_pos->GetNext();
         }
-        while ( m_pos->GetFirstChild() != NULL )
+        while ( m_pos->GetFirstChild() != nullptr )
             m_pos = m_pos->GetFirstChild();
     } while ( !m_pos->IsTerminalCell() );
 

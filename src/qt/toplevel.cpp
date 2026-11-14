@@ -13,10 +13,6 @@
 #include <QtGui/QIcon>
 #include <QtWidgets/QWidget>
 
-wxTopLevelWindowQt::wxTopLevelWindowQt()
-{
-}
-
 wxTopLevelWindowQt::wxTopLevelWindowQt(wxWindow *parent,
            wxWindowID winId,
            const wxString &title,
@@ -29,35 +25,29 @@ wxTopLevelWindowQt::wxTopLevelWindowQt(wxWindow *parent,
 }
 
 bool wxTopLevelWindowQt::Create( wxWindow *parent, wxWindowID winId,
-    const wxString &title, const wxPoint &pos, const wxSize &sizeOrig,
+    const wxString &title, const wxPoint &pos, const wxSize &size,
     long style, const wxString &name )
 {
-    wxSize size(sizeOrig);
-    if ( !size.IsFullySpecified() )
-        size.SetDefaults( GetDefaultSize() );
+    wxSize sizeReal = size;
+    if ( !sizeReal.IsFullySpecified() )
+    {
+        sizeReal.SetDefaults(GetDefaultSize());
+    }
 
     wxTopLevelWindows.Append( this );
 
-    if (!CreateBase( parent, winId, pos, size, style, wxDefaultValidator, name ))
+    if (!wxWindow::Create( parent, winId, pos, sizeReal, style, name ))
     {
         wxFAIL_MSG( wxT("wxTopLevelWindowNative creation failed") );
         return false;
     }
 
-    SetTitle( title );
-    SetWindowStyleFlag( style );
-
-    if (pos != wxDefaultPosition)
-        m_qtWindow->move( pos.x, pos.y );
-
-    m_qtWindow->resize( wxQtConvertSize( size ) );
-
     // Prevent automatic deletion of Qt main window on close
     // (this should be the default, but left just fo enforce it)
     GetHandle()->setAttribute(Qt::WA_DeleteOnClose, false);
 
-    // not calling to wxWindow::Create, so do the rest of initialization:
-    if (parent) parent->AddChild( this );
+    SetTitle( title );
+    SetWindowStyleFlag( style );
 
     return true;
 }
@@ -164,61 +154,49 @@ void wxTopLevelWindowQt::SetWindowStyleFlag( long style )
 {
     wxWindow::SetWindowStyleFlag( style );
 
-    if ( HasFlag( wxCENTRE ) )
-    {
-        Centre();
-    }
-
     if ( !GetHandle() )
         return;
 
-    Qt::WindowFlags qtFlags = GetHandle()->windowFlags();
+    // This flag must be set to allow the other flags to be changed.
+    GetHandle()->setWindowFlag(Qt::CustomizeWindowHint, true);
 
-    if ( HasFlag( wxSTAY_ON_TOP ) != qtFlags.testFlag( Qt::WindowStaysOnTopHint ) )
-        qtFlags ^= Qt::WindowStaysOnTopHint;
+    const bool enableCaption = HasFlag(wxCAPTION) || HasFlag(wxCLOSE_BOX) ||
+                               HasFlag(wxMINIMIZE_BOX) || HasFlag(wxMAXIMIZE_BOX);
 
-    if ( HasFlag( wxCAPTION ) )
-    {
-        // Only show buttons if window has caption
-        if ( HasFlag( wxSYSTEM_MENU ) )
-        {
-            qtFlags |= Qt::WindowSystemMenuHint;
-            if ( HasFlag( wxMINIMIZE_BOX ) )
-                qtFlags |= Qt::WindowMinimizeButtonHint;
-            else
-                qtFlags &= ~Qt::WindowMinimizeButtonHint;
+    const bool enableSysMenu = HasFlag(wxSYSTEM_MENU) || HasFlag(wxCLOSE_BOX) ||
+                               HasFlag(wxMINIMIZE_BOX) || HasFlag(wxMAXIMIZE_BOX);
 
-            if ( HasFlag( wxMAXIMIZE_BOX ) )
-                qtFlags |= Qt::WindowMaximizeButtonHint;
-            else
-                qtFlags &= ~Qt::WindowMaximizeButtonHint;
+    GetHandle()->setWindowFlag(Qt::WindowTitleHint,      enableCaption);
+    GetHandle()->setWindowFlag(Qt::WindowSystemMenuHint, enableSysMenu);
 
-            if ( HasFlag( wxCLOSE_BOX ) )
-                qtFlags |= Qt::WindowCloseButtonHint;
-            else
-                qtFlags &= ~Qt::WindowCloseButtonHint;
-        }
-        else
-        {
-            qtFlags &= ~Qt::WindowSystemMenuHint;
-            qtFlags &= ~Qt::WindowMinMaxButtonsHint;
-            qtFlags &= ~Qt::WindowCloseButtonHint;
-        }
-    }
+    GetHandle()->setWindowFlag(Qt::WindowCloseButtonHint,    HasFlag(wxCLOSE_BOX));
+    GetHandle()->setWindowFlag(Qt::WindowMinimizeButtonHint, HasFlag(wxMINIMIZE_BOX));
+    GetHandle()->setWindowFlag(Qt::WindowMaximizeButtonHint, HasFlag(wxMAXIMIZE_BOX));
 
-    GetHandle()->setWindowFlags( qtFlags );
+    GetHandle()->setWindowFlag(Qt::WindowStaysOnTopHint, HasFlag(wxSTAY_ON_TOP));
 
-    wxCHECK_RET( !( HasFlag( wxMAXIMIZE ) && HasFlag( wxMAXIMIZE ) ), "Window cannot be both maximized and minimized" );
+    Qt::WindowStates windowState = Qt::WindowNoState; // normal state.
+
     if ( HasFlag( wxMAXIMIZE ) )
-        GetHandle()->setWindowState( Qt::WindowMaximized );
-    else if ( HasFlag( wxMINIMIZE ) )
-        GetHandle()->setWindowState( Qt::WindowMinimized );
+        windowState |= Qt::WindowMaximized;
+    if ( HasFlag( wxMINIMIZE ) )
+        windowState |= Qt::WindowMinimized;
+
+    GetHandle()->setWindowState(windowState);
+
+    // The Qt documentation says: To produce a fixed size window that can not be resized,
+    // please set QWindow::setMinimumSize() and QWindow::setMaximumSize() to the same size.
 
     if ( HasFlag( wxRESIZE_BORDER ) )
         GetHandle()->setSizePolicy( QSizePolicy::Preferred, QSizePolicy::Preferred );
     else
         GetHandle()->setSizePolicy( QSizePolicy::Fixed, QSizePolicy::Fixed );
+
+    if ( HasFlag( wxCENTRE ) )
+    {
+        Centre();
     }
+}
 
 long wxTopLevelWindowQt::GetWindowStyleFlag() const
 {
@@ -244,4 +222,29 @@ long wxTopLevelWindowQt::GetWindowStyleFlag() const
     }
 
     return winStyle;
+}
+
+void wxTopLevelWindowQt::DoSetSizeHints( int minW, int minH,
+                                         int maxW, int maxH,
+                                         int incW, int incH )
+{
+    // The value -1 is special which means no constraints will be used.
+    // In other words, use the Qt defaults if -1 was specified.
+
+    if ( maxW == wxDefaultCoord )
+        maxW = QWIDGETSIZE_MAX;
+    if ( maxH == wxDefaultCoord )
+        maxH = QWIDGETSIZE_MAX;
+
+    minW = wxMax(0, minW);
+    minH = wxMax(0, minH);
+
+    incW = wxMax(0, incW);
+    incH = wxMax(0, incH);
+
+    GetHandle()->setMinimumSize(minW, minH);
+    GetHandle()->setMaximumSize(maxW, maxH);
+    GetHandle()->setSizeIncrement(incW, incH);
+
+    wxTopLevelWindowBase::DoSetSizeHints(minW, minH, maxW, maxH, incW, incH);
 }

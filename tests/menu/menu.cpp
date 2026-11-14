@@ -14,9 +14,6 @@
 
 #if wxUSE_MENUBAR
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
@@ -26,7 +23,11 @@
 #include "wx/translation.h"
 #include "wx/uiaction.h"
 
+#include "waitfor.h"
+
 #include <stdarg.h>
+
+#include <memory>
 
 // ----------------------------------------------------------------------------
 // helper
@@ -39,7 +40,11 @@ enum
 {
     MenuTestCase_Foo = 10000,
     MenuTestCase_SelectAll,
+    MenuTestCase_Delete,
     MenuTestCase_Bar,
+    MenuTestCase_ExtraAccel,
+    MenuTestCase_ExtraAccels,
+    MenuTestCase_SubmenuAccel,
     MenuTestCase_First
 };
 
@@ -55,7 +60,7 @@ void PopulateMenu(wxMenu* menu, const wxString& name,  size_t& itemcount)
 
 void RecursivelyCountMenuItems(const wxMenu* menu, size_t& count)
 {
-    CPPUNIT_ASSERT( menu );
+    CHECK( menu );
 
     count += menu->GetMenuItemCount();
     for (size_t n=0; n < menu->GetMenuItemCount(); ++n)
@@ -75,44 +80,14 @@ void RecursivelyCountMenuItems(const wxMenu* menu, size_t& count)
 // test class
 // ----------------------------------------------------------------------------
 
-class MenuTestCase : public CppUnit::TestCase
+class MenuTestCase
 {
 public:
-    MenuTestCase() {}
+    MenuTestCase() { CreateFrame(); }
+    ~MenuTestCase() { m_frame->Destroy(); }
 
-    virtual void setUp() wxOVERRIDE { CreateFrame(); }
-    virtual void tearDown() wxOVERRIDE { m_frame->Destroy(); }
-
-private:
-    CPPUNIT_TEST_SUITE( MenuTestCase );
-        CPPUNIT_TEST( FindInMenubar );
-        CPPUNIT_TEST( FindInMenu );
-        CPPUNIT_TEST( EnableTop );
-        CPPUNIT_TEST( Count );
-        CPPUNIT_TEST( Labels );
-#if wxUSE_INTL
-        CPPUNIT_TEST( TranslatedMnemonics );
-#endif // wxUSE_INTL
-        CPPUNIT_TEST( RadioItems );
-        CPPUNIT_TEST( RemoveAdd );
-        CPPUNIT_TEST( ChangeBitmap );
-        WXUISIM_TEST( Events );
-    CPPUNIT_TEST_SUITE_END();
-
+protected:
     void CreateFrame();
-
-    void FindInMenubar();
-    void FindInMenu();
-    void EnableTop();
-    void Count();
-    void Labels();
-#if wxUSE_INTL
-    void TranslatedMnemonics();
-#endif // wxUSE_INTL
-    void RadioItems();
-    void RemoveAdd();
-    void ChangeBitmap();
-    void Events();
 
     wxFrame* m_frame;
 
@@ -132,12 +107,6 @@ private:
 
     wxDECLARE_NO_COPY_CLASS(MenuTestCase);
 };
-
-// register in the unnamed registry so that these tests are run by default
-CPPUNIT_TEST_SUITE_REGISTRATION( MenuTestCase );
-
-// also include in its own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( MenuTestCase, "MenuTestCase" );
 
 void MenuTestCase::CreateFrame()
 {
@@ -165,7 +134,7 @@ void MenuTestCase::CreateFrame()
 
     // Check GetTitle() returns the correct string _before_ appending to the bar
     fileMenu->SetTitle("&Foo\tCtrl-F");
-    CPPUNIT_ASSERT_EQUAL( "&Foo\tCtrl-F", fileMenu->GetTitle() );
+    CHECK( fileMenu->GetTitle() == "&Foo\tCtrl-F" );
 
     PopulateMenu(fileMenu, "Filemenu item ", m_itemCount);
 
@@ -174,7 +143,38 @@ void MenuTestCase::CreateFrame()
     fileMenu->Append(MenuTestCase_SelectAll, "Select &all\tCtrl-A",
                      "Accelerator conflicting with wxTextCtrl");
     m_itemCount++;
+    fileMenu->Append(MenuTestCase_Delete, "&Delete\tDEL",
+                     "Another accelerator conflicting with wxTextCtrl");
+    m_itemCount++;
 
+    // Test adding an extra accelerator to the item before adding it to the menu.
+    wxAcceleratorEntry entry;
+
+    wxMenuItem* const
+        extraAccel = new wxMenuItem(fileMenu, MenuTestCase_ExtraAccel, "Extra accels");
+
+    CHECK( entry.FromString("Ctrl-U") );
+    extraAccel->SetAccel(&entry);
+
+    CHECK( entry.FromString("Ctrl-V") );
+    extraAccel->AddExtraAccel(entry);
+
+    fileMenu->Append(extraAccel);
+    m_itemCount++;
+
+    // And now also test adding 2 of them after creating the initial menu item.
+    wxMenuItem* const
+        extraAccels = fileMenu->Append(MenuTestCase_ExtraAccels, "Extra accels 2");
+    m_itemCount++;
+
+    CHECK( entry.FromString("Ctrl-T") );
+    extraAccels->AddExtraAccel(entry);
+
+    CHECK(entry.FromString("Shift-Ctrl-W"));
+    extraAccels->AddExtraAccel(entry);
+
+    CHECK(entry.FromString("Ctrl-W"));
+    extraAccels->SetAccel(&entry);
 
     PopulateMenu(helpMenu, "Helpmenu item ", m_itemCount);
     helpMenu->Append(MenuTestCase_Bar, "Bar\tF1");
@@ -193,84 +193,84 @@ void MenuTestCase::CreateFrame()
     m_frame->SetMenuBar(menuBar);
 }
 
-void MenuTestCase::FindInMenubar()
+TEST_CASE_METHOD(MenuTestCase, "Menu::FindInMenubar", "[menu]")
 {
     wxMenuBar* bar = m_frame->GetMenuBar();
 
     // Find by name:
-    CPPUNIT_ASSERT( bar->FindMenu("File") != wxNOT_FOUND );
-    CPPUNIT_ASSERT( bar->FindMenu("&File") != wxNOT_FOUND );
-    CPPUNIT_ASSERT( bar->FindMenu("&Fail") == wxNOT_FOUND );
+    CHECK( bar->FindMenu("File") != wxNOT_FOUND );
+    CHECK( bar->FindMenu("&File") != wxNOT_FOUND );
+    CHECK( bar->FindMenu("&Fail") == wxNOT_FOUND );
 
     // Find by menu name plus item name:
-    CPPUNIT_ASSERT( bar->FindMenuItem("File", "Foo") != wxNOT_FOUND );
-    CPPUNIT_ASSERT( bar->FindMenuItem("&File", "&Foo") != wxNOT_FOUND );
+    CHECK( bar->FindMenuItem("File", "Foo") != wxNOT_FOUND );
+    CHECK( bar->FindMenuItem("&File", "&Foo") != wxNOT_FOUND );
     // and using the menu label
     int index = bar->FindMenu("&File");
-    CPPUNIT_ASSERT( index != wxNOT_FOUND );
+    CHECK( index != wxNOT_FOUND );
     wxString menulabel = bar->GetMenuLabel(index);
-    CPPUNIT_ASSERT( bar->FindMenuItem(menulabel, "&Foo") != wxNOT_FOUND );
+    CHECK( bar->FindMenuItem(menulabel, "&Foo") != wxNOT_FOUND );
     // and title
     wxString menutitle = bar->GetMenu(index)->GetTitle();
-    CPPUNIT_ASSERT( bar->FindMenuItem(menutitle, "&Foo") != wxNOT_FOUND );
+    CHECK( bar->FindMenuItem(menutitle, "&Foo") != wxNOT_FOUND );
 
     // Find by position:
     for (size_t n=0; n < bar->GetMenuCount(); ++n)
     {
-        CPPUNIT_ASSERT( bar->GetMenu(n) );
+        CHECK( bar->GetMenu(n) );
     }
 
     // Find by id:
-    wxMenu* menu = NULL;
-    wxMenuItem* item = NULL;
+    wxMenu* menu = nullptr;
+    wxMenuItem* item = nullptr;
     item = bar->FindItem(MenuTestCase_Foo, &menu);
-    CPPUNIT_ASSERT( item );
-    CPPUNIT_ASSERT( menu );
+    CHECK( item );
+    CHECK( menu );
     // Check that the correct menu was found
-    CPPUNIT_ASSERT( menu->FindChildItem(MenuTestCase_Foo) );
+    CHECK( menu->FindChildItem(MenuTestCase_Foo) );
 
     // Find submenu item:
     item = bar->FindItem(m_submenuItemId, &menu);
-    CPPUNIT_ASSERT( item );
-    CPPUNIT_ASSERT( menu );
+    CHECK( item );
+    CHECK( menu );
     // and, for completeness, a subsubmenu one:
     item = bar->FindItem(m_subsubmenuItemId, &menu);
-    CPPUNIT_ASSERT( item );
-    CPPUNIT_ASSERT( menu );
+    CHECK( item );
+    CHECK( menu );
 }
 
-void MenuTestCase::FindInMenu()
+TEST_CASE_METHOD(MenuTestCase, "Menu::FindInMenu", "[menu]")
 {
     wxMenuBar* bar = m_frame->GetMenuBar();
 
     // Find by name:
     wxMenu* menuFind = bar->GetMenu(0);
-    CPPUNIT_ASSERT( menuFind->FindItem("Foo") != wxNOT_FOUND );
-    CPPUNIT_ASSERT( menuFind->FindItem("&Foo") != wxNOT_FOUND );
+    CHECK( menuFind->FindItem("Foo") != wxNOT_FOUND );
+    CHECK( menuFind->FindItem("&Foo") != wxNOT_FOUND );
     // and for submenus
     wxMenu* menuHelp = bar->GetMenu(1);
-    CPPUNIT_ASSERT( menuHelp->FindItem("Submenu") != wxNOT_FOUND );
-    CPPUNIT_ASSERT( menuHelp->FindItem("Sub&menu") != wxNOT_FOUND );
+    CHECK( menuHelp->FindItem("Submenu") != wxNOT_FOUND );
+    CHECK( menuHelp->FindItem("Sub&menu") != wxNOT_FOUND );
 
     // Find by position:
     size_t n;
     for (n=0; n < menuHelp->GetMenuItemCount(); ++n)
     {
-        CPPUNIT_ASSERT( menuHelp->FindItemByPosition(n) );
+        CHECK( menuHelp->FindItemByPosition(n) );
     }
 
     // Find by id:
-    CPPUNIT_ASSERT( menuHelp->FindItem(MenuTestCase_Bar) );
-    CPPUNIT_ASSERT( !menuHelp->FindItem(MenuTestCase_Foo) );
+    CHECK( menuHelp->FindItem(MenuTestCase_Bar) );
+    CHECK( !menuHelp->FindItem(MenuTestCase_Foo) );
 
     for (n=0; n < menuHelp->GetMenuItemCount(); ++n)
     {
         size_t locatedAt;
         wxMenuItem* itemByPos = menuHelp->FindItemByPosition(n);
-        CPPUNIT_ASSERT( itemByPos );
+        CHECK( itemByPos );
         wxMenuItem* itemById = menuHelp->FindChildItem(itemByPos->GetId(), &locatedAt);
-        CPPUNIT_ASSERT_EQUAL( itemByPos, itemById );
-        CPPUNIT_ASSERT_EQUAL( locatedAt, n );
+        CHECK( itemById == itemByPos );
+        CHECK( n == locatedAt );
     }
 
     // Find submenu item:
@@ -281,71 +281,122 @@ void MenuTestCase::FindInMenu()
         {
             wxMenu* submenu;
             wxMenuItem* submenuItem = menuHelp->FindItem(m_submenuItemId, &submenu);
-            CPPUNIT_ASSERT( submenuItem );
-            CPPUNIT_ASSERT( item->GetSubMenu() == submenu );
+            CHECK( submenuItem );
+            CHECK( item->GetSubMenu() == submenu );
         }
     }
 }
 
-void MenuTestCase::EnableTop()
+#if wxUSE_ACCEL
+
+TEST_CASE_METHOD(MenuTestCase, "Menu::FindItemForAccelKey", "[menu][accelentry]")
 {
     wxMenuBar* const bar = m_frame->GetMenuBar();
-    CPPUNIT_ASSERT( bar->IsEnabledTop(0) );
-    bar->EnableTop( 0, false );
-    CPPUNIT_ASSERT( !bar->IsEnabledTop(0) );
-    bar->EnableTop( 0, true );
-    CPPUNIT_ASSERT( bar->IsEnabledTop(0) );
+
+    wxKeyEvent event(wxEVT_KEY_DOWN);
+    event.m_keyCode = 'F';
+    event.SetControlDown(true);
+
+    wxMenuItem* item = bar->FindItemForAccelKey(event);
+    REQUIRE( item );
+    CHECK( item->GetId() == MenuTestCase_Foo );
+
+    // Items of the other menus are found too.
+    event.m_keyCode = WXK_F1;
+    event.SetControlDown(false);
+    item = bar->FindItemForAccelKey(event);
+    REQUIRE( item );
+    CHECK( item->GetId() == MenuTestCase_Bar );
+
+    // Extra accelerators are taken into account as well.
+    event.m_keyCode = 'V';
+    event.SetControlDown(true);
+    item = bar->FindItemForAccelKey(event);
+    REQUIRE( item );
+    CHECK( item->GetId() == MenuTestCase_ExtraAccel );
+
+    // And so are the items of the submenus.
+    wxMenu* submenu = nullptr;
+    REQUIRE( bar->FindItem(m_submenuItemId, &submenu) );
+    REQUIRE( submenu );
+    submenu->Append(MenuTestCase_SubmenuAccel, "Submenu accel\tCtrl-J");
+
+    event.m_keyCode = 'J';
+    item = bar->FindItemForAccelKey(event);
+    REQUIRE( item );
+    CHECK( item->GetId() == MenuTestCase_SubmenuAccel );
+
+    // Keys not used by any accelerator are not found.
+    event.m_keyCode = 'Z';
+    CHECK( !bar->FindItemForAccelKey(event) );
+
+    // Neither are the keys used by them with different modifiers.
+    event.m_keyCode = 'F';
+    event.SetShiftDown(true);
+    CHECK( !bar->FindItemForAccelKey(event) );
 }
 
-void MenuTestCase::Count()
+#endif // wxUSE_ACCEL
+
+TEST_CASE_METHOD(MenuTestCase, "Menu::EnableTop", "[menu]")
+{
+    wxMenuBar* const bar = m_frame->GetMenuBar();
+    CHECK( bar->IsEnabledTop(0) );
+    bar->EnableTop( 0, false );
+    CHECK( !bar->IsEnabledTop(0) );
+    bar->EnableTop( 0, true );
+    CHECK( bar->IsEnabledTop(0) );
+}
+
+TEST_CASE_METHOD(MenuTestCase, "Menu::Count", "[menu]")
 {
     wxMenuBar* bar = m_frame->GetMenuBar();
     // I suppose you could call this "counting menubars" :)
-    CPPUNIT_ASSERT( bar );
+    CHECK( bar );
 
-    CPPUNIT_ASSERT_EQUAL( bar->GetMenuCount(), 2 );
+    CHECK( 2 == bar->GetMenuCount() );
 
     size_t count = 0;
     for (size_t n=0; n < bar->GetMenuCount(); ++n)
     {
         RecursivelyCountMenuItems(bar->GetMenu(n), count);
     }
-    CPPUNIT_ASSERT_EQUAL( count, m_itemCount );
+    CHECK( m_itemCount == count );
 }
 
-void MenuTestCase::Labels()
+TEST_CASE_METHOD(MenuTestCase, "Menu::Labels", "[menu]")
 {
     wxMenuBar* bar = m_frame->GetMenuBar();
-    CPPUNIT_ASSERT( bar );
+    CHECK( bar );
     wxMenu* filemenu;
     wxMenuItem* itemFoo = bar->FindItem(MenuTestCase_Foo, &filemenu);
-    CPPUNIT_ASSERT( itemFoo );
-    CPPUNIT_ASSERT( filemenu );
+    CHECK( itemFoo );
+    CHECK( filemenu );
 
     // These return labels including mnemonics/accelerators:
 
     // wxMenuBar
-    CPPUNIT_ASSERT_EQUAL( "&File", bar->GetMenuLabel(0) );
-    CPPUNIT_ASSERT_EQUAL( "&Foo\tCtrl-F", bar->GetLabel(MenuTestCase_Foo) );
+    CHECK( bar->GetMenuLabel(0) == "&File" );
+    CHECK( bar->GetLabel(MenuTestCase_Foo) == "&Foo\tCtrl-F" );
 
     // wxMenu
-    CPPUNIT_ASSERT_EQUAL( "&File", filemenu->GetTitle() );
-    CPPUNIT_ASSERT_EQUAL( "&Foo\tCtrl-F", filemenu->GetLabel(MenuTestCase_Foo) );
+    CHECK( filemenu->GetTitle() == "&File" );
+    CHECK( filemenu->GetLabel(MenuTestCase_Foo) == "&Foo\tCtrl-F" );
 
     // wxMenuItem
-    CPPUNIT_ASSERT_EQUAL( "&Foo\tCtrl-F", itemFoo->GetItemLabel() );
+    CHECK( itemFoo->GetItemLabel() == "&Foo\tCtrl-F" );
 
     // These return labels stripped of mnemonics/accelerators:
 
     // wxMenuBar
-    CPPUNIT_ASSERT_EQUAL( "File", bar->GetMenuLabelText(0) );
+    CHECK( bar->GetMenuLabelText(0) == "File" );
 
     // wxMenu
-    CPPUNIT_ASSERT_EQUAL( "Foo", filemenu->GetLabelText(MenuTestCase_Foo) );
+    CHECK( filemenu->GetLabelText(MenuTestCase_Foo) == "Foo" );
 
     // wxMenuItem
-    CPPUNIT_ASSERT_EQUAL( "Foo", itemFoo->GetItemLabelText() );
-    CPPUNIT_ASSERT_EQUAL( "Foo", wxMenuItem::GetLabelText("&Foo\tCtrl-F") );
+    CHECK( itemFoo->GetItemLabelText() == "Foo" );
+    CHECK( wxMenuItem::GetLabelText("&Foo\tCtrl-F") == "Foo" );
 }
 
 #if wxUSE_INTL
@@ -357,50 +408,34 @@ GetTranslatedString(const wxTranslations& trans, const wxString& s)
     return t ? *t : s;
 }
 
-void MenuTestCase::TranslatedMnemonics()
+TEST_CASE_METHOD(MenuTestCase, "Menu::TranslatedMnemonics", "[menu]")
 {
     // Check that appended mnemonics are correctly stripped;
-    // see https://trac.wxwidgets.org/ticket/16736
+    // see https://github.com/wxWidgets/wxWidgets/issues/16736
     wxTranslations trans;
     trans.SetLanguage(wxLANGUAGE_JAPANESE);
     wxFileTranslationsLoader::AddCatalogLookupPathPrefix("./intl");
-    CPPUNIT_ASSERT( trans.AddCatalog("internat") );
+    CHECK( trans.AddCatalog("internat") );
 
     // Check the translation is being used:
-    CPPUNIT_ASSERT( wxString("&File") != GetTranslatedString(trans, "&File") );
+    CHECK( wxString("&File") != GetTranslatedString(trans, "&File") );
 
     wxString filemenu = m_frame->GetMenuBar()->GetMenuLabel(0);
-    CPPUNIT_ASSERT_EQUAL
-    (
-         wxStripMenuCodes(GetTranslatedString(trans, "&File"), wxStrip_Menu),
-         wxStripMenuCodes(GetTranslatedString(trans, filemenu), wxStrip_Menu)
-    );
+    CHECK(wxStripMenuCodes(GetTranslatedString(trans, filemenu), wxStrip_Menu) == wxStripMenuCodes(GetTranslatedString(trans, "&File"), wxStrip_Menu) );
 
     // Test strings that have shortcuts. Duplicate non-mnemonic translations
     // exist for both "Edit" and "View", for ease of comparison
-    CPPUNIT_ASSERT_EQUAL
-    (
-         GetTranslatedString(trans, "Edit"),
-         wxStripMenuCodes(GetTranslatedString(trans, "E&dit\tCtrl+E"), wxStrip_Menu)
-    );
+    CHECK(wxStripMenuCodes(GetTranslatedString(trans, "E&dit\tCtrl+E"), wxStrip_Menu) == GetTranslatedString(trans, "Edit") );
 
     // "Vie&w" also has a space before the (&W)
-    CPPUNIT_ASSERT_EQUAL
-    (
-         GetTranslatedString(trans, "View"),
-         wxStripMenuCodes(GetTranslatedString(trans, "Vie&w\tCtrl+V"), wxStrip_Menu)
-    );
+    CHECK(wxStripMenuCodes(GetTranslatedString(trans, "Vie&w\tCtrl+V"), wxStrip_Menu) == GetTranslatedString(trans, "View") );
 
     // Test a 'normal' mnemonic too: the translation is "Preten&d"
-    CPPUNIT_ASSERT_EQUAL
-    (
-         "Pretend",
-         wxStripMenuCodes(GetTranslatedString(trans, "B&ogus"), wxStrip_Menu)
-    );
+    CHECK(wxStripMenuCodes(GetTranslatedString(trans, "B&ogus"), wxStrip_Menu) == "Pretend" );
 }
 #endif // wxUSE_INTL
 
-void MenuTestCase::RadioItems()
+TEST_CASE_METHOD(MenuTestCase, "Menu::RadioItems", "[menu]")
 {
     wxMenuBar * const bar = m_frame->GetMenuBar();
     wxMenu * const menu = new wxMenu;
@@ -411,20 +446,16 @@ void MenuTestCase::RadioItems()
     menu->AppendRadioItem(MenuTestCase_First + 1, "Radio 1");
 
     // First item of a radio group is checked by default.
-    CPPUNIT_ASSERT( menu->IsChecked(MenuTestCase_First) );
+    CHECK( menu->IsChecked(MenuTestCase_First) );
 
     // Subsequent items in a group are not checked.
-    CPPUNIT_ASSERT( !menu->IsChecked(MenuTestCase_First + 1) );
+    CHECK( !menu->IsChecked(MenuTestCase_First + 1) );
 
-#ifdef __WXQT__
-    WARN("Radio check test does not work under Qt");
-#else
     // Checking the second one make the first one unchecked however.
     menu->Check(MenuTestCase_First + 1, true);
-    CPPUNIT_ASSERT( !menu->IsChecked(MenuTestCase_First) );
-    CPPUNIT_ASSERT( menu->IsChecked(MenuTestCase_First + 1) );
+    CHECK( !menu->IsChecked(MenuTestCase_First) );
+    CHECK( menu->IsChecked(MenuTestCase_First + 1) );
     menu->Check(MenuTestCase_First, true);
-#endif
 
     // Adding more radio items after a separator creates another radio group...
     menu->AppendSeparator();
@@ -433,54 +464,42 @@ void MenuTestCase::RadioItems()
     menu->AppendRadioItem(MenuTestCase_First + 4, "Radio 4");
 
     // ... which is independent from the first one.
-    CPPUNIT_ASSERT( menu->IsChecked(MenuTestCase_First) );
-    CPPUNIT_ASSERT( menu->IsChecked(MenuTestCase_First + 2) );
+    CHECK( menu->IsChecked(MenuTestCase_First) );
+    CHECK( menu->IsChecked(MenuTestCase_First + 2) );
 
-#ifdef __WXQT__
-    WARN("Radio check test does not work under Qt");
-#else
     menu->Check(MenuTestCase_First + 3, true);
-    CPPUNIT_ASSERT( menu->IsChecked(MenuTestCase_First + 3) );
-    CPPUNIT_ASSERT( !menu->IsChecked(MenuTestCase_First + 2) );
+    CHECK( menu->IsChecked(MenuTestCase_First + 3) );
+    CHECK( !menu->IsChecked(MenuTestCase_First + 2) );
 
-    CPPUNIT_ASSERT( menu->IsChecked(MenuTestCase_First) );
+    CHECK( menu->IsChecked(MenuTestCase_First) );
     menu->Check(MenuTestCase_First + 2, true);
-#endif
 
     // Insert an item in the middle of an existing radio group.
     menu->InsertRadioItem(4, MenuTestCase_First + 5, "Radio 5");
-    CPPUNIT_ASSERT( menu->IsChecked(MenuTestCase_First + 2) );
-    CPPUNIT_ASSERT( !menu->IsChecked(MenuTestCase_First + 5) );
+    CHECK( menu->IsChecked(MenuTestCase_First + 2) );
+    CHECK( !menu->IsChecked(MenuTestCase_First + 5) );
 
-#ifdef __WXQT__
-    WARN("Radio check test does not work under Qt");
-#else
     menu->Check( MenuTestCase_First + 5, true );
-    CPPUNIT_ASSERT( !menu->IsChecked(MenuTestCase_First + 3) );
+    CHECK( !menu->IsChecked(MenuTestCase_First + 3) );
 
     menu->Check( MenuTestCase_First + 3, true );
-#endif
 
     // Prepend a couple of items before the first group.
     menu->PrependRadioItem(MenuTestCase_First + 6, "Radio 6");
     menu->PrependRadioItem(MenuTestCase_First + 7, "Radio 7");
-    CPPUNIT_ASSERT( !menu->IsChecked(MenuTestCase_First + 6) );
-    CPPUNIT_ASSERT( !menu->IsChecked(MenuTestCase_First + 7) );
+    CHECK( !menu->IsChecked(MenuTestCase_First + 6) );
+    CHECK( !menu->IsChecked(MenuTestCase_First + 7) );
 
-#ifdef __WXQT__
-    WARN("Radio check test does not work under Qt");
-#else
     menu->Check(MenuTestCase_First + 7, true);
-    CPPUNIT_ASSERT( !menu->IsChecked(MenuTestCase_First + 1) );
+    CHECK( !menu->IsChecked(MenuTestCase_First + 1) );
 
 
     // Check that the last radio group still works as expected.
     menu->Check(MenuTestCase_First + 4, true);
-    CPPUNIT_ASSERT( !menu->IsChecked(MenuTestCase_First + 5) );
-#endif
+    CHECK( !menu->IsChecked(MenuTestCase_First + 5) );
 }
 
-void MenuTestCase::RemoveAdd()
+TEST_CASE_METHOD(MenuTestCase, "Menu::RemoveAdd", "[menu]")
 {
     wxMenuBar* bar = m_frame->GetMenuBar();
 
@@ -488,19 +507,19 @@ void MenuTestCase::RemoveAdd()
     wxMenu* menu1 = bar->GetMenu(1);
     wxMenuItem* item = new wxMenuItem(menu0, MenuTestCase_Foo + 100, "t&ext\tCtrl-E");
     menu0->Insert(0, item);
-    CPPUNIT_ASSERT( menu0->FindItemByPosition(0) == item );
+    CHECK( menu0->FindItemByPosition(0) == item );
     menu0->Remove(item);
-    CPPUNIT_ASSERT( menu0->FindItemByPosition(0) != item );
+    CHECK( menu0->FindItemByPosition(0) != item );
     menu1->Insert(0, item);
-    CPPUNIT_ASSERT( menu1->FindItemByPosition(0) == item );
+    CHECK( menu1->FindItemByPosition(0) == item );
     menu1->Remove(item);
-    CPPUNIT_ASSERT( menu1->FindItemByPosition(0) != item );
+    CHECK( menu1->FindItemByPosition(0) != item );
     menu0->Insert(0, item);
-    CPPUNIT_ASSERT( menu0->FindItemByPosition(0) == item );
+    CHECK( menu0->FindItemByPosition(0) == item );
     menu0->Delete(item);
 }
 
-void MenuTestCase::ChangeBitmap()
+TEST_CASE_METHOD(MenuTestCase, "Menu::ChangeBitmap", "[menu]")
 {
     wxMenu *menu = new wxMenu;
 
@@ -534,8 +553,7 @@ public:
     {
         m_win->Bind(wxEVT_MENU, &MenuEventHandler::OnMenu, this);
 
-        m_gotEvent = false;
-        m_event = NULL;
+        m_event = nullptr;
     }
 
     virtual ~MenuEventHandler()
@@ -545,69 +563,108 @@ public:
         delete m_event;
     }
 
-    const wxCommandEvent& GetEvent()
+    // Check that we received an event with the given ID and return the event
+    // object if we did (otherwise fail the test and return nullptr).
+    const wxObject* CheckGot(int expectedId)
     {
-        CPPUNIT_ASSERT( m_gotEvent );
+        if ( !m_event )
+        {
+            FAIL("Event not generated");
+            return nullptr;
+        }
 
-        m_gotEvent = false;
+        CHECK( m_event->GetId() == expectedId );
 
-        return *m_event;
+        const wxObject* const src = m_event->GetEventObject();
+
+        delete m_event;
+        m_event = nullptr;
+
+        return src;
     }
 
     bool GotEvent() const
     {
-        return m_gotEvent;
+        return m_event != nullptr;
     }
 
 private:
     void OnMenu(wxCommandEvent& event)
     {
-        CPPUNIT_ASSERT( !m_gotEvent );
+        CHECK( !m_event );
 
-        delete m_event;
         m_event = static_cast<wxCommandEvent*>(event.Clone());
-        m_gotEvent = true;
     }
 
     wxWindow* const m_win;
     wxCommandEvent* m_event;
-    bool m_gotEvent;
 };
 
 #endif // wxUSE_UIACTIONSIMULATOR
 
-void MenuTestCase::Events()
+TEST_CASE_METHOD(MenuTestCase, "Menu::Events", "[menu]")
 {
 #if wxUSE_UIACTIONSIMULATOR
+    if ( !EnableUITests() )
+        return;
+
     MenuEventHandler handler(m_frame);
 
     // Invoke the accelerator.
     m_frame->Show();
     m_frame->SetFocus();
-    wxYield();
+
+    // Wait for m_frame to become focused. Because (at least under wxQt when running
+    // the entire test suite) the first test below would fail due to the simulation
+    // starts before the frame become focused.
+    WaitFor("the frame to become focused", [this]() {
+        return m_frame->HasFocus();
+    });
 
     wxUIActionSimulator sim;
     sim.KeyDown(WXK_F1);
     sim.KeyUp(WXK_F1);
     wxYield();
 
-    const wxCommandEvent& ev = handler.GetEvent();
-    CPPUNIT_ASSERT_EQUAL( static_cast<int>(MenuTestCase_Bar), ev.GetId() );
-
-    wxObject* const src = ev.GetEventObject();
-    CPPUNIT_ASSERT( src );
-
-    CPPUNIT_ASSERT_EQUAL( "wxMenu",
-                          wxString(src->GetClassInfo()->GetClassName()) );
-    CPPUNIT_ASSERT_EQUAL( static_cast<wxObject*>(m_menuWithBar),
-                          src );
+    INFO("Expecting event for F1");
+    if ( const wxObject* const src = handler.CheckGot(MenuTestCase_Bar) )
+    {
+        CHECK( wxString(src->GetClassInfo()->GetClassName()) == "wxMenu" );
+        CHECK( src == m_menuWithBar );
+    }
 
     // Invoke another accelerator, it should also work.
     sim.Char('A', wxMOD_CONTROL);
     wxYield();
 
-    const wxCommandEvent& ev2 = handler.GetEvent();
-    CHECK( ev2.GetId() == static_cast<int>(MenuTestCase_SelectAll) );
+    INFO("Expecting event for Ctrl-A");
+    handler.CheckGot(MenuTestCase_SelectAll);
+
+    // Invoke accelerator and extra accelerators, all of them should work.
+    sim.Char('U', wxMOD_CONTROL);
+    wxYield();
+    INFO("Expecting event for Ctrl-U");
+    handler.CheckGot(MenuTestCase_ExtraAccel);
+
+    sim.Char('V', wxMOD_CONTROL);
+    wxYield();
+    INFO("Expecting event for Ctrl-V");
+    handler.CheckGot(MenuTestCase_ExtraAccel);
+
+    sim.Char('W', wxMOD_CONTROL);
+    wxYield();
+    INFO("Expecting event for Ctrl-W");
+    handler.CheckGot(MenuTestCase_ExtraAccels);
+
+    sim.Char('T', wxMOD_CONTROL);
+    wxYield();
+    INFO("Expecting event for Ctrl-T");
+    handler.CheckGot(MenuTestCase_ExtraAccels);
+
+    sim.Char('W', wxMOD_CONTROL | wxMOD_SHIFT);
+    wxYield();
+    INFO("Expecting event for Ctrl-Shift-W");
+    handler.CheckGot(MenuTestCase_ExtraAccels);
 
     // Now create a text control which uses the same accelerator for itself and
     // check that when the text control has focus, the accelerator does _not_
@@ -627,9 +684,11 @@ namespace
 
 void VerifyAccelAssigned( wxString labelText, int keycode )
 {
-    wxAcceleratorEntry* entry = wxAcceleratorEntry::Create( labelText );
+    const std::unique_ptr<wxAcceleratorEntry> entry(
+        wxAcceleratorEntry::Create( labelText )
+    );
 
-    CHECK( entry );
+    REQUIRE( entry );
     CHECK( entry->GetKeyCode() == keycode );
 }
 
@@ -752,12 +811,178 @@ key specialKeys[] =
 
 }
 
+#if wxUSE_ACCEL && wxUSE_UIACTIONSIMULATOR
+
+// What should the handler of the accelerator key event do.
+enum class AccelAction
+{
+    Skip,           // Skip the event, i.e. use the default behaviour.
+    Handle,         // Handle it, i.e. let the window have the key.
+    Use             // Explicitly ask for the accelerator to be used.
+};
+
+// Handler for wxEVT_ACCELERATOR_KEY allowing to check the events received and
+// to change what is done with them.
+class AccelKeyEventHandler
+{
+public:
+    explicit AccelKeyEventHandler(wxWindow* win, AccelAction action)
+        : m_win(win),
+          m_action(action)
+    {
+        m_win->Bind(wxEVT_ACCELERATOR_KEY,
+                    &AccelKeyEventHandler::OnAccelKey, this);
+    }
+
+    ~AccelKeyEventHandler()
+    {
+        m_win->Unbind(wxEVT_ACCELERATOR_KEY,
+                      &AccelKeyEventHandler::OnAccelKey, this);
+    }
+
+    // Return the command of the last event received and forget it.
+    int GetLastCommand()
+    {
+        const int command = m_command;
+        m_command = wxID_NONE;
+        return command;
+    }
+
+private:
+    void OnAccelKey(wxAcceleratorKeyEvent& event)
+    {
+        CHECK( m_command == wxID_NONE );
+
+        m_command = event.GetCommand();
+
+        switch ( m_action )
+        {
+            case AccelAction::Skip:
+                event.Skip();
+                break;
+
+            case AccelAction::Handle:
+                break;
+
+            case AccelAction::Use:
+                event.UseAccelerator();
+                break;
+        }
+    }
+
+    wxWindow* const m_win;
+    const AccelAction m_action;
+
+    int m_command = wxID_NONE;
+
+    wxDECLARE_NO_COPY_CLASS(AccelKeyEventHandler);
+};
+
+TEST_CASE_METHOD(MenuTestCase, "Menu::AcceleratorKeyEvent", "[menu][accelentry]")
+{
+    if ( !EnableUITests() )
+        return;
+
+    m_frame->Show();
+
+    // Note that we need a focused child window and not just the frame itself
+    // because the key events are only sent to the focused window.
+    wxWindow* const win = new wxWindow(m_frame, wxID_ANY);
+    win->SetFocus();
+
+    WaitFor("the window to become focused", [win]() {
+        return win->HasFocus();
+    });
+
+    MenuEventHandler menuHandler(m_frame);
+    wxUIActionSimulator sim;
+
+    // Note that the accelerators used here must not involve Ctrl because it
+    // corresponds to Cmd under macOS and the key combinations using it are
+    // handled by the system before the application gets any key events for
+    // them at all, so wxEVT_ACCELERATOR_KEY is never generated for them there.
+
+    SECTION( "Sent for the accelerator keys only" )
+    {
+        AccelKeyEventHandler accelHandler(m_frame, AccelAction::Skip);
+
+        // F1 is used by MenuTestCase_Bar accelerator.
+        sim.Char(WXK_F1);
+        wxYield();
+
+        CHECK( accelHandler.GetLastCommand() == MenuTestCase_Bar );
+        menuHandler.CheckGot(MenuTestCase_Bar);
+
+        // While "Z" is not used by anything, so no event should be sent.
+        sim.Char('Z');
+        wxYield();
+
+        CHECK( accelHandler.GetLastCommand() == wxID_NONE );
+        CHECK( !menuHandler.GotEvent() );
+    }
+
+    SECTION( "Handling it prevents using the accelerator" )
+    {
+        AccelKeyEventHandler accelHandler(m_frame, AccelAction::Handle);
+
+        sim.Char(WXK_F1);
+        wxYield();
+
+        CHECK( accelHandler.GetLastCommand() == MenuTestCase_Bar );
+        CHECK( !menuHandler.GotEvent() );
+    }
+
+    // Note that a multiline text control is used here because single line
+    // ones use the native field editor under macOS and so don't go through
+    // the same code path as the other windows there.
+    const long styleText = wxTE_MULTILINE;
+
+    SECTION( "Text control keys are not used as accelerators" )
+    {
+        wxTextCtrl* const text = new wxTextCtrl(m_frame, wxID_ANY, "Testing",
+                                                wxDefaultPosition,
+                                                wxDefaultSize,
+                                                styleText);
+        text->SetFocus();
+        wxYield();
+
+        AccelKeyEventHandler accelHandler(m_frame, AccelAction::Skip);
+
+        // Del is used for deleting the text in the control itself.
+        sim.Char(WXK_DELETE);
+        wxYield();
+
+        CHECK( accelHandler.GetLastCommand() == MenuTestCase_Delete );
+        CHECK( !menuHandler.GotEvent() );
+    }
+
+    SECTION( "UseAccelerator() overrides the control" )
+    {
+        wxTextCtrl* const text = new wxTextCtrl(m_frame, wxID_ANY, "Testing",
+                                                wxDefaultPosition,
+                                                wxDefaultSize,
+                                                styleText);
+        text->SetFocus();
+        wxYield();
+
+        AccelKeyEventHandler accelHandler(m_frame, AccelAction::Use);
+
+        sim.Char(WXK_DELETE);
+        wxYield();
+
+        CHECK( accelHandler.GetLastCommand() == MenuTestCase_Delete );
+        menuHandler.CheckGot(MenuTestCase_Delete);
+    }
+}
+
+#endif // wxUSE_ACCEL && wxUSE_UIACTIONSIMULATOR
+
 TEST_CASE( "wxMenuItemAccelEntry", "[menu][accelentry]" )
 {
-    wxMenu* menu = new wxMenu;
+    wxMenu menu;
 
-    menu->Append( wxID_ANY, "Test" );
-    wxMenuItem* item = menu->FindItemByPosition( 0 );
+    menu.Append( wxID_ANY, "Test" );
+    wxMenuItem* item = menu.FindItemByPosition( 0 );
 
     SECTION( "Modifier keys" )
     {
@@ -795,6 +1020,22 @@ TEST_CASE( "wxMenuItemAccelEntry", "[menu][accelentry]" )
             VerifyAccelAssigned( labelText, k.keycode );
         }
     }
+}
+
+TEST_CASE("wxMenuItemAccessors", "[menu]")
+{
+    wxMenu menu;
+
+    wxMenuItem* const item = menu.AppendCheckItem(wxID_ANY, "Check");
+
+    // Just check that we can call various functions.
+    CHECK( !item->GetBitmapBundle().IsOk() );
+    CHECK( !item->GetBitmap().IsOk() );
+
+#ifdef __WXMSW__
+    CHECK( !item->GetBitmapBundle(true).IsOk() );
+    CHECK( !item->GetBitmap(true).IsOk() );
+#endif // __WXMSW__
 }
 
 #endif

@@ -2,7 +2,6 @@
 // Name:        src/msw/colordlg.cpp
 // Purpose:     wxColourDialog class
 // Author:      Julian Smart
-// Modified by:
 // Created:     01/02/97
 // Copyright:   (c) Julian Smart
 // Licence:     wxWindows licence
@@ -19,9 +18,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_COLOURDLG
 
@@ -40,6 +36,7 @@
 #include "wx/scopeguard.h"
 
 #include "wx/msw/private.h"
+#include "wx/msw/private/darkmode.h"
 #include "wx/msw/private/dpiaware.h"
 
 #include <stdlib.h>
@@ -55,7 +52,7 @@
 static wxRect gs_rectDialog(0, 0, 222, 324);
 
 // The dialog currently being shown or null.
-static wxColourDialog* gs_activeDialog = NULL;
+static wxColourDialog* gs_activeDialog = nullptr;
 
 // ----------------------------------------------------------------------------
 // wxWin macros
@@ -121,8 +118,8 @@ struct COLORINFO
 UINT_PTR CALLBACK
 wxColourDialogHookProc(HWND hwnd,
                        UINT uiMsg,
-                       WPARAM WXUNUSED(wParam),
-                       LPARAM WXUNUSED(lParam))
+                       WPARAM wParam,
+                       LPARAM lParam)
 {
     switch ( uiMsg )
     {
@@ -148,7 +145,7 @@ wxColourDialogHookProc(HWND hwnd,
             break;
     }
 
-    return 0;
+    return wxMSWDarkMode::CommonDialogHookProc(hwnd, uiMsg, wParam, lParam);
 }
 
 // ----------------------------------------------------------------------------
@@ -181,7 +178,9 @@ int wxColourDialog::ShowModal()
     WX_HOOK_MODAL_DIALOG();
 
     wxWindow* const parent = GetParentForModalDialog(m_parent, GetWindowStyle());
-    WXHWND hWndParent = parent ? GetHwndOf(parent) : NULL;
+    WXHWND hWndParent = parent ? GetHwndOf(parent) : nullptr;
+
+    wxWindowDisabler disableOthers(this, parent);
 
     // initialize the struct used by Windows
     CHOOSECOLOR chooseColorStruct;

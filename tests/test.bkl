@@ -10,7 +10,16 @@
     <include file="../build/bakefiles/common_samples.bkl"/>
 
     <template id="wx_test">
-        <include>$(TOP_SRCDIR)3rdparty/catch/include</include>
+        <win32-res>$(WXTOPDIR)tests/test.rc</win32-res>
+        <res-include>$(TOP_SRCDIR)samples</res-include>
+        <if cond="FORMAT=='autoconf'">
+            <res-include>$(RCDEFDIR)</res-include>
+            <res-include>$(TOP_SRCDIR)include</res-include>
+            <cxxflags>$(CATCH2_CFLAGS)</cxxflags>
+        </if>
+        <if cond="FORMAT!='autoconf'">
+            <include>$(TOP_SRCDIR)3rdparty/catch/single_include</include>
+        </if>
 
         <if cond="WX_DISABLE_PRECOMP_HEADERS=='0'">
             <if cond="FORMAT!='autoconf' and PLATFORM_WIN32=='1'">
@@ -25,6 +34,7 @@
 
     <exe id="test" template="wx_sample_console,wx_test"
                    template_append="wx_append_base">
+        <define>TEST_HAS_IPC_SERVER</define>
         <sources>
             test.cpp
             any/anytest.cpp
@@ -34,6 +44,7 @@
             arrays/arrays.cpp
             base64/base64.cpp
             cmdline/cmdlinetest.cpp
+            config/config.cpp
             config/fileconf.cpp
             config/regconf.cpp
             datetime/datetimetest.cpp
@@ -69,7 +80,10 @@
             misc/pathlist.cpp
             misc/typeinfotest.cpp
             net/ipc.cpp
+            net/ipc_test_server.cpp
             net/socket.cpp
+            net/webrequest.cpp
+            net/webrequest_local.cpp
             regex/regextest.cpp
             regex/wxregextest.cpp
             scopeguard/scopeguardtest.cpp
@@ -84,6 +98,7 @@
             strings/crt.cpp
             strings/vsnprintf.cpp
             strings/hexconv.cpp
+            strings/utf8literals.cpp
             streams/datastreamtest.cpp
             streams/ffilestream.cpp
             streams/fileback.cpp
@@ -106,7 +121,6 @@
             uris/ftp.cpp
             uris/uris.cpp
             uris/url.cpp
-            vectors/vectors.cpp
             weakref/evtconnection.cpp
             weakref/weakref.cpp
             xlocale/xlocale.cpp
@@ -117,73 +131,54 @@
         <wx-lib>base</wx-lib>
     </exe>
 
-    <!--
-      This test program is targeted to "headless GUI" tests, tests which are
-      typically tied to the "core" component but that should run nicely in a
-      console only program. This program should be executable from a console
-      only Unix session (such as telnet or ssh) although it uses graphics
-      contexts, so if you modify this project, please check that it can still
-      be ran in such configuration and doesn't require an X server connection.
-      -->
-    <exe id="test_drawing" template="wx_sample_console,wx_test"
-                           template_append="wx_append"
-         cond="USE_GUI=='1'">
-        <sources>
-            test.cpp
-            drawing/drawing.cpp
-            drawing/plugindriver.cpp
-            drawing/basictest.cpp
-            drawing/fonttest.cpp
-        </sources>
-        <wx-lib>core</wx-lib>
-        <wx-lib>net</wx-lib>
-        <wx-lib>base</wx-lib>
-    </exe>
+    <template id="stc_append">
+        <if cond="OUT_OF_TREE_MAKEFILES=='0'">
+            <sys-lib>$(LIB_SCINTILLA)</sys-lib>
+            <sys-lib>$(LIB_LEXILLA)</sys-lib>
+        </if>
+    </template>
 
-    <!--
-      This is a sample plugin, it simply uses a wxImage based
-      wxGraphicsContext. It should render the same as the built-in test. Use
-      the WX_TEST_SUITE_GC_DRAWING_PLUGINS variable to specify the location of
-      the produced DLL/so to get it loaded and tested. To make your own plugin,
-      you can copy this sample and link toward your own implementation of
-      wxGraphicsContext interface, building the appropriate DrawingTestGCFactory
-      -->
-    <module id="test_drawingplugin" template="wx"
-                                    template_append="wx_append"
-            cond="USE_GUI=='1' and SHARED=='1'">
-        <define>$(DLLFLAG)</define>
-        <sources>
-            drawing/pluginsample.cpp
-        </sources>
-        <wx-lib>core</wx-lib>
-        <wx-lib>base</wx-lib>
-    </module>
+    <set var="BUNDLE_RESOURCES">$(TOP_SRCDIR)tests/horse.png $(TOP_SRCDIR)include/wx/msw/bullseye.cur</set>
 
     <exe id="test_gui" template="wx_sample,wx_test"
-                       template_append="wx_append"
+                       template_append="stc_append,wx_append"
          cond="USE_GUI=='1'">
 
         <!-- link against GUI libraries, but be a console app: -->
         <app-type>console</app-type>
 
+        <!-- needed by the duplicated net/ipc.cpp test below -->
+        <define>TEST_HAS_IPC_SERVER</define>
+
         <sources>
             asserthelper.cpp
             test.cpp
             testableframe.cpp
+            docview/updateallviews.cpp
             geometry/rect.cpp
             geometry/size.cpp
             geometry/point.cpp
             geometry/region.cpp
             graphics/bitmap.cpp
+            graphics/bmpbundle.cpp
             graphics/colour.cpp
             graphics/ellipsization.cpp
             graphics/measuring.cpp
             graphics/affinematrix.cpp
             graphics/boundingbox.cpp
+            graphics/clipper.cpp
             graphics/clippingbox.cpp
+            graphics/svgattributes.cpp
+            graphics/svgfiledc.cpp
             graphics/coords.cpp
+            graphics/graphbitmap.cpp
             graphics/graphmatrix.cpp
             graphics/graphpath.cpp
+            graphics/iconbundle.cpp
+            graphics/imagelist.cpp
+            <!--
+                Duplicate this file here to compile a GUI test in it too.
+             -->
             config/config.cpp
             controls/auitest.cpp
             controls/bitmapcomboboxtest.cpp
@@ -197,6 +192,7 @@
             controls/comboboxtest.cpp
             controls/dataviewctrltest.cpp
             controls/datepickerctrltest.cpp
+            controls/dirctrltest.cpp
             controls/frametest.cpp
             controls/gaugetest.cpp
             controls/gridtest.cpp
@@ -204,6 +200,7 @@
             controls/htmllboxtest.cpp
             controls/hyperlinkctrltest.cpp
             controls/itemcontainertest.cpp
+            controls/infobar.cpp
             controls/label.cpp
             controls/listbasetest.cpp
             controls/listbooktest.cpp
@@ -215,6 +212,7 @@
             controls/ownerdrawncomboboxtest.cpp
             controls/pickerbasetest.cpp
             controls/pickertest.cpp
+            controls/propgridtest.cpp
             controls/radioboxtest.cpp
             controls/radiobuttontest.cpp
             controls/rearrangelisttest.cpp
@@ -224,6 +222,7 @@
             controls/slidertest.cpp
             controls/spinctrldbltest.cpp
             controls/spinctrltest.cpp
+            controls/statbmptest.cpp
             controls/styledtextctrltest.cpp
             controls/textctrltest.cpp
             controls/textentrytest.cpp
@@ -237,6 +236,7 @@
             controls/windowtest.cpp
             controls/dialogtest.cpp
             events/clone.cpp
+            events/enterleave.cpp
             <!--
                 Duplicate this file here to test GUI event loops too.
              -->
@@ -250,7 +250,9 @@
             exec/exec.cpp
             font/fonttest.cpp
             image/image.cpp
+            image/imagwebp.cpp
             image/rawbmp.cpp
+            html/helpdata.cpp
             html/htmlparser.cpp
             html/htmlwindow.cpp
             html/htmprint.cpp
@@ -259,14 +261,19 @@
             misc/guifuncs.cpp
             misc/selstoretest.cpp
             misc/garbage.cpp
+            misc/oleautomationobject.cpp
             misc/safearrayconverttest.cpp
             misc/settings.cpp
+            misc/textwrap.cpp
             <!--
-                This one is intentionally duplicated here (it is also part of
-                non-GUI test) as sockets behave differently in console and GUI
-                applications.
+                These are intentionally duplicated here (they are also part of
+                the non-GUI test) as sockets, IPC and web requests behave
+                differently in console and GUI applications.
              -->
             net/socket.cpp
+            net/ipc.cpp
+            net/ipc_test_server.cpp
+            net/webrequest_local.cpp
             persistence/tlw.cpp
             persistence/dataview.cpp
             rowheightcache/rowheightcachetest.cpp
@@ -284,23 +291,28 @@
             Can't use <wx-lib> here as it doesn't work with conditionally
             defined variables, so fall back <sys-lib> as we must not link with
             inexisting webview library to be able to run tests even if
-            wxWebView or wxSTC is not available.
+            wxWebView is not available.
          -->
         <sys-lib>$(WXLIB_WEBVIEW)</sys-lib>
-        <sys-lib>$(WXLIB_STC)</sys-lib>
+        <ldlibs>$(EXTRALIBS_WEBVIEW)</ldlibs>
+        <wx-lib>stc</wx-lib>
         <wx-lib>aui</wx-lib>
         <wx-lib>richtext</wx-lib>
         <wx-lib>media</wx-lib>
         <wx-lib>xrc</wx-lib>
         <wx-lib>xml</wx-lib>
         <wx-lib>html</wx-lib>
+        <wx-lib>propgrid</wx-lib>
         <wx-lib>core</wx-lib>
         <wx-lib>net</wx-lib>
         <wx-lib>base</wx-lib>
     </exe>
 
+    <!-- reset resources -->
+    <set var="BUNDLE_RESOURCES"></set>
+
     <exe id="test_allheaders" template="wx_sample,wx_test"
-                              template_append="wx_append"
+                              template_append="stc_append,wx_append"
          cond="USE_GUI=='1'">
         <!-- link against GUI libraries, but be a console app: -->
         <app-type>console</app-type>
@@ -310,15 +322,17 @@
             test.cpp
             allheaders.cpp
             testableframe.cpp
+            allheaders_utf8.cpp
         </sources>
         <!--
             Can't use <wx-lib> here as it doesn't work with conditionally
             defined variables, so fall back <sys-lib> as we must not link with
             inexisting webview library to be able to run tests even if
-            wxWebView or wxSTC is not available.
+            wxWebView is not available.
          -->
         <sys-lib>$(WXLIB_WEBVIEW)</sys-lib>
-        <sys-lib>$(WXLIB_STC)</sys-lib>
+        <ldlibs>$(EXTRALIBS_WEBVIEW)</ldlibs>
+        <wx-lib>stc</wx-lib>
         <wx-lib>core</wx-lib>
         <wx-lib>net</wx-lib>
         <wx-lib>base</wx-lib>
@@ -326,17 +340,40 @@
 
 
     <wx-data id="data">
-        <files>testdata.fc</files>
+        <files>testdata.conf horse.svg</files>
+    </wx-data>
 
+    <wx-data id="data-image-sample">
         <!-- test data for image/image.cpp test unit: -->
         <files>horse.ani  horse.bmp  horse.cur  horse.gif  horse.ico  horse.jpg
-               horse.pcx  horse.png  horse.pnm  horse.tga  horse.tif  horse.xpm</files>
+               horse.pcx  horse.png  horse.pnm  horse.tga  horse.tif  horse.xpm
+               horse.webp</files>
     </wx-data>
 
     <wx-data id="data-images">
         <srcdir>$(SRCDIR)/image</srcdir>
         <dstdir>image</dstdir>
+        <!--
+            Don't forget to update build/cmake/tests/gui/CMakeLists.txt when
+            adding new files here!
+         -->
         <files>
+            bitfields.bmp
+            bitfields-alpha.bmp
+            8bpp-colorsused-large.bmp
+            8bpp-colorsused-negative.bmp
+            32bpp_rgb.bmp
+            32bpp_rgb.ico
+            32bpp_rgb_a0.ico
+            badrle4.bmp
+            rgb16-3103.bmp
+            rgb32-7187.bmp
+            rgb32bf.bmp
+            rgba32.bmp
+            rle4-delta-320x240.bmp
+            rle8-delta-320x240.bmp
+            rle8-delta-320x240-expected.bmp
+
             horse_grey.bmp horse_grey_flipped.bmp
             horse_rle4.bmp horse_rle4_flipped.bmp
             horse_rle8.bmp horse_rle8_flipped.bmp
@@ -360,6 +397,33 @@
             cross_bilinear_256x256.png
             cross_box_average_256x256.png
             cross_nearest_neighb_256x256.png
+
+            paste_input_background.png
+            paste_input_black.png
+            paste_input_overlay_transparent_border_opaque_square.png
+            paste_input_overlay_transparent_border_semitransparent_circle.png
+            paste_input_overlay_transparent_border_semitransparent_square.png
+            paste_result_background_plus_circle_plus_square.png
+            paste_result_background_plus_overlay_transparent_border_opaque_square.png
+            paste_result_background_plus_overlay_transparent_border_semitransparent_square.png
+            paste_result_no_background_square_over_circle.png
+
+            wx.png
+
+            toucan.png
+            toucan_hue_0.538.png
+            toucan_sat_-0.41.png
+            toucan_bright_-0.259.png
+            toucan_hsv_0.538_-0.41_-0.259.png
+            toucan_light_46.png
+            toucan_dis_240.png
+            toucan_grey.png
+            toucan_mono_255_255_255.png
+
+            width-times-height-overflow.bmp
+            width_height_32_bit_overflow.pgm
+
+            bad_truncated.gif
         </files>
     </wx-data>
 
@@ -369,12 +433,14 @@
         <files>internat.po internat.mo</files>
     </template>
 
+    <wx-data id="en_GB" template="catalog"/>
     <wx-data id="fr" template="catalog"/>
     <wx-data id="ja" template="catalog"/>
+    <wx-data id="xart-dothraki" template="catalog"/>
 
 
     <fragment format="autoconf">
-failtest: failtest_combobox failtest_evthandler failtest_weakref failtest_allheaders
+failtest: failtest_combobox failtest_evthandler failtest_msgid failtest_weakref failtest_allheaders
 
 failtest_combobox:
 	@$(RM) test_gui_comboboxtest.o
@@ -394,6 +460,13 @@ failtest_evthandler:
 	done; \
 	exit 0
 
+failtest_msgid:
+	@$(RM) test_intltest.o
+	if $(MAKE) CPPFLAGS=-DTEST_INVALID_MSGID test_intltest.o 2>/dev/null; then \
+	    echo "*** Compilation with TEST_INVALID_MSGID unexpectedly succeeded.">&amp;2; \
+	    exit 1; \
+	fi;
+
 failtest_weakref:
 	@$(RM) test_weakref.o
 	if $(MAKE) CPPFLAGS=-DTEST_INVALID_INCOMPLETE_WEAKREF test_weakref.o 2>/dev/null; then \
@@ -410,7 +483,20 @@ failtest_allheaders:
 	fi; \
 	exit 0
 
-.PHONY: failtest failtest_combobox failtest_evthandler failtest_weakref failtest_allheaders
+.PHONY: failtest failtest_combobox failtest_evthandler failtest_msgid failtest_weakref failtest_allheaders
     </fragment>
 
+    <!-- Test that each header can be included independently, i.e. is self-contained. -->
+    <fragment format="autoconf">
+allheaders_selfcontained:
+	@if [ -z "$$check_headers" ]; then \
+	    check_headers=`sed -ne '/BEGIN STANDALONE CHECK/,/END STANDALONE CHECK/s/#include &lt;\(.\+\)&gt;$$/\1/p' $(top_srcdir)/tests/allheaders.h`; \
+	fi; \
+	for h in $$check_headers; do \
+	    if ! $(CXX) -fsyntax-only -Wall -Werror -x c++ $(TEST_ALLHEADERS_CXXFLAGS) $(top_srcdir)/include/$$h; then \
+		echo "*** Checking $$h failed.">&amp;2; \
+		exit 1; \
+	    fi; \
+	done
+    </fragment>
 </makefile>

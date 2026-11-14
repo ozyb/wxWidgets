@@ -2,7 +2,6 @@
 // Name:        src/common/stdpbase.cpp
 // Purpose:     wxStandardPathsBase methods common to all ports
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     2004-10-19
 // Copyright:   (c) 2004 Vadim Zeitlin <vadim@wxwidgets.org>
 // Licence:     wxWindows licence
@@ -19,9 +18,6 @@
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/app.h"
@@ -30,6 +26,7 @@
 
 #include "wx/filename.h"
 #include "wx/stdpaths.h"
+#include "wx/utils.h"
 
 // ----------------------------------------------------------------------------
 // module globals
@@ -47,8 +44,6 @@ public:
     wxStandardPathsDefault() { }
 };
 
-static wxStandardPathsDefault gs_stdPaths;
-
 } // anonymous namespace
 
 // ============================================================================
@@ -58,10 +53,7 @@ static wxStandardPathsDefault gs_stdPaths;
 /* static */
 wxStandardPaths& wxStandardPathsBase::Get()
 {
-    wxAppTraits * const traits = wxTheApp ? wxTheApp->GetTraits() : NULL;
-    wxCHECK_MSG( traits, gs_stdPaths, wxT("create wxApp before calling this") );
-
-    return traits->GetStandardPaths();
+    return wxApp::GetValidTraits().GetStandardPaths();
 }
 
 wxString wxStandardPathsBase::GetExecutablePath() const
@@ -80,14 +72,14 @@ wxString wxStandardPathsBase::GetExecutablePath() const
     if ( path.empty() )
         return argv0;       // better than nothing
 
-    wxFileName filename(path);
-    filename.Normalize();
-    return filename.GetFullPath();
+    return wxFileName(path).GetAbsolutePath();
 }
 
 wxStandardPaths& wxAppTraitsBase::GetStandardPaths()
 {
-    return gs_stdPaths;
+    static wxStandardPathsDefault s_stdPaths;
+
+    return s_stdPaths;
 }
 
 wxStandardPathsBase::wxStandardPathsBase()
@@ -105,6 +97,18 @@ wxStandardPathsBase::wxStandardPathsBase()
 wxStandardPathsBase::~wxStandardPathsBase()
 {
     // nothing to do here
+}
+
+wxString wxStandardPathsBase::GetDataDir() const
+{
+    // allow to override the location of the data directory by setting
+    // WX_APPNAME_DATA_DIR environment variable: this is very useful in
+    // practice for running well-written (and so using wxStandardPaths to find
+    // their files) wx applications without installing them
+    wxString envOverride;
+    wxGetEnv("WX_" + wxTheApp->GetAppName().Upper() + "_DATA_DIR", &envOverride);
+
+    return envOverride;
 }
 
 wxString wxStandardPathsBase::GetLocalDataDir() const
@@ -148,7 +152,7 @@ wxStandardPathsBase::AppendPathComponent(const wxString& dir,
     {
         if ( !component.empty() )
         {
-            const wxChar ch = *(subdir.end() - 1);
+            const wxUniChar ch = *(subdir.end() - 1);
             if ( !wxFileName::IsPathSeparator(ch) && ch != wxT('.') )
                 subdir += wxFileName::GetPathSeparator();
 
@@ -177,3 +181,7 @@ wxString wxStandardPathsBase::AppendAppInfo(const wxString& dir) const
     return subdir;
 }
 
+wxString wxStandardPathsBase::GetSharedLibrariesDir() const
+{
+    return {};
+}

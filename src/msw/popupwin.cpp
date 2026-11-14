@@ -2,7 +2,6 @@
 // Name:        src/msw/popupwin.cpp
 // Purpose:     implements wxPopupWindow for MSW
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     08.05.02
 // Copyright:   (c) 2002 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 // Licence:     wxWindows licence
@@ -19,13 +18,11 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_POPUPWIN
 
 #ifndef WX_PRECOMP
+    #include "wx/app.h"
 #endif //WX_PRECOMP
 
 #include "wx/popupwin.h"
@@ -36,7 +33,7 @@
 //
 // Note that this global variable is used in src/msw/window.cpp and so must be
 // extern.
-wxPopupWindow* wxCurrentPopupWindow = NULL;
+wxPopupWindow* wxCurrentPopupWindow = nullptr;
 
 // ============================================================================
 // implementation
@@ -64,7 +61,7 @@ wxPopupWindow::~wxPopupWindow()
     // If the popup is destroyed without being hidden first, ensure that we are
     // not left with a dangling pointer.
     if ( wxCurrentPopupWindow == this )
-        wxCurrentPopupWindow = NULL;
+        wxCurrentPopupWindow = nullptr;
 }
 
 WXDWORD wxPopupWindow::MSWGetStyle(long flags, WXDWORD *exstyle) const
@@ -143,7 +140,7 @@ bool wxPopupWindow::Show(bool show)
         // There could have been a previous popup window which hasn't been
         // hidden yet. This will happen now, when we show this one, as it will
         // result in activation loss for the other one, so it's ok to overwrite
-        // the old pointer, even if it's non-NULL.
+        // the old pointer, even if it's non-null.
         wxCurrentPopupWindow = this;
     }
     else
@@ -151,7 +148,7 @@ bool wxPopupWindow::Show(bool show)
         // Only reset the pointer if it points to this window, otherwise we
         // would lose the correct value in the situation described above.
         if ( wxCurrentPopupWindow == this )
-            wxCurrentPopupWindow = NULL;
+            wxCurrentPopupWindow = nullptr;
     }
 
     if ( HasFlag(wxPU_CONTAINS_CONTROLS) )
@@ -173,7 +170,39 @@ bool wxPopupWindow::Show(bool show)
             }
 
             // and set it as the foreground window so the mouse can be captured
-            ::SetForegroundWindow(GetHwnd());
+
+            // But if another application is in the foreground, don't take the
+            // foreground away from the other application: usually Windows
+            // would prevent this from working, but it can be configured to
+            // allow it and we shouldn't do it in this case, see #26740.
+            bool canBecomeForeground = false;
+            HWND hwnd = ::GetForegroundWindow();
+            if ( hwnd )
+            {
+                DWORD foregroundProcessId = 0;
+                if ( ::GetWindowThreadProcessId(hwnd, &foregroundProcessId) )
+                {
+                    if ( foregroundProcessId == ::GetCurrentProcessId() )
+                        canBecomeForeground = true;
+                }
+                else
+                {
+                    wxLogLastError(wxT("GetWindowThreadProcessId"));
+                }
+            }
+            else
+            {
+                // Not having any foreground window is not an error and we
+                // consider that if nothing else is in the foreground, this
+                // window can become foreground one it without stealing focus
+                // from another application.
+                canBecomeForeground = true;
+            }
+
+            if ( canBecomeForeground )
+            {
+                ::SetForegroundWindow(GetHwnd());
+            }
         }
 
         return true;
@@ -242,6 +271,14 @@ wxPopupTransientWindow::MSWHandleMessage(WXLRESULT *result,
         case WM_ACTIVATE:
             if ( wParam == WA_INACTIVE )
             {
+                if ( wxTheApp->IsScheduledForDestruction(this) )
+                {
+                    // It is possible that we get this message again after
+                    // already getting it once, avoid scheduling the window for
+                    // destruction again in this case.
+                    break;
+                }
+
                 // We need to dismiss this window, however doing it directly
                 // from here seems to confuse ::ShowWindow(), which ends up
                 // calling this handler, and may result in losing activation

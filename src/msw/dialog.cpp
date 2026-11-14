@@ -2,7 +2,6 @@
 // Name:        src/msw/dialog.cpp
 // Purpose:     wxDialog class
 // Author:      Julian Smart
-// Modified by:
 // Created:     01/02/97
 // Copyright:   (c) Julian Smart
 // Licence:     wxWindows licence
@@ -19,15 +18,11 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/dialog.h"
 #include "wx/modalhook.h"
 
 #ifndef WX_PRECOMP
-    #include "wx/msw/wrapcdlg.h"
     #include "wx/utils.h"
     #include "wx/frame.h"
     #include "wx/app.h"
@@ -39,6 +34,10 @@
 #endif
 
 #include "wx/msw/private.h"
+#include "wx/msw/private/custompaint.h"
+#include "wx/msw/private/darkmode.h"
+#include "wx/msw/wrapcctl.h"
+
 #include "wx/evtloop.h"
 #include "wx/scopedptr.h"
 
@@ -78,14 +77,75 @@ wxDEFINE_TIED_SCOPED_PTR_TYPE(wxDialogModalData)
 // ============================================================================
 
 // ----------------------------------------------------------------------------
+// Gripper subclass proc
+// ----------------------------------------------------------------------------
+
+namespace wxMSWImpl
+{
+
+LRESULT CALLBACK
+GripperProc(HWND hwnd, UINT nMsg, WPARAM wParam, LPARAM lParam,
+            UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+    wxDialog* const self = reinterpret_cast<wxDialog*>(dwRefData);
+
+    switch ( nMsg )
+    {
+        case WM_PAINT:
+            {
+                const auto bg = self->GetBackgroundColour();
+
+                wxMSWImpl::CustomPaint
+                (
+                    hwnd,
+                    [](HWND hwnd, WPARAM wParam)
+                    {
+                        ::DefSubclassProc(hwnd, WM_PAINT, wParam, 0);
+                    },
+                    [bg](const wxBitmap& bmp)
+                    {
+                        return wxMSWImpl::PostPaintEachPixel
+                               (
+                                    bmp,
+                                    [bg](unsigned char& r,
+                                         unsigned char& g,
+                                         unsigned char& b,
+                                         unsigned char& a)
+                                    {
+                                        // Replace all background pixels, which
+                                        // are transparent, with the colour we
+                                        // want to use.
+                                        if ( a == wxALPHA_TRANSPARENT )
+                                        {
+                                            r = bg.Red();
+                                            g = bg.Green();
+                                            b = bg.Blue();
+
+                                            a = wxALPHA_OPAQUE;
+                                        }
+                                    }
+                               );
+                    }
+                );
+            }
+            return 0;
+
+        case WM_NCDESTROY:
+            ::RemoveWindowSubclass(hwnd, GripperProc, uIdSubclass);
+            break;
+    }
+
+    return ::DefSubclassProc(hwnd, nMsg, wParam, lParam);
+}
+
+} // namespace wxMSWImpl
+
+// ----------------------------------------------------------------------------
 // wxDialog construction
 // ----------------------------------------------------------------------------
 
 void wxDialog::Init()
 {
-    m_isShown = false;
-    m_modalData = NULL;
-    m_hGripper = 0;
 }
 
 bool wxDialog::Create(wxWindow *parent,
@@ -153,6 +213,9 @@ bool wxDialog::Show(bool show)
         // which will change the controls values so do it before showing as
         // otherwise we could have some flicker
         InitDialog();
+
+        // Don't show the dialog if EndModal() has been called from InitDialog()
+        show = GetReturnCode() == 0;
     }
 
     wxDialogBase::Show(show);
@@ -180,28 +243,37 @@ int wxDialog::ShowModal()
 
     wxASSERT_MSG( !IsModal(), wxT("ShowModal() can't be called twice") );
 
-    wxDialogModalDataTiedPtr modalData(&m_modalData,
-                                       new wxDialogModalData(this));
+    // Reset the return code to avoid it being interpreted as an indication that
+    // EndModal() was called from InitDialog() when Show() is called below.
+    // Otherwise, subsequent calls to ShowModal() on the same wxDialog object
+    // would fail to show the dialog again.
+    SetReturnCode(0);
 
     Show();
 
     // EndModal may have been called from InitDialog handler (called from
     // inside Show()) and hidden the dialog back again
     if ( IsShown() )
+    {
+        wxDialogModalDataTiedPtr modalData(&m_modalData,
+                                           new wxDialogModalData(this));
+
         modalData->RunLoop();
-    else
-        m_modalData->ExitLoop();
+    }
 
     return GetReturnCode();
 }
 
 void wxDialog::EndModal(int retCode)
 {
-    wxASSERT_MSG( IsModal(), wxT("EndModal() called for non modal dialog") );
-
     SetReturnCode(retCode);
 
-    Hide();
+    if ( IsShown() )
+    {
+        wxASSERT_MSG( IsModal(), wxT("EndModal() called for non modal dialog") );
+
+        Hide();
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -211,6 +283,10 @@ void wxDialog::EndModal(int retCode)
 void wxDialog::SetWindowStyleFlag(long style)
 {
     wxDialogBase::SetWindowStyleFlag(style);
+
+    // Don't do anything if we're setting the style before creating the dialog.
+    if ( !GetHwnd() )
+        return;
 
     if ( HasFlag(wxRESIZE_BORDER) )
         CreateGripper();
@@ -236,8 +312,17 @@ void wxDialog::CreateGripper()
                                     GetHwnd(),
                                     0,
                                     wxGetInstance(),
-                                    NULL
+                                    nullptr
                                );
+
+        wxMSWDarkMode::AllowForWindow((HWND)m_hGripper);
+
+        // Whether we use the dark mode or not, handle WM_PAINT for the gripper
+        // ourselves, as even in the light mode its background is wrong if the
+        // dialog doesn't use the default background colour -- and in dark mode
+        // it's wrong even by default.
+        ::SetWindowSubclass(m_hGripper, wxMSWImpl::GripperProc,
+                            0, wxPtrToUInt(this));
     }
 }
 
@@ -348,8 +433,15 @@ WXLRESULT wxDialog::MSWWindowProc(WXUINT message, WXWPARAM wParam, WXLPARAM lPar
             processed = true;
             if ( HasFlag(wxFULL_REPAINT_ON_RESIZE) )
             {
-                ::InvalidateRect(GetHwnd(), NULL, false /* erase bg */);
+                ::InvalidateRect(GetHwnd(), nullptr, false /* erase bg */);
             }
+            break;
+
+        case WM_CTLCOLORDLG:
+            // We need to explicitly set the dark background colour when using
+            // dark mode, otherwise we'd be using the default light background.
+            if ( wxMSWDarkMode::IsActive() )
+                return (WXLRESULT)wxMSWDarkMode::GetBackgroundBrush();
             break;
     }
 

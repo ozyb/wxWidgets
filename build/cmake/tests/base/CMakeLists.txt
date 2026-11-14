@@ -16,6 +16,7 @@ set(TEST_SRC
     arrays/arrays.cpp
     base64/base64.cpp
     cmdline/cmdlinetest.cpp
+    config/config.cpp
     config/fileconf.cpp
     config/regconf.cpp
     datetime/datetimetest.cpp
@@ -51,7 +52,10 @@ set(TEST_SRC
     misc/pathlist.cpp
     misc/typeinfotest.cpp
     net/ipc.cpp
+    net/ipc_test_server.cpp
     net/socket.cpp
+    net/webrequest.cpp
+    net/webrequest_local.cpp
     regex/regextest.cpp
     regex/wxregextest.cpp
     scopeguard/scopeguardtest.cpp
@@ -66,6 +70,7 @@ set(TEST_SRC
     strings/crt.cpp
     strings/vsnprintf.cpp
     strings/hexconv.cpp
+    strings/utf8literals.cpp
     streams/datastreamtest.cpp
     streams/ffilestream.cpp
     streams/fileback.cpp
@@ -88,14 +93,13 @@ set(TEST_SRC
     uris/ftp.cpp
     uris/uris.cpp
     uris/url.cpp
-    vectors/vectors.cpp
     weakref/evtconnection.cpp
     weakref/weakref.cpp
     xlocale/xlocale.cpp
+    xml/xmltest.cpp
 
     testprec.h
     testableframe.h
-    testdate.h
     testfile.h
     archive/archivetest.h
     streams/bstream.h
@@ -106,24 +110,52 @@ if(wxUSE_XML)
 endif()
 
 set(TEST_DATA
+    intl/en_GB/internat.mo
+    intl/en_GB/internat.po
     intl/fr/internat.mo
     intl/fr/internat.po
     intl/ja/internat.mo
     intl/ja/internat.po
+    intl/xart-dothraki/internat.mo
+    intl/xart-dothraki/internat.po
     horse.bmp
     horse.png
     horse.xpm
-    testdata.fc
+    testdata.conf
     )
 
-wx_add_test(test_base ${TEST_SRC}
+# Register test_base through Catch to get one CTest entry per Catch test case
+# instead of the default aggregate executable test.
+# This file defines symbols affecting the wx headers before including them, so
+# it can't use precompiled headers.
+set_source_files_properties(${wxSOURCE_DIR}/tests/strings/utf8literals.cpp
+    PROPERTIES
+        SKIP_PRECOMPILE_HEADERS ON
+        COTIRE_EXCLUDED ON
+    )
+
+wx_add_test(test_base CONSOLE NO_CTEST ${TEST_SRC}
     DATA ${TEST_DATA}
     )
-target_compile_definitions(test_base PRIVATE wxUSE_GUI=0 wxUSE_BASE=1)
+target_compile_definitions(test_base PRIVATE TEST_HAS_IPC_SERVER)
 if(wxUSE_SOCKETS)
     wx_exe_link_libraries(test_base wxnet)
 endif()
 if(wxUSE_XML)
     wx_exe_link_libraries(test_base wxxml)
 endif()
-wx_test_enable_precomp(test_base)
+
+include("${wxSOURCE_DIR}/3rdparty/catch/contrib/Catch.cmake")
+catch_discover_tests(test_base
+    TEST_SPEC "~[.]" "~[ipc]"
+    TEST_LIST test_base_NON_IPC_TESTS
+    WORKING_DIRECTORY "${wxOUTPUT_DIR}/${wxPLATFORM_LIB_DIR}"
+    )
+catch_discover_tests(test_base
+    TEST_SPEC "~[.]" "[ipc]"
+    TEST_LIST test_base_IPC_TESTS
+    PROPERTIES
+        RESOURCE_LOCK test_base_ipc
+        TIMEOUT 180
+    WORKING_DIRECTORY "${wxOUTPUT_DIR}/${wxPLATFORM_LIB_DIR}"
+    )

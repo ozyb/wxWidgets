@@ -14,6 +14,7 @@
 #endif
 
 #include "wx/gtk/private/wrapgtk.h"
+#include "wx/gtk/private/backend.h"
 #ifdef GDK_WINDOWING_X11
     #ifndef __WXGTK4__
         #include "wx/unix/private/displayx11.h"
@@ -36,7 +37,10 @@ GdkWindow* wxGetTopLevelGDK();
 
 static inline GdkDisplay* GetDisplay()
 {
-    return gdk_window_get_display(wxGetTopLevelGDK());
+    if (GdkWindow* window = wxGetTopLevelGDK())
+        return gdk_window_get_display(window);
+
+    return nullptr;
 }
 
 // This class is always defined as it's used for the main display even when
@@ -46,16 +50,16 @@ class wxDisplayImplGTK : public wxDisplayImpl
     typedef wxDisplayImpl base_type;
 public:
     wxDisplayImplGTK(unsigned i);
-    virtual wxRect GetGeometry() const wxOVERRIDE;
-    virtual wxRect GetClientArea() const wxOVERRIDE;
-    virtual int GetDepth() const wxOVERRIDE;
-    virtual double GetScaleFactor() const wxOVERRIDE;
+    virtual wxRect GetGeometry() const override;
+    virtual wxRect GetClientArea() const override;
+    virtual int GetDepth() const override;
+    virtual double GetScaleFactor() const override;
 
 #if wxUSE_DISPLAY
-    virtual bool IsPrimary() const wxOVERRIDE;
-    virtual wxArrayVideoModes GetModes(const wxVideoMode& mode) const wxOVERRIDE;
-    virtual wxVideoMode GetCurrentMode() const wxOVERRIDE;
-    virtual bool ChangeMode(const wxVideoMode& mode) wxOVERRIDE;
+    virtual bool IsPrimary() const override;
+    virtual wxArrayVideoModes GetModes(const wxVideoMode& mode) const override;
+    virtual wxVideoMode GetCurrentMode() const override;
+    virtual bool ChangeMode(const wxVideoMode& mode) override;
 #endif // wxUSE_DISPLAY
 
     GdkMonitor* const m_monitor;
@@ -66,10 +70,10 @@ public:
 class wxDisplayFactoryGTK: public wxDisplayFactory
 {
 public:
-    virtual wxDisplayImpl* CreateDisplay(unsigned n) wxOVERRIDE;
-    virtual unsigned GetCount() wxOVERRIDE;
-    virtual int GetFromPoint(const wxPoint& pt) wxOVERRIDE;
-    virtual int GetFromWindow(const wxWindow* win) wxOVERRIDE;
+    virtual wxDisplayImpl* CreateDisplay(unsigned n) override;
+    virtual unsigned GetCount() override;
+    virtual int GetFromPoint(const wxPoint& pt) override;
+    virtual int GetFromWindow(const wxWindow* win) override;
 };
 
 wxDisplayImpl* wxDisplayFactoryGTK::CreateDisplay(unsigned n)
@@ -79,21 +83,27 @@ wxDisplayImpl* wxDisplayFactoryGTK::CreateDisplay(unsigned n)
 
 unsigned wxDisplayFactoryGTK::GetCount()
 {
-    return gdk_display_get_n_monitors(::GetDisplay());
+    GdkDisplay* display = ::GetDisplay();
+    return display ? gdk_display_get_n_monitors(display) : 0;
 }
 
 int wxDisplayFactoryGTK::GetFromPoint(const wxPoint& pt)
 {
-    GdkRectangle rect;
-    GdkDisplay* display = ::GetDisplay();
-    GdkMonitor* monitor = gdk_display_get_monitor_at_point(display, pt.x, pt.y);
-    gdk_monitor_get_geometry(monitor, &rect);
-    if (wxRect(rect.x, rect.y, rect.width, rect.height).Contains(pt))
+    if (GdkDisplay* display = ::GetDisplay())
     {
-        for (unsigned i = gdk_display_get_n_monitors(display); i--;)
+        if (GdkMonitor* monitor = gdk_display_get_monitor_at_point(
+                display, pt.x, pt.y))
         {
-            if (gdk_display_get_monitor(display, i) == monitor)
-                return i;
+            GdkRectangle rect;
+            gdk_monitor_get_geometry(monitor, &rect);
+            if (wxRect(rect.x, rect.y, rect.width, rect.height).Contains(pt))
+            {
+                for (unsigned i = gdk_display_get_n_monitors(display); i--;)
+                {
+                    if (gdk_display_get_monitor(display, i) == monitor)
+                        return i;
+                }
+            }
         }
     }
     return wxNOT_FOUND;
@@ -175,11 +185,11 @@ bool wxDisplayImplGTK::ChangeMode(const wxVideoMode& WXUNUSED(mode))
 
 #else // !__WXGTK4__
 
-#ifdef __WXGTK3__
+#if defined(__WXGTK3__) && defined(GDK_WINDOWING_X11)
 
 static inline bool wxIsX11GDKScreen(GdkScreen* screen)
 {
-    return GDK_IS_X11_SCREEN(screen);
+    return wxGTKImpl::IsX11(screen);
 }
 
 #else // !__WXGTK3__
@@ -188,17 +198,21 @@ static inline int wx_gdk_screen_get_primary_monitor(GdkScreen* screen)
 {
     int monitor = 0;
 #if GTK_CHECK_VERSION(2,20,0)
+    wxGCC_WARNING_SUPPRESS(deprecated-declarations)
     if (wx_is_at_least_gtk2(20))
         monitor = gdk_screen_get_primary_monitor(screen);
+    wxGCC_WARNING_RESTORE(deprecated-declarations)
 #endif
     return monitor;
 }
 #define gdk_screen_get_primary_monitor wx_gdk_screen_get_primary_monitor
 
+#ifdef GDK_WINDOWING_X11
 static inline bool wxIsX11GDKScreen(GdkScreen* WXUNUSED(screen))
 {
     return true;
 }
+#endif
 
 #endif // __WXGTK3__/!__WXGTK3__
 
@@ -207,7 +221,7 @@ wx_gdk_screen_get_monitor_workarea(GdkScreen* screen, int monitor, GdkRectangle*
 {
     wxGCC_WARNING_SUPPRESS(deprecated-declarations)
 #if GTK_CHECK_VERSION(3,4,0)
-    if (gtk_check_version(3,4,0) == NULL)
+    if (gtk_check_version(3,4,0) == nullptr)
         gdk_screen_get_monitor_workarea(screen, monitor, dest);
     else
 #endif
@@ -231,7 +245,10 @@ wx_gdk_screen_get_monitor_workarea(GdkScreen* screen, int monitor, GdkRectangle*
 
 static inline GdkScreen* GetScreen()
 {
-    return gdk_window_get_screen(wxGetTopLevelGDK());
+    if (GdkWindow* window = wxGetTopLevelGDK())
+        return gdk_window_get_screen(window);
+
+    return nullptr;
 }
 
 class wxDisplayImplGTK : public wxDisplayImpl
@@ -239,18 +256,19 @@ class wxDisplayImplGTK : public wxDisplayImpl
     typedef wxDisplayImpl base_type;
 public:
     wxDisplayImplGTK(unsigned i);
-    virtual wxRect GetGeometry() const wxOVERRIDE;
-    virtual wxRect GetClientArea() const wxOVERRIDE;
-    virtual int GetDepth() const wxOVERRIDE;
+    virtual wxRect GetGeometry() const override;
+    virtual wxRect GetClientArea() const override;
+    virtual int GetDepth() const override;
 #if GTK_CHECK_VERSION(3,10,0)
-    virtual double GetScaleFactor() const wxOVERRIDE;
+    virtual double GetScaleFactor() const override;
 #endif // GTK+ 3.10
+    virtual wxSize GetRawPPI() const override;
 
 #if wxUSE_DISPLAY
-    virtual bool IsPrimary() const wxOVERRIDE;
-    virtual wxArrayVideoModes GetModes(const wxVideoMode& mode) const wxOVERRIDE;
-    virtual wxVideoMode GetCurrentMode() const wxOVERRIDE;
-    virtual bool ChangeMode(const wxVideoMode& mode) wxOVERRIDE;
+    virtual bool IsPrimary() const override;
+    virtual wxArrayVideoModes GetModes(const wxVideoMode& mode) const override;
+    virtual wxVideoMode GetCurrentMode() const override;
+    virtual bool ChangeMode(const wxVideoMode& mode) override;
 #endif // wxUSE_DISPLAY
 
     GdkScreen* const m_screen;
@@ -260,10 +278,10 @@ public:
 class wxDisplayFactoryGTK: public wxDisplayFactory
 {
 public:
-    virtual wxDisplayImpl* CreateDisplay(unsigned n) wxOVERRIDE;
-    virtual unsigned GetCount() wxOVERRIDE;
-    virtual int GetFromPoint(const wxPoint& pt) wxOVERRIDE;
-    virtual int GetFromWindow(const wxWindow* win) wxOVERRIDE;
+    virtual wxDisplayImpl* CreateDisplay(unsigned n) override;
+    virtual unsigned GetCount() override;
+    virtual int GetFromPoint(const wxPoint& pt) override;
+    virtual int GetFromWindow(const wxWindow* win) override;
 };
 
 wxGCC_WARNING_SUPPRESS(deprecated-declarations)
@@ -275,18 +293,24 @@ wxDisplayImpl* wxDisplayFactoryGTK::CreateDisplay(unsigned n)
 
 unsigned wxDisplayFactoryGTK::GetCount()
 {
-    return gdk_screen_get_n_monitors(GetScreen());
+    GdkScreen* screen = GetScreen();
+    return screen ? gdk_screen_get_n_monitors(screen) : 0;
 }
 
 int wxDisplayFactoryGTK::GetFromPoint(const wxPoint& pt)
 {
-    GdkRectangle rect;
     GdkScreen* screen = GetScreen();
-    int monitor = gdk_screen_get_monitor_at_point(screen, pt.x, pt.y);
-    gdk_screen_get_monitor_geometry(screen, monitor, &rect);
-    if (!wxRect(rect.x, rect.y, rect.width, rect.height).Contains(pt))
-        monitor = wxNOT_FOUND;
-    return monitor;
+    if (screen)
+    {
+        GdkRectangle rect;
+        int monitor = gdk_screen_get_monitor_at_point(screen, pt.x, pt.y);
+        gdk_screen_get_monitor_geometry(screen, monitor, &rect);
+        if (!wxRect(rect.x, rect.y, rect.width, rect.height).Contains(pt))
+            monitor = wxNOT_FOUND;
+        return monitor;
+    }
+
+    return wxNOT_FOUND;
 }
 
 int wxDisplayFactoryGTK::GetFromWindow(const wxWindow* win)
@@ -326,19 +350,34 @@ wxRect wxDisplayImplGTK::GetClientArea() const
 
 int wxDisplayImplGTK::GetDepth() const
 {
-    // TODO: How to get the depth of the specific display?
-    return gdk_visual_get_depth(gdk_window_get_visual(wxGetTopLevelGDK()));
+    return gdk_visual_get_depth(gdk_screen_get_system_visual(m_screen));
 }
 
 #if GTK_CHECK_VERSION(3,10,0)
 double wxDisplayImplGTK::GetScaleFactor() const
 {
-    if ( gtk_check_version(3,10,0) == NULL )
+    if ( gtk_check_version(3,10,0) == nullptr )
         return gdk_screen_get_monitor_scale_factor(m_screen, m_index);
 
     return 1.0;
 }
 #endif // GTK+ 3.10
+
+wxSize wxDisplayImplGTK::GetRawPPI() const
+{
+    auto const widthInMM = gdk_screen_get_monitor_width_mm(m_screen, m_index);
+    auto const heightInMM = gdk_screen_get_monitor_height_mm(m_screen, m_index);
+
+    // Don't use manifestly invalid values.
+    if ( widthInMM <= 0 && heightInMM <= 0 )
+        return wxDisplay::GetStdPPI();
+
+    const wxRect geometry = GetGeometry();
+    const double ppiX = geometry.width * 25.4 / widthInMM;
+    const double ppiY = geometry.height * 25.4 / heightInMM;
+
+    return wxSize(wxRound(ppiX), wxRound(ppiY));
+}
 
 #if wxUSE_DISPLAY
 bool wxDisplayImplGTK::IsPrimary() const
@@ -360,9 +399,13 @@ wxArrayVideoModes wxDisplayImplGTK::GetModes(const wxVideoMode& mode) const
         modes = wxX11_GetModes(this, mode, display);
 #endif
     }
-#else
-    wxUnusedVar(mode);
+    else
 #endif
+    {
+        const wxVideoMode current(GetCurrentMode());
+        if (current.Matches(mode))
+            modes.push_back(current);
+    }
     return modes;
 }
 
@@ -376,7 +419,14 @@ wxVideoMode wxDisplayImplGTK::GetCurrentMode() const
         int nScreen = gdk_x11_screen_get_screen_number(m_screen);
         mode = wxXF86VidMode_GetCurrentMode(display, nScreen);
     }
+    else
 #endif
+    {
+        const wxRect rect(GetGeometry());
+        mode.w = rect.width;
+        mode.h = rect.height;
+        mode.bpp = gdk_visual_get_depth(gdk_screen_get_system_visual(m_screen));
+    }
     return mode;
 }
 

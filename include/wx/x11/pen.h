@@ -2,7 +2,6 @@
 // Name:        wx/x11/pen.h
 // Purpose:     wxPen class
 // Author:      Julian Smart
-// Modified by:
 // Created:     17/09/98
 // Copyright:   (c) Julian Smart
 // Licence:     wxWindows licence
@@ -31,7 +30,7 @@ typedef char wxX11Dash;
 class WXDLLIMPEXP_CORE wxPen: public wxPenBase
 {
 public:
-    wxPen() { }
+    wxPen() = default;
 
     wxPen( const wxColour &colour, int width = 1, wxPenStyle style = wxPENSTYLE_SOLID );
 
@@ -39,29 +38,27 @@ public:
 
     wxPen( const wxPenInfo& info );
 
-    virtual ~wxPen();
-
     bool operator == ( const wxPen& pen ) const;
     bool operator != (const wxPen& pen) const { return !(*this == pen); }
 
-    void SetColour( const wxColour &colour );
-    void SetColour( unsigned char red, unsigned char green, unsigned char blue );
-    void SetCap( wxPenCap capStyle );
-    void SetJoin( wxPenJoin joinStyle );
-    void SetStyle( wxPenStyle style );
-    void SetWidth( int width );
-    void SetDashes( int number_of_dashes, const wxDash *dash );
-    void SetStipple( const wxBitmap& stipple );
+    void SetColour( const wxColour &colour ) override;
+    void SetColour( unsigned char red, unsigned char green, unsigned char blue ) override;
+    void SetCap( wxPenCap capStyle ) override;
+    void SetJoin( wxPenJoin joinStyle ) override;
+    void SetStyle( wxPenStyle style ) override;
+    void SetWidth( int width ) override;
+    void SetDashes( int number_of_dashes, const wxDash *dash ) override;
+    void SetStipple( const wxBitmap& stipple ) override;
 
-    wxColour GetColour() const;
-    wxPenCap GetCap() const;
-    wxPenJoin GetJoin() const;
-    wxPenStyle GetStyle() const;
-    int GetWidth() const;
-    int GetDashes(wxDash **ptr) const;
+    wxColour GetColour() const override;
+    wxPenCap GetCap() const override;
+    wxPenJoin GetJoin() const override;
+    wxPenStyle GetStyle() const override;
+    int GetWidth() const override;
+    int GetDashes(wxDash **ptr) const override;
     int GetDashCount() const;
     wxDash* GetDash() const;
-    wxBitmap* GetStipple() const;
+    wxBitmap* GetStipple() const override;
 
 
     wxDEPRECATED_MSG("use wxPENSTYLE_XXX constants")
@@ -70,8 +67,8 @@ public:
     void SetStyle(int style) { SetStyle((wxPenStyle)style); }
 
 protected:
-    virtual wxGDIRefData *CreateGDIRefData() const;
-    virtual wxGDIRefData *CloneGDIRefData(const wxGDIRefData *data) const;
+    virtual wxGDIRefData *CreateGDIRefData() const override;
+    wxNODISCARD virtual wxGDIRefData *CloneGDIRefData(const wxGDIRefData *data) const override;
 
     wxDECLARE_DYNAMIC_CLASS(wxPen);
 };

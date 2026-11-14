@@ -19,9 +19,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
@@ -34,6 +31,8 @@
 #include "wx/aboutdlg.h"
 #include "wx/artprov.h"
 #include "wx/colordlg.h"
+#include "wx/spinctrl.h"
+#include "wx/statbmp.h"
 #include "wx/wfstream.h"
 
 #include "anitest.h"
@@ -103,9 +102,7 @@ bool MyApp::OnInit()
 
     // Create the main frame window
 
-    MyFrame* frame = new MyFrame((wxFrame *)NULL, wxID_ANY, "Animation Demo",
-                                 wxDefaultPosition, wxSize(500, 400),
-                                 wxDEFAULT_FRAME_STYLE);
+    MyFrame* frame = new MyFrame(nullptr, wxID_ANY, "Animation Demo");
     frame->Show(true);
 
     return true;
@@ -118,11 +115,8 @@ bool MyApp::OnInit()
 // Define my frame constructor
 MyFrame::MyFrame(wxWindow *parent,
                  const wxWindowID id,
-                 const wxString& title,
-                 const wxPoint& pos,
-                 const wxSize& size,
-                 const long style)
-       : wxFrame(parent, id, title, pos, size, style)
+                 const wxString& title)
+       : wxFrame(parent, id, title)
 {
     SetIcon(wxICON(sample));
 
@@ -177,15 +171,52 @@ MyFrame::MyFrame(wxWindow *parent,
             wxSizerFlags().Centre().Border());
 
     m_animationCtrl = new wxAnimationCtrl(this, wxID_ANY);
-    if (m_animationCtrl->LoadFile("throbber.gif"))
+
+    wxAnimationBundle animations;
+
+    wxAnimation throbber("throbber.gif");
+    if (throbber.IsOk())
+        animations.Add(throbber);
+    wxAnimation throbber2x("throbber_2x.gif");
+    if (throbber2x.IsOk())
+        animations.Add(throbber2x);
+
+    if (animations.IsOk())
+    {
+        m_animationCtrl->SetAnimation(animations);
         m_animationCtrl->Play();
+    }
 
     sz->Add(m_animationCtrl, wxSizerFlags().Centre().Border());
-    SetSizer(sz);
-}
 
-MyFrame::~MyFrame()
-{
+    // add controls allowing to examine the individual animation frames
+    wxStaticBoxSizer* const frameSizer =
+        new wxStaticBoxSizer(wxVERTICAL, this, "Animation frames");
+    m_frameBox = frameSizer->GetStaticBox();
+
+    wxSizer* const spinSizer = new wxBoxSizer(wxHORIZONTAL);
+    spinSizer->Add(new wxStaticText(m_frameBox, wxID_ANY, "&Frame:"),
+                   wxSizerFlags().CentreVertical().Border(wxRIGHT));
+    m_frameSpin = new wxSpinCtrl(m_frameBox, wxID_ANY);
+    m_frameSpin->Bind(wxEVT_SPINCTRL, &MyFrame::OnFrameSpin, this);
+    spinSizer->Add(m_frameSpin, wxSizerFlags().CentreVertical());
+    m_frameCount = new wxStaticText(m_frameBox, wxID_ANY, wxString());
+    spinSizer->Add(m_frameCount,
+                   wxSizerFlags().CentreVertical().Border(wxLEFT));
+    frameSizer->Add(spinSizer, wxSizerFlags().Centre().Border());
+
+    m_frameDelay = new wxStaticText(m_frameBox, wxID_ANY, wxString());
+    frameSizer->Add(m_frameDelay, wxSizerFlags().Centre().Border());
+
+    m_frameBitmap = new wxStaticBitmap(m_frameBox, wxID_ANY, wxBitmapBundle());
+    frameSizer->Add(m_frameBitmap, wxSizerFlags().Centre().Border());
+
+    sz->Add(frameSizer, wxSizerFlags().Expand().Border());
+    SetSizer(sz);
+
+    UpdateFrameControls();
+
+    SetSize(FromDIP(wxSize(500, 400)));
 }
 
 void MyFrame::OnPlay(wxCommandEvent& WXUNUSED(event))
@@ -204,6 +235,8 @@ void MyFrame::OnStop(wxCommandEvent& WXUNUSED(event))
 void MyFrame::OnSetNullAnimation(wxCommandEvent& WXUNUSED(event))
 {
     m_animationCtrl->SetAnimation(wxNullAnimation);
+
+    UpdateFrameControls();
 }
 
 void MyFrame::OnSetInactiveBitmap(wxCommandEvent& event)
@@ -280,6 +313,68 @@ void MyFrame::RecreateAnimation(long style)
     m_animationCtrl->SetBackgroundColour(bg);
 
     GetSizer()->Layout();
+
+    UpdateFrameControls();
+}
+
+void MyFrame::UpdateFrameControls()
+{
+    const wxAnimation animation = m_animationCtrl->GetAnimation();
+    const unsigned int count = animation.IsOk() ? animation.GetFrameCount() : 0;
+
+    m_frameBox->Enable(count != 0);
+
+    if ( count )
+    {
+        m_frameSpin->SetRange(0, count - 1);
+        m_frameCount->SetLabel(wxString::Format("(of %u)", count));
+    }
+    else
+    {
+        m_frameSpin->SetRange(0, 0);
+        m_frameCount->SetLabel("(no frames)");
+    }
+
+    m_frameSpin->SetValue(0);
+
+    UpdateFrameInfo();
+}
+
+void MyFrame::UpdateFrameInfo()
+{
+    const wxAnimation animation = m_animationCtrl->GetAnimation();
+    if ( animation.IsOk() && animation.GetFrameCount() != 0 )
+    {
+        const unsigned int frame = m_frameSpin->GetValue();
+
+        const int delay = animation.GetDelay(frame);
+        m_frameDelay->SetLabel(delay == -1
+                                ? wxString("Delay: forever")
+                                : wxString::Format("Delay: %d ms", delay));
+
+        const wxImage image = animation.GetFrame(frame);
+        if ( image.IsOk() )
+        {
+            m_frameBitmap->SetBitmap(wxBitmap(image));
+        }
+        else
+        {
+            wxLogError("Failed to get animation frame %u.", frame);
+            m_frameBitmap->SetBitmap(wxBitmapBundle());
+        }
+    }
+    else
+    {
+        m_frameDelay->SetLabel("Delay: N/A");
+        m_frameBitmap->SetBitmap(wxBitmapBundle());
+    }
+
+    Layout();
+}
+
+void MyFrame::OnFrameSpin(wxSpinEvent& WXUNUSED(event))
+{
+    UpdateFrameInfo();
 }
 
 #ifdef wxHAS_NATIVE_ANIMATIONCTRL
@@ -314,7 +409,7 @@ void MyFrame::OnAbout(wxCommandEvent& WXUNUSED(event) )
 void MyFrame::OnOpen(wxCommandEvent& WXUNUSED(event))
 {
     wxFileDialog dialog(this, "Please choose an animation",
-                        wxEmptyString, wxEmptyString, "*.gif;*.ani", wxFD_OPEN);
+                        wxEmptyString, wxEmptyString, "*.gif;*.ani;*.webp", wxFD_OPEN);
     if (dialog.ShowModal() == wxID_OK)
     {
         wxString filename(dialog.GetPath());
@@ -330,6 +425,8 @@ void MyFrame::OnOpen(wxCommandEvent& WXUNUSED(event))
         m_animationCtrl->Play();
 
         GetSizer()->Layout();
+
+        UpdateFrameControls();
     }
 }
 #endif // wxUSE_FILEDLG

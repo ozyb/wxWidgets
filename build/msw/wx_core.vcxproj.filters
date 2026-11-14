@@ -60,6 +60,9 @@
     <ClCompile Include="..\..\src\common\bmpbase.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\common\bmpbndl.cpp">
+      <Filter>Common Sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\common\bmpbtncmn.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
@@ -120,6 +123,9 @@
     <ClCompile Include="..\..\src\common\ctrlsub.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\common\curbndl.cpp">
+      <Filter>Common Sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\common\datavcmn.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
@@ -160,9 +166,6 @@
       <Filter>Common Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\common\dummy.cpp">
-      <Filter>Common Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\common\effects.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\common\event.cpp">
@@ -279,6 +282,9 @@
     <ClCompile Include="..\..\src\common\imagtiff.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\common\imagwebp.cpp">
+      <Filter>Common Sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\common\imagxpm.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
@@ -292,6 +298,9 @@
       <Filter>Common Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\common\markupparser.cpp">
+      <Filter>Common Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\common\matrix.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\common\menucmn.cpp">
@@ -334,6 +343,9 @@
       <Filter>Common Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\common\popupcmn.cpp">
+      <Filter>Common Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\common\powercmn.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\common\preferencescmn.cpp">
@@ -402,6 +414,9 @@
     <ClCompile Include="..\..\src\common\stockitem.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\common\svggc.cpp">
+      <Filter>Common Sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\common\taskbarcmn.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
@@ -441,6 +456,9 @@
     <ClCompile Include="..\..\src\common\valtext.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\common\webpdecoder.cpp">
+      <Filter>Common Sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\common\wincmn.cpp">
       <Filter>Common Sources</Filter>
     </ClCompile>
@@ -466,6 +484,9 @@
       <Filter>Generic Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\generic\bmpcboxg.cpp">
+      <Filter>Generic Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\generic\bmpsvg.cpp">
       <Filter>Generic Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\generic\busyinfo.cpp">
@@ -496,6 +517,9 @@
       <Filter>Generic Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\generic\commandlinkbuttong.cpp">
+      <Filter>Generic Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\generic\creddlgg.cpp">
       <Filter>Generic Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\generic\datavgen.cpp">
@@ -687,6 +711,9 @@
     <ClCompile Include="..\..\src\msw\bitmap.cpp">
       <Filter>MSW Sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\msw\bmpbndl.cpp">
+      <Filter>MSW Sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\msw\bmpbuttn.cpp">
       <Filter>MSW Sources</Filter>
     </ClCompile>
@@ -739,6 +766,9 @@
       <Filter>MSW Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\msw\customdraw.cpp">
+      <Filter>MSW Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\msw\darkmode.cpp">
       <Filter>MSW Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\msw\data.cpp">
@@ -817,12 +847,6 @@
       <Filter>MSW Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\msw\gdiimage.cpp">
-      <Filter>MSW Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\msw\gdiobj.cpp">
-      <Filter>MSW Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\msw\gdiplus.cpp">
       <Filter>MSW Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\msw\graphics.cpp">
@@ -927,6 +951,9 @@
     <ClCompile Include="..\..\src\msw\ole\uuid.cpp">
       <Filter>MSW Sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\msw\overlay.cpp">
+      <Filter>MSW Sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\msw\ownerdrw.cpp">
       <Filter>MSW Sources</Filter>
     </ClCompile>
@@ -937,6 +964,9 @@
       <Filter>MSW Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\msw\popupwin.cpp">
+      <Filter>MSW Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\msw\power.cpp">
       <Filter>MSW Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\msw\printdlg.cpp">
@@ -1012,6 +1042,9 @@
       <Filter>MSW Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\msw\taskbarbutton.cpp">
+      <Filter>MSW Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\msw\taskdlg.cpp">
       <Filter>MSW Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\msw\textctrl.cpp">
@@ -1114,6 +1147,9 @@
     <ClInclude Include="..\..\include\wx\bitmap.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\wx\bmpbndl.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\include\wx\bmpbuttn.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
@@ -1124,6 +1160,9 @@
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\brush.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\busycursor.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\busyinfo.h">
@@ -1189,10 +1228,16 @@
     <ClInclude Include="..\..\include\wx\commandlinkbutton.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\wx\compositebookctrl.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\include\wx\compositewin.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\control.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\creddlg.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\cshelp.h">
@@ -1285,9 +1330,6 @@
     <ClInclude Include="..\..\include\wx\editlbox.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\include\wx\effects.h">
-      <Filter>Common Headers</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\include\wx\encinfo.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
@@ -1298,6 +1340,9 @@
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\filedlg.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\filedlgcustomize.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\filehistory.h">
@@ -1381,6 +1426,9 @@
     <ClInclude Include="..\..\include\wx\generic\combo.h">
       <Filter>Generic Headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\wx\generic\creddlgg.h">
+      <Filter>Generic Headers</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\include\wx\generic\custombgwin.h">
       <Filter>Generic Headers</Filter>
     </ClInclude>
@@ -1454,9 +1502,6 @@
       <Filter>Generic Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\generic\numdlgg.h">
-      <Filter>Generic Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\include\wx\generic\panelg.h">
       <Filter>Generic Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\generic\printps.h">
@@ -1582,6 +1627,9 @@
     <ClInclude Include="..\..\include\wx\imagtiff.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\wx\imagwebp.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\include\wx\imagxpm.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
@@ -1613,6 +1661,9 @@
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\listctrl.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\matrix.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\mdi.h">
@@ -1709,6 +1760,9 @@
       <Filter>MSW Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\msw\custombgwin.h">
+      <Filter>MSW Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\msw\darkmode.h">
       <Filter>MSW Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\msw\datectrl.h">
@@ -1819,6 +1873,9 @@
     <ClInclude Include="..\..\include\wx\msw\metafile.h">
       <Filter>MSW Headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\wx\msw\mfc.h">
+      <Filter>MSW Headers</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\include\wx\msw\minifram.h">
       <Filter>MSW Headers</Filter>
     </ClInclude>
@@ -1880,9 +1937,6 @@
       <Filter>MSW Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\msw\palette.h">
-      <Filter>MSW Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\include\wx\msw\panel.h">
       <Filter>MSW Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\msw\pen.h">
@@ -2029,7 +2083,16 @@
     <ClInclude Include="..\..\include\wx\persist\bookctrl.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\wx\persist\checkbox.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\persist\combobox.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\include\wx\persist\dataview.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\persist\radiobut.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\persist\splitter.h">
@@ -2051,6 +2114,9 @@
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\position.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\power.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\preferences.h">
@@ -2102,9 +2168,6 @@
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\sashwin.h">
-      <Filter>Common Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\include\wx\scopeguard.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\scrolbar.h">
@@ -2159,6 +2222,9 @@
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\statusbr.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\svggc.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\systhemectrl.h">
@@ -2252,6 +2318,9 @@
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\vscroll.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\webpdecoder.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\window.h">

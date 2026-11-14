@@ -2,7 +2,6 @@
 // Name:        wx/colordlg.h
 // Purpose:     wxColourDialog
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     01/02/97
 // Copyright:   (c) wxWidgets team
 // Licence:     wxWindows licence
@@ -21,7 +20,7 @@
     #include "wx/msw/colordlg.h"
 #elif defined(__WXMAC__) && !defined(__WXUNIVERSAL__)
     #include "wx/osx/colordlg.h"
-#elif defined(__WXGTK20__) && !defined(__WXUNIVERSAL__)
+#elif defined(__WXGTK__) && !defined(__WXUNIVERSAL__)
     #include "wx/gtk/colordlg.h"
 #elif defined(__WXQT__)
     #include "wx/qt/colordlg.h"
@@ -31,8 +30,8 @@
     #define wxColourDialog wxGenericColourDialog
 #endif
 
-// Under some platforms (currently only wxMSW) wxColourDialog can send events
-// of this type while it is shown.
+// Under some platforms (currently, only wxMSW and wxQt) wxColourDialog can
+// send events of this type while it is shown.
 //
 // Notice that this class is almost identical to wxColourPickerEvent but it
 // doesn't really sense to reuse the same class for both controls.
@@ -57,7 +56,7 @@ public:
     wxColour GetColour() const { return m_colour; }
     void SetColour(const wxColour& colour) { m_colour = colour; }
 
-    virtual wxEvent *Clone() const wxOVERRIDE
+    wxNODISCARD virtual wxEvent *Clone() const override
     {
         return new wxColourDialogEvent(*this);
     }
@@ -65,7 +64,7 @@ public:
 private:
     wxColour m_colour;
 
-    wxDECLARE_DYNAMIC_CLASS_NO_ASSIGN(wxColourDialogEvent);
+    wxDECLARE_DYNAMIC_CLASS_NO_ASSIGN_DEF_COPY(wxColourDialogEvent);
 };
 
 wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_COLOUR_CHANGED, wxColourDialogEvent);
@@ -78,10 +77,10 @@ wxDECLARE_EXPORTED_EVENT(WXDLLIMPEXP_CORE, wxEVT_COLOUR_CHANGED, wxColourDialogE
 
 
 // get the colour from user and return it
-WXDLLIMPEXP_CORE wxColour wxGetColourFromUser(wxWindow *parent = NULL,
+WXDLLIMPEXP_CORE wxColour wxGetColourFromUser(wxWindow *parent = nullptr,
                                               const wxColour& colInit = wxNullColour,
                                               const wxString& caption = wxEmptyString,
-                                              wxColourData *data = NULL);
+                                              wxColourData *data = nullptr);
 
 #endif // wxUSE_COLOURDLG
 

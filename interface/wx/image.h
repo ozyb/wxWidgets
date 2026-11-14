@@ -29,7 +29,14 @@ enum wxImageResolution
  */
 enum wxImageResizeQuality
 {
-    /// Simplest and fastest algorithm.
+    /**
+        Simplest and fastest algorithm.
+
+        In wxWidgets versions before 3.3.0 this used to be the same as
+        wxIMAGE_QUALITY_NORMAL, but this is no longer the case when downscaling
+        the images. You can use the new wxIMAGE_QUALITY_FAST as a synonym for
+        this algorithm if speed is paramount.
+     */
     wxIMAGE_QUALITY_NEAREST,
 
     /// Compromise between wxIMAGE_QUALITY_NEAREST and wxIMAGE_QUALITY_BICUBIC.
@@ -46,16 +53,38 @@ enum wxImageResizeQuality
     wxIMAGE_QUALITY_BOX_AVERAGE,
 
     /**
-    Default image resizing algorithm used by wxImage::Scale(). Currently
-    the same as wxIMAGE_QUALITY_NEAREST.
+        Default image resizing algorithm used by wxImage::Scale().
+
+        Currently this algorithm uses wxIMAGE_QUALITY_BILINEAR when reducing
+        the image size (in both directions) to resize the image to an integer
+        multiple of the target size and, after doing this, or as the only step
+        when enlarging the image, applies wxIMAGE_QUALITY_BOX_AVERAGE to obtain
+        the desired size.
+
+        This produces relatively good results for the images typically used for
+        the icons in the GUI applications.
     */
     wxIMAGE_QUALITY_NORMAL,
+
+    /**
+        Fastest image resizing algorithm.
+
+        Currently this is the same as wxIMAGE_QUALITY_NEAREST, but this may
+        change in the future. Please use this value if speed is more important
+        than the quality of the result.
+
+        @since 3.3.0
+     */
+    wxIMAGE_QUALITY_FAST,
 
     /**
     Best image resizing algorithm. Since version 2.9.2 this results in
     wxIMAGE_QUALITY_BOX_AVERAGE being used when reducing the size of the
     image (meaning that both the new width and height will be smaller than
     the original size). Otherwise wxIMAGE_QUALITY_BICUBIC is used.
+
+    This algorithm is the slowest, but may produce better results, especially
+    for photogenic images.
     */
     wxIMAGE_QUALITY_HIGH
 };
@@ -119,12 +148,16 @@ enum wxImagePNGType
 #define wxIMAGE_OPTION_PNG_COMPRESSION_MEM_LEVEL        wxString("PngZM")
 #define wxIMAGE_OPTION_PNG_COMPRESSION_STRATEGY         wxString("PngZS")
 #define wxIMAGE_OPTION_PNG_COMPRESSION_BUFFER_SIZE      wxString("PngZB")
+#define wxIMAGE_OPTION_PNG_DESCRIPTION                  wxString("PngDescription")
 
 #define wxIMAGE_OPTION_TIFF_BITSPERSAMPLE               wxString("BitsPerSample")
 #define wxIMAGE_OPTION_TIFF_SAMPLESPERPIXEL             wxString("SamplesPerPixel")
 #define wxIMAGE_OPTION_TIFF_COMPRESSION                 wxString("Compression")
 #define wxIMAGE_OPTION_TIFF_PHOTOMETRIC                 wxString("Photometric")
 #define wxIMAGE_OPTION_TIFF_IMAGEDESCRIPTOR             wxString("ImageDescriptor")
+
+#define wxIMAGE_OPTION_WEBP_QUALITY                     wxString("WebPQuality")
+#define wxIMAGE_OPTION_WEBP_FORMAT                      wxString("WebPFormat")
 
 
 enum
@@ -180,10 +213,24 @@ public:
     /**
         Default constructor.
 
-        In your own default constructor, initialise the members
-        m_name, m_extension and m_type.
+        When using this constructor, derived class must initialize
+        m_name, m_extension and m_type in its own constructor. Use of the
+        overloaded constructor below is recommended instead.
     */
     wxImageHandler();
+
+    /**
+        Full constructor.
+
+        This constructor initializes all fields that must be initialized and is
+        the recommended constructor to use.
+
+        @since 3.3.2
+     */
+    wxImageHandler(const wxString& name,
+                   const wxString& ext,
+                   wxBitmapType type,
+                   const wxString& mime);
 
     /**
         Destroys the wxImageHandler object.
@@ -238,7 +285,7 @@ public:
             stream to be seekable; see wxStreamBase::IsSeekable).
 
         @return Number of available images. For most image handlers, this is 1
-                (exceptions are TIFF and ICO formats as well as animated GIFs
+                (exceptions are TIFF and ICO formats as well as animated GIF and WebP
                 for which this function returns the number of frames in the
                 animation).
     */
@@ -467,6 +514,7 @@ const unsigned char wxIMAGE_ALPHA_THRESHOLD = 0x80;
     - wxICOHandler: For loading and saving.
     - wxCURHandler: For loading and saving.
     - wxANIHandler: For loading only.
+    - wxWEBPHandler: For loading and saving (see below). Includes alpha support.
 
     When saving in PCX format, wxPCXHandler will count the number of different
     colours in the image; if there are 256 or less colours, it will save as 8 bit,
@@ -477,6 +525,8 @@ const unsigned char wxIMAGE_ALPHA_THRESHOLD = 0x80;
 
     Saving GIFs requires images of maximum 8 bpp (see wxQuantize), and the alpha channel converted to a mask (see wxImage::ConvertAlphaToMask).
     Saving an animated GIF requires images of the same size (see wxGIFHandler::SaveAnimation)
+
+    Single WebP images may be loaded, even from animations.
 
     @library{wxcore}
     @category{gdi}
@@ -611,8 +661,10 @@ public:
         @beginWxPerlOnly
         Not supported by wxPerl.
         @endWxPerlOnly
+
+        This constructor has become @c explicit in wxWidgets 3.1.6.
     */
-    wxImage(const char* const* xpmData);
+    explicit wxImage(const char* const* xpmData);
 
     /**
         Creates an image from a file.
@@ -633,12 +685,13 @@ public:
             @li wxBITMAP_TYPE_ICO: Load a Windows icon file (ICO).
             @li wxBITMAP_TYPE_CUR: Load a Windows cursor file (CUR).
             @li wxBITMAP_TYPE_ANI: Load a Windows animated cursor file (ANI).
+            @li wxBITMAP_TYPE_WEBP: Load a WebP file (since 3.3.0).
             @li wxBITMAP_TYPE_ANY: Will try to autodetect the format.
         @param index
             Index of the image to load in the case that the image file contains
-            multiple images. This is only used by GIF, ICO and TIFF handlers.
+            multiple images. This is only used by GIF, ICO, TIFF and WebP handlers.
             The default value (-1) means "choose the default image" and is
-            interpreted as the first image (index=0) by the GIF and TIFF handler
+            interpreted as the first image (index=0) by the GIF, TIFF and WebP handlers,
             and as the largest and most colourful one by the ICO handler.
 
         @remarks Depending on how wxWidgets has been configured and by which
@@ -708,7 +761,7 @@ public:
     /**
         @name Image creation, initialization and deletion functions
     */
-    //@{
+    ///@{
 
     /**
         Returns an identical copy of this image.
@@ -777,13 +830,13 @@ public:
     */
     void InitAlpha();
 
-    //@}
+    ///@}
 
 
     /**
         @name Image manipulation functions
     */
-    //@{
+    ///@{
 
     /**
         Blurs the image in both horizontal and vertical directions by the
@@ -821,6 +874,12 @@ public:
 
         Takes care of the mask colour and out of bounds problems.
 
+        @param image
+            The image containing the data to copy, must be valid.
+        @param x
+            The horizontal position of the position to copy the data to.
+        @param y
+            The vertical position of the position to copy the data to.
         @param alphaBlend
             This parameter (new in wx 3.1.5) determines whether the alpha values
             of the original image replace (default) or are composed with the
@@ -844,9 +903,15 @@ public:
         For a description of the @a quality parameter, see the Scale() function.
         Returns the (modified) image itself.
 
+        Overload taking wxSize is only available since wxWidgets 3.3.0.
+
         @see Scale()
     */
     wxImage& Rescale(int width, int height,
+                     wxImageResizeQuality quality = wxIMAGE_QUALITY_NORMAL);
+
+    /// @overload
+    wxImage& Rescale(const wxSize& size,
                      wxImageResizeQuality quality = wxIMAGE_QUALITY_NORMAL);
 
     /**
@@ -879,7 +944,7 @@ public:
     */
     wxImage Rotate(double angle, const wxPoint& rotationCentre,
                    bool interpolating = true,
-                   wxPoint* offsetAfterRotation = NULL) const;
+                   wxPoint* offsetAfterRotation = nullptr) const;
 
     /**
         Returns a copy of the image rotated 90 degrees in the direction
@@ -895,11 +960,42 @@ public:
     wxImage Rotate180() const;
 
     /**
-        Rotates the hue of each pixel in the image by @e angle, which is a double in
-        the range of -1.0 to +1.0, where -1.0 corresponds to -360 degrees and +1.0
+        Rotates the hue of each pixel in the image by @e angle, which is a double
+        in the range [-1.0..+1.0], where -1.0 corresponds to -360 degrees and +1.0
         corresponds to +360 degrees.
     */
     void RotateHue(double angle);
+
+    /**
+        Changes the saturation of each pixel in the image. factor is a double in
+        the range [-1.0..+1.0], where -1.0 corresponds to -100 percent and +1.0
+        corresponds to +100 percent.
+
+        @since 3.1.6
+    */
+    void ChangeSaturation(double factor);
+
+    /**
+        Changes the brightness (value) of each pixel in the image. factor is a
+        double in the range [-1.0..+1.0], where -1.0 corresponds to -100 percent
+        and +1.0 corresponds to +100 percent.
+
+        @since 3.1.6
+    */
+    void ChangeBrightness(double factor);
+
+    /**
+        Changes the hue, the saturation and the brightness (value) of each pixel
+        in the image. angleH is a double in the range [-1.0..+1.0], where -1.0
+        corresponds to -360 degrees and +1.0 corresponds to +360 degrees, factorS
+        is a double in the range [-1.0..+1.0], where -1.0 corresponds to -100 percent
+        and +1.0 corresponds to +100 percent and factorV is a double in the range
+        [-1.0..+1.0], where -1.0 corresponds to -100 percent and +1.0 corresponds
+        to +100 percent.
+
+        @since 3.1.6
+    */
+    void ChangeHSV(double angleH, double factorS, double factorV);
 
     /**
         Returns a scaled version of the image.
@@ -939,10 +1035,21 @@ public:
         }
         @endcode
 
+        @note The algorithm used for the default (normal) quality value doesn't
+        work with images larger than 65536 (2^16) pixels in either dimension
+        for 32-bit programs. For 64-bit programs the limit is 2^48 and so not
+        relevant in practice.
+
+        The overload taking a wxSize is only available since wxWidgets 3.3.0.
+
         @see Rescale()
     */
     wxImage Scale(int width, int height,
                    wxImageResizeQuality quality = wxIMAGE_QUALITY_NORMAL) const;
+
+    /// @overload
+    wxImage Scale(const wxSize& size,
+                  wxImageResizeQuality quality = wxIMAGE_QUALITY_NORMAL) const;
 
     /**
         Returns a resized version of this image without scaling it by adding either a
@@ -962,13 +1069,13 @@ public:
     wxImage Size(const wxSize& size, const wxPoint& pos, int red = -1,
                  int green = -1, int blue = -1) const;
 
-    //@}
+    ///@}
 
 
     /**
         @name Conversion functions
     */
-    //@{
+    ///@{
 
     /**
         If the image has alpha channel, this method converts it to mask.
@@ -1018,6 +1125,9 @@ public:
         calculate the greyscale. Defaults to using the standard ITU-T BT.601
         when converting to YUV, where every pixel equals
         (R * @a weight_r) + (G * @a weight_g) + (B * @a weight_b).
+
+        @remarks
+            This function calls wxColour::MakeGrey() for each pixel in the image.
     */
     wxImage ConvertToGreyscale(double weight_r, double weight_g, double weight_b) const;
 
@@ -1032,22 +1142,42 @@ public:
 
         The returned image has white colour where the original has @e (r,g,b)
         colour and black colour everywhere else.
+
+        @remarks
+            This function calls wxColour::MakeMono() for each pixel in the image.
     */
     wxImage ConvertToMono(unsigned char r, unsigned char g, unsigned char b) const;
 
     /**
         Returns disabled (dimmed) version of the image.
+
+        @remarks
+            This function calls wxColour::MakeDisabled() for each pixel in the image.
+
         @since 2.9.0
     */
     wxImage ConvertToDisabled(unsigned char brightness = 255) const;
 
-    //@}
+    /**
+        Returns a changed version of the image based on the given lightness.
+        This utility function simply darkens or lightens a color, based on the
+        specified percentage @a ialpha. @a ialpha of 0 would make the color
+        completely black, 200 completely white and 100 would not change the color.
+
+        @remarks
+            This function calls wxColour::ChangeLightness() for each pixel in the image.
+
+        @since 3.1.6
+    */
+    wxImage ChangeLightness(int alpha) const;
+
+    ///@}
 
 
     /**
         @name Miscellaneous functions
     */
-    //@{
+    ///@{
 
     /**
         Computes the histogram of the image. @a histogram is a reference to
@@ -1105,13 +1235,13 @@ public:
     */
     wxImage& operator=(const wxImage& image);
 
-    //@}
+    ///@}
 
 
     /**
         @name Getters
     */
-    //@{
+    ///@{
 
     /**
         Returns pointer to the array storing the alpha values for this image.
@@ -1207,6 +1337,16 @@ public:
             its own comment. If there is only a comment in the first frame of
             a GIF it will not be repeated in other frames.
 
+        Options specific to wxPNGHandler:
+        @li @c wxIMAGE_OPTION_PNG_DESCRIPTION: The contents of this option
+            will be converted to an uncompressed iTXt chunk with the
+            key: "Description", and written to the PNG file upon saving.
+            Contents of tXTt and iTXt chunks with the key: "Description" are
+            also automatically retrieved upon loading a PNG file, and stored
+            in this option. If multiple chunks with this key are present,
+            only one is retrieved.
+            @since 3.3.1
+
         @param name
             The name of the option, case-insensitive.
         @return
@@ -1271,12 +1411,12 @@ public:
             (http://www.libpng.org/pub/png/libpng-1.2.5-manual.html) for possible values
             (e.g. PNG_FILTER_NONE, PNG_FILTER_SUB, PNG_FILTER_UP, etc).
         @li @c wxIMAGE_OPTION_PNG_COMPRESSION_LEVEL: Compression level (0..9) for
-            saving a PNG file. An high value creates smaller-but-slower PNG file.
+            saving a PNG file. A high value creates smaller-but-slower PNG file.
             Note that unlike other formats (e.g. JPEG) the PNG format is always
             lossless and thus this compression level doesn't tradeoff the image
             quality.
         @li @c wxIMAGE_OPTION_PNG_COMPRESSION_MEM_LEVEL: Compression memory usage
-            level (1..9) for saving a PNG file. An high value means the saving
+            level (1..9) for saving a PNG file. A high value means the saving
             process consumes more memory, but may create smaller PNG file.
         @li @c wxIMAGE_OPTION_PNG_COMPRESSION_STRATEGY: Possible values are 0 for
             default strategy, 1 for filter, and 2 for Huffman-only.
@@ -1325,6 +1465,15 @@ public:
             Use @c wxIMAGE_OPTION_GIF_TRANSPARENCY_HIGHLIGHT to convert transparent pixels
             to pink (default).
             This option has been added in wxWidgets 3.1.1.
+
+        Options specific to wxWEBPHandler:
+        @li @c wxIMAGE_OPTION_WEBP_QUALITY: WebP quality used when saving lossy image.
+            This is an integer ranging from 0 (smaller output, lower quality) to 100
+            (best quality, larger output).
+            When unspecified, quality 90 will be used.
+        @li @c wxIMAGE_OPTION_WEBP_FORMAT: wxWebPImageFormat type of the image that is
+            loaded or saved.
+            When unspecified or undefined, the image is saved as wxWebPImageFormat::Lossy.
 
         @note
         Be careful when combining the options @c wxIMAGE_OPTION_TIFF_SAMPLESPERPIXEL,
@@ -1409,13 +1558,13 @@ public:
     bool IsTransparent(int x, int y,
                        unsigned char threshold = wxIMAGE_ALPHA_THRESHOLD) const;
 
-    //@}
+    ///@}
 
 
     /**
         @name Loading and saving functions
     */
-    //@{
+    ///@{
 
     /**
         Loads an image from an input stream.
@@ -1443,12 +1592,13 @@ public:
             @li wxBITMAP_TYPE_ICO: Load a Windows icon file (ICO).
             @li wxBITMAP_TYPE_CUR: Load a Windows cursor file (CUR).
             @li wxBITMAP_TYPE_ANI: Load a Windows animated cursor file (ANI).
+            @li wxBITMAP_TYPE_WEBP: Load a WebP file.
             @li wxBITMAP_TYPE_ANY: Will try to autodetect the format.
         @param index
             Index of the image to load in the case that the image file contains
-            multiple images. This is only used by GIF, ICO and TIFF handlers.
+            multiple images. This is only used by GIF, ICO, TIFF and WebP handlers.
             The default value (-1) means "choose the default image" and is
-            interpreted as the first image (index=0) by the GIF and TIFF handler
+            interpreted as the first image (index=0) by the GIF, TIFF and WebP handlers,
             and as the largest and most colourful one by the ICO handler.
 
         @return @true if the operation succeeded, @false otherwise.
@@ -1595,14 +1745,14 @@ public:
     */
     virtual bool SaveFile(wxOutputStream& stream, wxBitmapType type) const;
 
-    //@}
+    ///@}
 
 
 
     /**
         @name Setters
     */
-    //@{
+    ///@{
 
     /**
        This function is similar to SetData() and has similar restrictions.
@@ -1616,7 +1766,7 @@ public:
         wxImage takes ownership of the pointer and will free it unless @a static_data
         parameter is set to @true -- in this case the caller should do it.
     */
-    void SetAlpha(unsigned char* alpha = NULL,
+    void SetAlpha(unsigned char* alpha = nullptr,
                   bool static_data = false);
 
     /**
@@ -1657,6 +1807,20 @@ public:
     */
     void SetData(unsigned char* data, int new_width, int new_height,
                  bool static_data = false);
+
+    /**
+        Sets the (non-premultiplied) RGBA image data without performing checks.
+
+        The data given must have the size (width*height*4) or results will be
+        unexpected. Don't use this method if you aren't sure you know what you
+        are doing.
+
+        Due to the internal data representation, wxImage will always create a
+        copy of the data.
+
+        @since 3.3.0
+    */
+    void SetDataRGBA(const unsigned char* data);
 
     /**
         Sets the default value for the flags used for loading image files.
@@ -1800,14 +1964,14 @@ public:
     */
     void SetType(wxBitmapType type);
 
-    //@}
+    ///@}
 
 
 
     /**
         @name Handler management functions
     */
-    //@{
+    ///@{
 
     /**
         Register an image handler.
@@ -1927,7 +2091,7 @@ public:
     */
     static bool RemoveHandler(const wxString& name);
 
-    //@}
+    ///@}
 
 
     /**
@@ -1955,7 +2119,7 @@ public:
      */
     static int GetDefaultLoadFlags();
 
-    //@{
+    ///@{
     /**
         If the image file contains more than one image and the image handler is
         capable of retrieving these individually, this function will return the
@@ -1981,10 +2145,11 @@ public:
         @li wxBITMAP_TYPE_ICO: Load a Windows icon file (ICO).
         @li wxBITMAP_TYPE_CUR: Load a Windows cursor file (CUR).
         @li wxBITMAP_TYPE_ANI: Load a Windows animated cursor file (ANI).
+        @li wxBITMAP_TYPE_WEBP: Load a WebP file.
         @li wxBITMAP_TYPE_ANY: Will try to autodetect the format.
 
         @return Number of available images. For most image handlers, this is 1
-                (exceptions are TIFF and ICO formats as well as animated GIFs
+                (exceptions are TIFF and ICO formats as well as animated GIF and WebP
                 for which this function returns the number of frames in the
                 animation).
     */
@@ -1992,7 +2157,7 @@ public:
                              wxBitmapType type = wxBITMAP_TYPE_ANY);
     static int GetImageCount(wxInputStream& stream,
                              wxBitmapType type = wxBITMAP_TYPE_ANY);
-    //@}
+    ///@}
 
     /**
         Iterates all registered wxImageHandler objects, and returns a string containing
@@ -2046,7 +2211,7 @@ public:
     // find first colour that is not used in the image and has higher
     // RGB values than RGB(startR, startG, startB)
     //
-    // returns true and puts this colour in r, g, b (each of which may be NULL)
+    // returns true and puts this colour in r, g, b (each of which may be @NULL)
     // on success or returns false if there are no more free colours
     bool FindFirstUnusedColour(unsigned char *r,
                                unsigned char *g,
@@ -2067,7 +2232,7 @@ wxImage wxNullImage;
 // ============================================================================
 
 /** @addtogroup group_funcmacro_appinitterm */
-//@{
+///@{
 
 /**
     Initializes all available image handlers.
@@ -2085,5 +2250,5 @@ wxImage wxNullImage;
 */
 void wxInitAllImageHandlers();
 
-//@}
+///@}
 

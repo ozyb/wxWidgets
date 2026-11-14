@@ -2,7 +2,6 @@
 // Name:        src/univ/scrolbar.cpp
 // Purpose:     wxScrollBar implementation
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     20.08.00
 // Copyright:   (c) 2000 SciTech Software, Inc. (www.scitechsoft.com)
 // Licence:     wxWindows licence
@@ -18,9 +17,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_SCROLLBAR
 
@@ -514,7 +510,7 @@ wxRect wxScrollBar::GetScrollbarRect(wxScrollBar::Element elem,
     return rect;
 }
 
-wxCoord wxScrollBar::GetScrollbarSize() const
+wxCoord wxScrollBar::GetScrollbarBodySize() const
 {
     const wxSize sizeArrowSB = m_renderer->GetScrollbarArrowSize();
 
@@ -550,7 +546,7 @@ wxCoord wxScrollBar::ScrollbarToPixel(int thumbPos)
     }
 
     const wxSize sizeArrow = m_renderer->GetScrollbarArrowSize();
-    return (thumbPos * GetScrollbarSize()) / range
+    return (thumbPos * GetScrollbarBodySize()) / range
              + (IsVertical() ? sizeArrow.y : sizeArrow.x);
 }
 
@@ -558,7 +554,7 @@ int wxScrollBar::PixelToScrollbar(wxCoord coord)
 {
     const wxSize sizeArrow = m_renderer->GetScrollbarArrowSize();
     return ((coord - (IsVertical() ? sizeArrow.y : sizeArrow.x)) *
-               GetRange() ) / GetScrollbarSize();
+               GetRange() ) / GetScrollbarBodySize();
 }
 
 // ----------------------------------------------------------------------------
@@ -875,14 +871,14 @@ wxStdScrollBarInputHandler::wxStdScrollBarInputHandler(wxRenderer *renderer,
                           : wxStdInputHandler(handler)
 {
     m_renderer = renderer;
-    m_winCapture = NULL;
+    m_winCapture = nullptr;
     m_htLast = wxHT_NOWHERE;
-    m_timerScroll = NULL;
+    m_timerScroll = nullptr;
 }
 
 wxStdScrollBarInputHandler::~wxStdScrollBarInputHandler()
 {
-    // normally, it's NULL by now but just in case the user somehow managed to
+    // normally, it's null by now but just in case the user somehow managed to
     // keep the mouse captured until now...
     delete m_timerScroll;
 }
@@ -925,7 +921,7 @@ void wxStdScrollBarInputHandler::StopScrolling(wxScrollBar *control)
     if ( m_winCapture )
     {
         m_winCapture->ReleaseMouse();
-        m_winCapture = NULL;
+        m_winCapture = nullptr;
     }
 
     m_btnCapture = -1;
@@ -1089,7 +1085,7 @@ bool wxStdScrollBarInputHandler::HandleMouse(wxInputConsumer *consumer,
         }
     }
 
-    return wxStdInputHandler::HandleMouse(consumer, event);
+    return true;
 }
 
 bool wxStdScrollBarInputHandler::HandleMouseMove(wxInputConsumer *consumer,

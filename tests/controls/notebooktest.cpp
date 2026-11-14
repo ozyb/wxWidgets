@@ -10,96 +10,81 @@
 
 #if wxUSE_NOTEBOOK
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/app.h"
     #include "wx/panel.h"
+    #include "wx/stattext.h"
+    #include "wx/textctrl.h"
 #endif // WX_PRECOMP
 
 #include "wx/notebook.h"
-#include "wx/scopedptr.h"
 
+#include "asserthelper.h"
 #include "bookctrlbasetest.h"
 #include "testableframe.h"
 
-class NotebookTestCase : public BookCtrlBaseTestCase, public CppUnit::TestCase
+#include <memory>
+
+class NotebookTestCase : public BookCtrlBaseTestCase
 {
 public:
-    NotebookTestCase() { m_notebook = NULL; m_numPageChanges = 0; }
-
-    virtual void setUp() wxOVERRIDE;
-    virtual void tearDown() wxOVERRIDE;
-
-private:
-    virtual wxBookCtrlBase *GetBase() const wxOVERRIDE { return m_notebook; }
-
-    virtual wxEventType GetChangedEvent() const wxOVERRIDE
-    { return wxEVT_NOTEBOOK_PAGE_CHANGED; }
-
-    virtual wxEventType GetChangingEvent() const wxOVERRIDE
-    { return wxEVT_NOTEBOOK_PAGE_CHANGING; }
-
-
-    CPPUNIT_TEST_SUITE( NotebookTestCase );
-        wxBOOK_CTRL_BASE_TESTS();
-        CPPUNIT_TEST( Image );
-        CPPUNIT_TEST( RowCount );
-        CPPUNIT_TEST( NoEventsOnDestruction );
-    CPPUNIT_TEST_SUITE_END();
-
-    void RowCount();
-    void NoEventsOnDestruction();
+    NotebookTestCase();
 
     void OnPageChanged(wxNotebookEvent&) { m_numPageChanges++; }
 
-    wxNotebook *m_notebook;
+protected:
+    virtual wxBookCtrlBase *GetBase() const override
+    { return m_notebook.get(); }
 
-    int m_numPageChanges;
+    virtual wxEventType GetChangedEvent() const override
+    { return wxEVT_NOTEBOOK_PAGE_CHANGED; }
+
+    virtual wxEventType GetChangingEvent() const override
+    { return wxEVT_NOTEBOOK_PAGE_CHANGING; }
+
+    std::unique_ptr<wxNotebook> m_notebook;
+
+    int m_numPageChanges = 0;
 
     wxDECLARE_NO_COPY_CLASS(NotebookTestCase);
 };
 
-// register in the unnamed registry so that these tests are run by default
-CPPUNIT_TEST_SUITE_REGISTRATION( NotebookTestCase );
+wxBOOK_CTRL_BASE_TESTS(NotebookTestCase, "Notebook",
+                       "[notebook][book]");
 
-// also include in its own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( NotebookTestCase, "NotebookTestCase" );
+// wxNotebook supports images, unlike most of the other book controls.
+wxBOOK_CTRL_BASE_TEST_CASE(NotebookTestCase, "Notebook", Image,
+                           "[notebook][book]");
 
-void NotebookTestCase::setUp()
+NotebookTestCase::NotebookTestCase()
 {
-    m_notebook = new wxNotebook(wxTheApp->GetTopWindow(), wxID_ANY,
-                                wxDefaultPosition, wxSize(400, 200));
+    m_notebook = make_unique<wxNotebook>(wxTheApp->GetTopWindow(), wxID_ANY,
+                                         wxDefaultPosition, wxSize(400, 200));
     AddPanels();
 }
 
-void NotebookTestCase::tearDown()
-{
-    wxDELETE(m_notebook);
-}
 
-void NotebookTestCase::RowCount()
+TEST_CASE_METHOD(NotebookTestCase, "Notebook::RowCount", "[notebook]")
 {
-    CPPUNIT_ASSERT_EQUAL(1, m_notebook->GetRowCount());
+    CHECK(m_notebook->GetRowCount() == 1);
 
 #ifdef __WXMSW__
-    wxDELETE(m_notebook);
-    m_notebook = new wxNotebook(wxTheApp->GetTopWindow(), wxID_ANY,
-                                wxDefaultPosition, wxSize(400, 200),
-                                wxNB_MULTILINE);
+    m_notebook = make_unique<wxNotebook>(wxTheApp->GetTopWindow(), wxID_ANY,
+                                         wxDefaultPosition, wxSize(400, 200),
+                                         wxNB_MULTILINE);
 
     for( unsigned int i = 0; i < 10; i++ )
     {
-        m_notebook->AddPage(new wxPanel(m_notebook), "Panel", false, 0);
+        m_notebook->AddPage(new wxPanel(m_notebook.get()), "Panel", false, 0);
     }
 
-    CPPUNIT_ASSERT( m_notebook->GetRowCount() != 1 );
+    CHECK( m_notebook->GetRowCount() != 1 );
 #endif
 }
 
-void NotebookTestCase::NoEventsOnDestruction()
+TEST_CASE_METHOD(NotebookTestCase, "Notebook::NoEventsOnDestruction",
+                 "[notebook]")
 {
     // We can't use EventCounter helper here as it doesn't deal with the window
     // it's connected to being destroyed during its life-time, so do it
@@ -116,8 +101,7 @@ void NotebookTestCase::NoEventsOnDestruction()
     // used to do under GTK+ 3 when a page different from the first one was
     // selected.
     m_notebook->ChangeSelection(1);
-    m_notebook->Destroy();
-    m_notebook = NULL;
+    m_notebook.release()->Destroy();
     CHECK( m_numPageChanges == 1 );
 }
 
@@ -126,7 +110,7 @@ TEST_CASE("wxNotebook::AddPageEvents", "[wxNotebook][AddPage][event]")
     wxNotebook* const
         notebook = new wxNotebook(wxTheApp->GetTopWindow(), wxID_ANY,
                                   wxDefaultPosition, wxSize(400, 200));
-    wxScopedPtr<wxNotebook> cleanup(notebook);
+    std::unique_ptr<wxNotebook> cleanup(notebook);
 
     CHECK( notebook->GetSelection() == wxNOT_FOUND );
 
@@ -164,6 +148,174 @@ TEST_CASE("wxNotebook::AddPageEvents", "[wxNotebook][AddPage][event]")
     // And events for the selection change should have been generated.
     CHECK( countPageChanging.GetCount() == 1 );
     CHECK( countPageChanged.GetCount() == 1 );
+}
+
+#ifdef __WXMSW__
+
+TEST_CASE("wxNotebook::NavigateToPageWithoutFocusableChildren",
+          "[wxNotebook][focus]")
+{
+    std::unique_ptr<wxPanel> panel(new wxPanel(wxTheApp->GetTopWindow()));
+
+    wxNotebook* const notebook = new wxNotebook(panel.get(), wxID_ANY);
+    wxPanel* const page = new wxPanel(notebook);
+    new wxStaticText(page, wxID_ANY, "Only a label");
+    notebook->AddPage(page, "Page without focusable children");
+
+    wxTextCtrl* const text = new wxTextCtrl(panel.get(), wxID_ANY);
+
+    // TAB from the tab control should go to the next control after the
+    // notebook, as there is nothing to focus in the page.
+    notebook->SetFocus();
+
+    wxNavigationKeyEvent eventForward;
+    eventForward.SetDirection(true);
+    eventForward.SetFromTab(true);
+    eventForward.SetEventObject(notebook);
+    CHECK( notebook->HandleWindowEvent(eventForward) );
+    CHECK( wxWindow::FindFocus() == text );
+
+    // And Shift-TAB from outside should stop at the tab control itself.
+    wxNavigationKeyEvent eventBackward;
+    eventBackward.SetDirection(false);
+    eventBackward.SetFromTab(true);
+    eventBackward.SetEventObject(panel.get());
+    CHECK( notebook->HandleWindowEvent(eventBackward) );
+    CHECK( wxWindow::FindFocus() == notebook );
+}
+
+#endif // __WXMSW__
+
+TEST_CASE_METHOD(NotebookTestCase, "Notebook::GetTabRect", "[notebook]")
+{
+    wxNotebook *notebook = new wxNotebook(wxTheApp->GetTopWindow(), wxID_ANY,
+                                          wxDefaultPosition, wxSize(400, 200));
+    std::unique_ptr<wxNotebook> cleanup(notebook);
+
+    notebook->AddPage(new wxPanel(notebook), "Page");
+
+    // This function is only really implemented for wxMSW and wxUniv currently.
+#if defined(__WXMSW__) || defined(__WXUNIVERSAL__)
+    // Create many pages, so that at least some of the are not visible.
+    for ( size_t i = 0; i < 30; i++ )
+        notebook->AddPage(new wxPanel(notebook), "Page");
+
+    const wxRect rectPage = notebook->GetTabRect(0);
+    REQUIRE(rectPage.width != 0);
+    REQUIRE(rectPage.height != 0);
+
+    int x = rectPage.x + rectPage.width;
+    for ( size_t i = 1; i < notebook->GetPageCount(); i++ )
+    {
+        wxRect r = notebook->GetTabRect(i);
+
+        if (wxIsRunningUnderWine())
+        {
+            // Wine behaves different than Windows. Windows reports the size of a
+            // tab even if it is not visible while Wine returns an empty rectangle.
+            if ( r == wxRect() )
+            {
+                WARN("Skipping test for pages after " << i << " under Wine.");
+                break;
+            }
+        }
+
+        INFO("Page #" << i << ": rect=" << r);
+        REQUIRE(r.x == x);
+        REQUIRE(r.y == rectPage.y);
+        REQUIRE(r.width == rectPage.width);
+        REQUIRE(r.height == rectPage.height);
+
+        x += r.width;
+    }
+#else // !(__WXMSW__ || __WXUNIVERSAL__)
+    WX_ASSERT_FAILS_WITH_ASSERT( notebook->GetTabRect(0) );
+#endif // ports
+}
+
+TEST_CASE_METHOD(NotebookTestCase, "Notebook::HitTestFlags", "[notebook]")
+{
+    std::unique_ptr<wxNotebook> notebook;
+
+#if defined(__WXMSW__) || defined(__WXUNIVERSAL__)
+    long style = 0;
+
+    SECTION("Top") { style = wxBK_TOP; }
+    SECTION("Bottom") { style = wxBK_BOTTOM; }
+    SECTION("Left") { style = wxBK_LEFT; }
+    SECTION("Right") { style = wxBK_RIGHT; }
+
+    INFO("Style=" << style);
+
+    const bool isVertical = style == wxBK_TOP || style == wxBK_BOTTOM;
+
+    // HitTest() uses TCM_HITTEST for the vertical orientations and it doesn't
+    // seem to work correctly under Wine, so skip the test there (for the
+    // horizontal tabs we use our own code which does work even under Wine).
+    if ( isVertical && wxIsRunningUnderWine() )
+        return;
+
+    notebook = make_unique<wxNotebook>(wxTheApp->GetTopWindow(), wxID_ANY,
+                                       wxPoint(0, 0), wxSize(400, 200),
+                                       style);
+
+    // Simulate an icon of standard size, its contents doesn't matter.
+    const wxSize imageSize(16, 16);
+    wxBookCtrlBase::Images images;
+    images.push_back(wxBitmapBundle::FromBitmap(wxBitmap(imageSize)));
+    notebook->SetImages(images);
+
+    notebook->AddPage(new wxPanel(notebook.get()), "First Page", false, 0);
+
+    const wxRect r = notebook->GetTabRect(0);
+    INFO("Rect=" << r);
+
+    wxPoint pt;
+    if ( isVertical )
+        pt.y = r.y + r.height / 2;
+    else
+        pt.x = r.x + r.width / 2;
+
+    int nowhere = 0;
+    int onIcon = 0;
+    int onLabel = 0;
+    int onItem = 0;
+
+    const int d = isVertical ? r.width : r.height;
+    for (int i = 0; i < d; i++)
+    {
+        long flags = 0;
+        notebook->HitTest(pt, &flags);
+
+        if (flags & wxBK_HITTEST_NOWHERE)
+            nowhere++;
+
+        if (flags & wxBK_HITTEST_ONICON)
+            onIcon++;
+
+        if (flags & wxBK_HITTEST_ONLABEL)
+            onLabel++;
+
+        if (flags & wxBK_HITTEST_ONITEM)
+            onItem++;
+
+        if (isVertical)
+            pt.x++;
+        else
+            pt.y++;
+    }
+
+    CHECK(nowhere);
+    CHECK(onIcon);
+    CHECK(onLabel);
+    CHECK(onItem);
+#else // !(__WXMSW__ || __WXUNIVERSAL__)
+    notebook = make_unique<wxNotebook>(wxTheApp->GetTopWindow(), wxID_ANY,
+                                       wxDefaultPosition, wxSize(400, 200));
+    notebook->AddPage(new wxPanel(notebook.get()), "First Page");
+
+    WX_ASSERT_FAILS_WITH_ASSERT(notebook->GetTabRect(0));
+#endif // ports
 }
 
 #endif //wxUSE_NOTEBOOK

@@ -2,7 +2,6 @@
 // Name:        ribbondemo.cpp
 // Purpose:     wxRibbon: Ribbon user interface - sample/test program
 // Author:      Peter Cawley
-// Modified by:
 // Created:     2009-05-25
 // Copyright:   (C) Copyright 2009, Peter Cawley
 // Licence:     wxWindows Library Licence
@@ -10,13 +9,13 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/app.h"
 #include "wx/frame.h"
+#include "wx/panel.h"
 #include "wx/textctrl.h"
+#include "wx/ribbon/backstage.h"
+#include "wx/ribbon/backstagecontrols.h"
 #include "wx/ribbon/bar.h"
 #include "wx/ribbon/buttonbar.h"
 #include "wx/ribbon/gallery.h"
@@ -27,16 +26,18 @@
 #include "wx/dcbuffer.h"
 #include "wx/colordlg.h"
 #include "wx/artprov.h"
+#include "wx/bmpbndl.h"
 #include "wx/combobox.h"
 #include "wx/tglbtn.h"
 #include "wx/wrapsizer.h"
+#include "wx/datetime.h"
 
 // -- application --
 
 class MyApp : public wxApp
 {
 public:
-    bool OnInit() wxOVERRIDE;
+    bool OnInit() override;
 };
 
 wxDECLARE_APP(MyApp);
@@ -52,7 +53,7 @@ public:
 
     enum
     {
-        ID_CIRCLE = wxID_HIGHEST + 1,
+        ID_CIRCLE = wxID_HIGHEST,
         ID_CROSS,
         ID_TRIANGLE,
         ID_SQUARE,
@@ -67,6 +68,7 @@ public:
         ID_DEFAULT_PROVIDER,
         ID_AUI_PROVIDER,
         ID_MSW_PROVIDER,
+        ID_MSW_FLAT_PROVIDER,
         ID_MAIN_TOOLBAR,
         ID_POSITION_TOP,
         ID_POSITION_TOP_ICONS,
@@ -85,6 +87,7 @@ public:
         ID_CHANGE_TEXT2,
         ID_UI_CHANGE_TEXT_UPDATED,
         ID_REMOVE_PAGE,
+        ID_REMOVE_PANEL,
         ID_HIDE_PAGES,
         ID_SHOW_PAGES,
         ID_PLUS_MINUS,
@@ -94,7 +97,20 @@ public:
         ID_SMALL_BUTTON_3,
         ID_SMALL_BUTTON_4,
         ID_SMALL_BUTTON_5,
-        ID_SMALL_BUTTON_6
+        ID_SMALL_BUTTON_6,
+        ID_BACKSTAGE_INFO,
+        ID_BACKSTAGE_NEW,
+        ID_BACKSTAGE_OPEN,
+        ID_BACKSTAGE_SAVE,
+        ID_BACKSTAGE_SAVE_AS,
+        ID_BACKSTAGE_EXIT,
+        ID_BACKSTAGE_DISCARD,
+        ID_BACKSTAGE_PROTECT,
+        ID_BACKSTAGE_TEMPLATE_BLANK,
+        ID_BACKSTAGE_TEMPLATE_RIBBON,
+        ID_BACKSTAGE_TEMPLATE_COLOURS,
+        ID_BACKSTAGE_RECENT_LIST,
+        ID_BACKSTAGE_FOLDER_LIST
     };
 
     void OnEnableUpdateUI(wxUpdateUIEvent& evt);
@@ -123,6 +139,7 @@ public:
     void OnDefaultProvider(wxRibbonButtonBarEvent& evt);
     void OnAUIProvider(wxRibbonButtonBarEvent& evt);
     void OnMSWProvider(wxRibbonButtonBarEvent& evt);
+    void OnMSWFlatProvider(wxRibbonButtonBarEvent& evt);
     void OnJustify(wxRibbonToolBarEvent& evt);
     void OnJustifyUpdateUI(wxUpdateUIEvent& evt);
     void OnNew(wxRibbonToolBarEvent& evt);
@@ -142,6 +159,7 @@ public:
     void OnPositionLeftBoth(wxCommandEvent& evt);
     void OnPositionLeftDropdown(wxRibbonToolBarEvent& evt);
     void OnRemovePage(wxRibbonButtonBarEvent& evt);
+    void OnRemovePanel(wxRibbonButtonBarEvent& evt);
     void OnHidePages(wxRibbonButtonBarEvent& evt);
     void OnShowPages(wxRibbonButtonBarEvent& evt);
     void OnPlusMinus(wxRibbonButtonBarEvent& evt);
@@ -151,25 +169,34 @@ public:
     void OnRibbonBarHelpClicked(wxRibbonBarEvent& evt);
 
     void OnSizeEvent(wxSizeEvent& evt);
+    void OnDPIChanged(wxDPIChangedEvent& evt);
 
     void OnExtButton(wxRibbonPanelEvent& evt);
 
+    void OnBackstageClicked(wxNotifyEvent& evt);
+    void OnBackstageItemClicked(wxCommandEvent& evt);
+    void OnBackstageButton(wxCommandEvent& evt);
+
 protected:
+    void CreateBackstage();
     wxRibbonGallery* PopulateColoursPanel(wxWindow* panel, wxColour def,
         int gallery_id);
     void AddText(wxString msg);
     wxRibbonGalleryItem* AddColourToGallery(wxRibbonGallery *gallery,
-        wxString name, wxMemoryDC& dc, wxColour* value = NULL);
+        wxString name, wxMemoryDC& dc, wxColour* value = nullptr);
     wxColour GetGalleryColour(wxRibbonGallery *gallery,
         wxRibbonGalleryItem* item, wxString* name);
     void ResetGalleryArtProviders();
-    void SetArtProvider(wxRibbonArtProvider* prov);
+    void SetArtProvider(int button_id, wxRibbonArtProvider* prov);
     void SetBarStyle(long style);
 
+    wxPanel* m_panel;
     wxRibbonBar* m_ribbon;
+    wxRibbonButtonBar* m_provider_bar;
     wxRibbonGallery* m_primary_gallery;
     wxRibbonGallery* m_secondary_gallery;
     wxTextCtrl* m_logwindow;
+    wxBackstage* m_backstage;
     wxToggleButton* m_togglePanels;
 
     wxColourData m_colour_data;
@@ -181,7 +208,6 @@ protected:
     bool m_bChecked;
     wxString m_new_text;
 
-    wxRibbonButtonBar* m_mutable_button_bar;
     bool m_plus_minus_state;
     bool m_change_label_state;
 
@@ -215,6 +241,7 @@ EVT_UPDATE_UI(ID_UI_CHANGE_TEXT_UPDATED, MyFrame::OnChangeTextUpdateUI)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_DEFAULT_PROVIDER, MyFrame::OnDefaultProvider)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_AUI_PROVIDER, MyFrame::OnAUIProvider)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_MSW_PROVIDER, MyFrame::OnMSWProvider)
+EVT_RIBBONBUTTONBAR_CLICKED(ID_MSW_FLAT_PROVIDER, MyFrame::OnMSWFlatProvider)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_SELECTION_EXPAND_H, MyFrame::OnSelectionExpandHButton)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_SELECTION_EXPAND_V, MyFrame::OnSelectionExpandVButton)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_SELECTION_CONTRACT, MyFrame::OnSelectionContractButton)
@@ -255,6 +282,7 @@ EVT_MENU(ID_POSITION_TOP_BOTH, MyFrame::OnPositionTopBoth)
 EVT_TOGGLEBUTTON(ID_TOGGLE_PANELS, MyFrame::OnTogglePanels)
 EVT_RIBBONPANEL_EXTBUTTON_ACTIVATED(wxID_ANY, MyFrame::OnExtButton)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_REMOVE_PAGE, MyFrame::OnRemovePage)
+EVT_RIBBONBUTTONBAR_CLICKED(ID_REMOVE_PANEL, MyFrame::OnRemovePanel)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_HIDE_PAGES, MyFrame::OnHidePages)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_SHOW_PAGES, MyFrame::OnShowPages)
 EVT_RIBBONBUTTONBAR_CLICKED(ID_PLUS_MINUS, MyFrame::OnPlusMinus)
@@ -262,94 +290,332 @@ EVT_RIBBONBUTTONBAR_CLICKED(ID_CHANGE_LABEL, MyFrame::OnChangeLabel)
 EVT_RIBBONBAR_TOGGLED(wxID_ANY, MyFrame::OnRibbonBarToggled)
 EVT_RIBBONBAR_HELP_CLICK(wxID_ANY, MyFrame::OnRibbonBarHelpClicked)
 EVT_SIZE(MyFrame::OnSizeEvent)
+EVT_DPI_CHANGED(MyFrame::OnDPIChanged)
 wxEND_EVENT_TABLE()
 
-#include "align_center.xpm"
-#include "align_left.xpm"
-#include "align_right.xpm"
-#include "aui_style.xpm"
-#include "auto_crop_selection.xpm"
-#include "auto_crop_selection_small.xpm"
-#include "circle.xpm"
-#include "circle_small.xpm"
-#include "colours.xpm"
-#include "cross.xpm"
-#include "empty.xpm"
-#include "expand_selection_v.xpm"
-#include "expand_selection_h.xpm"
-#include "eye.xpm"
-#include "hexagon.xpm"
-#include "msw_style.xpm"
-#include "position_left_small.xpm"
-#include "position_top_small.xpm"
-#include "ribbon.xpm"
-#include "selection_panel.xpm"
-#include "square.xpm"
-#include "triangle.xpm"
+// ----------------------------------------------------------------------------
+// SVG icon data for ribbon-specific icons.
+// Each icon uses a 32x32 viewBox for clean scaling at any display size.
+// The MakeSvgBundle() helper guarantees a valid (non-empty) bundle is always
+// returned, falling back to wxArtProvider when SVG support is unavailable.
+// ----------------------------------------------------------------------------
+
+namespace
+{
+
+// -- Shape icons -----------------------------------------------------------
+
+static const char circle_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<circle cx='16' cy='16' r='12' fill='#4488CC' stroke='#2D6699' stroke-width='1.5'/>"
+    "</svg>";
+
+static const char cross_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<path d='M13 4h6v9h9v6h-9v9h-6v-9H4v-6h9z' fill='#CC4444'/>"
+    "</svg>";
+
+static const char triangle_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<polygon points='16,3 29,28 3,28' fill='#44AA44' stroke='#2D7A2D' stroke-width='1.5'/>"
+    "</svg>";
+
+static const char square_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='4' y='4' width='24' height='24' rx='1' fill='#CC8844' stroke='#996633'"
+    " stroke-width='1.5'/>"
+    "</svg>";
+
+static const char hexagon_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<polygon points='16,2 28,9 28,23 16,30 4,23 4,9' fill='#8844CC' stroke='#663399'"
+    " stroke-width='1.5'/>"
+    "</svg>";
+
+// -- Alignment icons -------------------------------------------------------
+
+static const char align_left_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='2' y='4' width='28' height='3' rx='1' fill='#555'/>"
+    "<rect x='2' y='11' width='18' height='3' rx='1' fill='#555'/>"
+    "<rect x='2' y='18' width='24' height='3' rx='1' fill='#555'/>"
+    "<rect x='2' y='25' width='14' height='3' rx='1' fill='#555'/>"
+    "</svg>";
+
+static const char align_center_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='2' y='4' width='28' height='3' rx='1' fill='#555'/>"
+    "<rect x='7' y='11' width='18' height='3' rx='1' fill='#555'/>"
+    "<rect x='4' y='18' width='24' height='3' rx='1' fill='#555'/>"
+    "<rect x='9' y='25' width='14' height='3' rx='1' fill='#555'/>"
+    "</svg>";
+
+static const char align_right_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='2' y='4' width='28' height='3' rx='1' fill='#555'/>"
+    "<rect x='12' y='11' width='18' height='3' rx='1' fill='#555'/>"
+    "<rect x='6' y='18' width='24' height='3' rx='1' fill='#555'/>"
+    "<rect x='16' y='25' width='14' height='3' rx='1' fill='#555'/>"
+    "</svg>";
+
+// -- Selection icons -------------------------------------------------------
+
+static const char expand_selection_v_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<path d='M16 2l6 8h-4v12h4l-6 8-6-8h4V10h-4z' fill='#4488CC'/>"
+    "</svg>";
+
+static const char expand_selection_h_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<path d='M2 16l8-6v4h12v-4l8 6-8 6v-4H10v4z' fill='#4488CC'/>"
+    "</svg>";
+
+static const char auto_crop_selection_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='8' y='8' width='16' height='16' fill='none' stroke='#999'"
+    " stroke-width='1' stroke-dasharray='3,2'/>"
+    "<path d='M2 16l6-4v3h3v2H8v3z' fill='#CC6644'/>"
+    "<path d='M30 16l-6-4v3h-3v2h3v3z' fill='#CC6644'/>"
+    "<path d='M16 2l-4 6h3v3h2V8h3z' fill='#CC6644'/>"
+    "<path d='M16 30l-4-6h3v-3h2v3h3z' fill='#CC6644'/>"
+    "</svg>";
+
+static const char selection_panel_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='4' y='4' width='24' height='24' fill='none' stroke='#888'"
+    " stroke-width='1' stroke-dasharray='3,2'/>"
+    "<line x1='16' y1='8' x2='16' y2='24' stroke='#CC4444' stroke-width='1.5'/>"
+    "<line x1='8' y1='16' x2='24' y2='16' stroke='#CC4444' stroke-width='1.5'/>"
+    "</svg>";
+
+// -- Position icons --------------------------------------------------------
+
+static const char position_left_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='2' y='2' width='4' height='28' fill='#4488CC'/>"
+    "<rect x='8' y='2' width='22' height='28' fill='none' stroke='#999' stroke-width='1'/>"
+    "<path d='M22 16l-6-4v8z' fill='#4488CC'/>"
+    "</svg>";
+
+static const char position_top_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='2' y='2' width='28' height='4' fill='#4488CC'/>"
+    "<rect x='2' y='8' width='28' height='22' fill='none' stroke='#999' stroke-width='1'/>"
+    "<path d='M16 22l-4-6h8z' fill='#4488CC'/>"
+    "</svg>";
+
+// -- Art provider style icons ----------------------------------------------
+
+static const char aui_style_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='2' y='2' width='28' height='28' rx='3' fill='#E8E8E8' stroke='#888'"
+    " stroke-width='1'/>"
+    "<rect x='2' y='2' width='28' height='7' rx='3' fill='#6688AA'/>"
+    "<rect x='4' y='12' width='10' height='14' fill='#B0C4D8'/>"
+    "<rect x='18' y='12' width='10' height='14' fill='#B0C4D8'/>"
+    "</svg>";
+
+static const char msw_style_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='2' y='2' width='28' height='28' rx='1' fill='#F0F0F0' stroke='#0078D7'"
+    " stroke-width='1.5'/>"
+    "<rect x='2' y='2' width='28' height='7' rx='1' fill='#0078D7'/>"
+    "<rect x='5' y='12' width='22' height='3' fill='#CCE4F7'/>"
+    "<rect x='5' y='18' width='22' height='3' fill='#CCE4F7'/>"
+    "<rect x='5' y='24' width='22' height='3' fill='#CCE4F7'/>"
+    "</svg>";
+
+static const char msw_flat_style_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='2' y='2' width='28' height='28' fill='#F5F5F5' stroke='#999' stroke-width='1'/>"
+    "<rect x='2' y='2' width='28' height='6' fill='#999'/>"
+    "<rect x='5' y='12' width='22' height='2' fill='#BBB'/>"
+    "<rect x='5' y='18' width='22' height='2' fill='#BBB'/>"
+    "<rect x='5' y='24' width='22' height='2' fill='#BBB'/>"
+    "</svg>";
+
+// -- Miscellaneous icons ---------------------------------------------------
+
+static const char ribbon_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='2' y='4' width='28' height='8' rx='2' fill='#4488CC'/>"
+    "<rect x='2' y='12' width='28' height='16' rx='1' fill='#E0E8F0' stroke='#4488CC'"
+    " stroke-width='0.5'/>"
+    "<rect x='4' y='14' width='8' height='4' rx='1' fill='#4488CC' opacity='0.6'/>"
+    "<rect x='14' y='14' width='8' height='4' rx='1' fill='#4488CC' opacity='0.6'/>"
+    "<rect x='4' y='20' width='6' height='4' rx='1' fill='#4488CC' opacity='0.4'/>"
+    "<rect x='12' y='20' width='6' height='4' rx='1' fill='#4488CC' opacity='0.4'/>"
+    "<rect x='20' y='20' width='6' height='4' rx='1' fill='#4488CC' opacity='0.4'/>"
+    "</svg>";
+
+static const char eye_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<path d='M16 8C8 8 2 16 2 16s6 8 14 8 14-8 14-8-6-8-14-8z' fill='none' stroke='#555'"
+    " stroke-width='2'/>"
+    "<circle cx='16' cy='16' r='5' fill='#4488CC'/>"
+    "<circle cx='16' cy='16' r='2' fill='#222'/>"
+    "</svg>";
+
+static const char empty_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect x='6' y='2' width='20' height='28' rx='2' fill='#F8F8F8' stroke='#999'"
+    " stroke-width='1'/>"
+    "<path d='M10 8h12M10 13h12M10 18h8' stroke='#DDD' stroke-width='1'/>"
+    "</svg>";
+
+static const char colours_svg[] =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<circle cx='12' cy='10' r='6' fill='#FF4444' opacity='0.8'/>"
+    "<circle cx='20' cy='10' r='6' fill='#44CC44' opacity='0.8'/>"
+    "<circle cx='16' cy='18' r='6' fill='#4444FF' opacity='0.8'/>"
+    "</svg>";
+
+// Helper to create a bitmap bundle from embedded SVG data. When wxHAS_SVG is
+// available, the SVG is rasterized at any requested size for DPI-aware display.
+// Falls back to wxArtProvider to guarantee the returned bundle is never empty,
+// which prevents wxASSERT failures in AddTool/AddButton.
+wxBitmapBundle MakeSvgBundle(const char* svg_data, const wxSize& size,
+                              const wxArtID& fallback = wxART_QUESTION)
+{
+#ifdef wxHAS_SVG
+    wxBitmapBundle bundle = wxBitmapBundle::FromSVG(svg_data, size);
+    if ( bundle.IsOk() )
+        return bundle;
+#else
+    (void)svg_data;
+#endif // wxHAS_SVG
+    return wxArtProvider::GetBitmapBundle(fallback, wxART_OTHER, size);
+}
+
+} // anonymous namespace
 
 MyFrame::MyFrame()
-    : wxFrame(NULL, wxID_ANY, "wxRibbon Sample Application", wxDefaultPosition, wxSize(800, 600), wxDEFAULT_FRAME_STYLE)
+    : wxFrame(nullptr, wxID_ANY, "wxRibbon Sample Application", wxDefaultPosition, wxSize(800, 600), wxDEFAULT_FRAME_STYLE)
 {
-    m_ribbon = new wxRibbonBar(this,-1,wxDefaultPosition, wxDefaultSize, wxRIBBON_BAR_FLOW_HORIZONTAL
+    m_panel = new wxPanel(this);
+
+    m_ribbon = new wxRibbonBar(m_panel,-1,wxDefaultPosition, wxDefaultSize, wxRIBBON_BAR_FLOW_HORIZONTAL
                                 | wxRIBBON_BAR_SHOW_PAGE_LABELS
                                 | wxRIBBON_BAR_SHOW_PANEL_EXT_BUTTONS
                                 | wxRIBBON_BAR_SHOW_TOGGLE_BUTTON
                                 | wxRIBBON_BAR_SHOW_HELP_BUTTON
                                 );
 
+    // Press F10 (the default trigger key) to try keyboard access mode.
+    m_ribbon->SetToggleButtonKeyTip("Q");
+    m_ribbon->SetHelpButtonKeyTip("H");
+
+    // Reusable bitmap bundles for the generic ribbon and empty-page icons.
+    const wxBitmapBundle ribbon_small = MakeSvgBundle(ribbon_svg, wxSize(16, 16));
+    const wxBitmapBundle ribbon_large = MakeSvgBundle(ribbon_svg, wxSize(32, 32));
+    const wxBitmapBundle empty_small = MakeSvgBundle(empty_svg, wxSize(16, 16));
+
+    // The File tab shows the backstage.
+    wxRibbonPage* file = new wxRibbonPage(m_ribbon, wxID_ANY, "File");
+    m_ribbon->SetBackstagePage(file);
+    m_ribbon->SetPageKeyTip(file, "F");
+
     {
-        wxRibbonPage* home = new wxRibbonPage(m_ribbon, wxID_ANY, "Examples", ribbon_xpm);
+        wxRibbonPage* home = new wxRibbonPage(m_ribbon, wxID_ANY, "Examples",
+            ribbon_small);
+        m_ribbon->SetPageKeyTip(home, "E");
         wxRibbonPanel *toolbar_panel = new wxRibbonPanel(home, wxID_ANY, "Toolbar",
-                                            wxNullBitmap, wxDefaultPosition, wxDefaultSize,
+                                            wxBitmapBundle(), wxDefaultPosition, wxDefaultSize,
                                             wxRIBBON_PANEL_NO_AUTO_MINIMISE |
                                             wxRIBBON_PANEL_EXT_BUTTON);
+        toolbar_panel->SetExtButtonKeyTip("X");
         wxRibbonToolBar *toolbar = new wxRibbonToolBar(toolbar_panel, ID_MAIN_TOOLBAR);
-        toolbar->AddToggleTool(wxID_JUSTIFY_LEFT, align_left_xpm);
-        toolbar->AddToggleTool(wxID_JUSTIFY_CENTER , align_center_xpm);
-        toolbar->AddToggleTool(wxID_JUSTIFY_RIGHT, align_right_xpm);
+        toolbar->AddToggleTool(wxID_JUSTIFY_LEFT,
+            MakeSvgBundle(align_left_svg, wxSize(16, 16)), "Align left");
+        toolbar->AddToggleTool(wxID_JUSTIFY_CENTER,
+            MakeSvgBundle(align_center_svg, wxSize(16, 16)), "Center");
+        toolbar->AddToggleTool(wxID_JUSTIFY_RIGHT,
+            MakeSvgBundle(align_right_svg, wxSize(16, 16)), "Align right");
         toolbar->AddSeparator();
-        toolbar->AddHybridTool(wxID_NEW, wxArtProvider::GetBitmap(wxART_NEW, wxART_OTHER, wxSize(16, 15)));
+        toolbar->AddHybridTool(wxID_NEW, wxArtProvider::GetBitmap(wxART_NEW, wxART_OTHER, wxSize(16, 15)), "New");
         toolbar->AddTool(wxID_OPEN, wxArtProvider::GetBitmap(wxART_FILE_OPEN, wxART_OTHER, wxSize(16, 15)), "Open something");
         toolbar->AddTool(wxID_SAVE, wxArtProvider::GetBitmap(wxART_FILE_SAVE, wxART_OTHER, wxSize(16, 15)), "Save something");
         toolbar->AddTool(wxID_SAVEAS, wxArtProvider::GetBitmap(wxART_FILE_SAVE_AS, wxART_OTHER, wxSize(16, 15)), "Save something as ...");
+        toolbar->SetKeyTip(wxID_OPEN, "O");
+        toolbar->SetKeyTip(wxID_SAVE, "SV");
+        toolbar->SetKeyTip(wxID_SAVEAS, "SA");
         toolbar->EnableTool(wxID_OPEN, false);
         toolbar->EnableTool(wxID_SAVE, false);
         toolbar->EnableTool(wxID_SAVEAS, false);
         toolbar->AddSeparator();
-        toolbar->AddDropdownTool(wxID_UNDO, wxArtProvider::GetBitmap(wxART_UNDO, wxART_OTHER, wxSize(16, 15)));
-        toolbar->AddDropdownTool(wxID_REDO, wxArtProvider::GetBitmap(wxART_REDO, wxART_OTHER, wxSize(16, 15)));
+        toolbar->AddDropdownTool(wxID_UNDO, wxArtProvider::GetBitmap(wxART_UNDO, wxART_OTHER, wxSize(16, 15)), "Undo");
+        toolbar->AddDropdownTool(wxID_REDO, wxArtProvider::GetBitmap(wxART_REDO, wxART_OTHER, wxSize(16, 15)), "Redo");
         toolbar->AddSeparator();
-        toolbar->AddTool(wxID_ANY, wxArtProvider::GetBitmap(wxART_REPORT_VIEW, wxART_OTHER, wxSize(16, 15)));
-        toolbar->AddTool(wxID_ANY, wxArtProvider::GetBitmap(wxART_LIST_VIEW, wxART_OTHER, wxSize(16, 15)));
+        toolbar->AddTool(wxID_ANY, wxArtProvider::GetBitmap(wxART_REPORT_VIEW, wxART_OTHER, wxSize(16, 15)), "Report view");
+        toolbar->AddTool(wxID_ANY, wxArtProvider::GetBitmap(wxART_LIST_VIEW, wxART_OTHER, wxSize(16, 15)), "List view");
         toolbar->AddSeparator();
-        toolbar->AddHybridTool(ID_POSITION_LEFT, position_left_xpm,
+        toolbar->AddHybridTool(ID_POSITION_LEFT,
+                                MakeSvgBundle(position_left_svg, wxSize(16, 16)),
                                 "Align ribbonbar vertically\non the left\nfor demonstration purposes");
-        toolbar->AddHybridTool(ID_POSITION_TOP, position_top_xpm,
+        toolbar->AddHybridTool(ID_POSITION_TOP,
+                                MakeSvgBundle(position_top_svg, wxSize(16, 16)),
                                 "Align the ribbonbar horizontally\nat the top\nfor demonstration purposes");
         toolbar->AddSeparator();
-        toolbar->AddHybridTool(wxID_PRINT, wxArtProvider::GetBitmap(wxART_PRINT, wxART_OTHER, wxSize(16, 15)),
+        wxRibbonToolBarToolBase* print_tool;
+        print_tool = toolbar->AddHybridTool(wxID_PRINT, wxArtProvider::GetBitmap(wxART_PRINT, wxART_OTHER, wxSize(16, 15)),
                                 "This is the Print button tooltip\ndemonstrating a tooltip");
+        toolbar->SetKeyTip(wxID_PRINT, "PT");
+        // "PO" reaches the dropdown arrow's menu, separate from "PT"'s main action.
+        // Neither is a prefix of the other, unlike "P"/"PM" would be.
+        toolbar->SetDropdownKeyTip(wxID_PRINT, "PO");
         toolbar->SetRows(2, 3);
 
-        wxRibbonPanel *selection_panel = new wxRibbonPanel(home, wxID_ANY, "Selection", wxBitmap(selection_panel_xpm));
-        wxRibbonButtonBar *selection = new wxRibbonButtonBar(selection_panel);
-        selection->AddButton(ID_SELECTION_EXPAND_V, "Expand Vertically", wxBitmap(expand_selection_v_xpm),
-                                "This is a tooltip for Expand Vertically\ndemonstrating a tooltip");
-        selection->AddButton(ID_SELECTION_EXPAND_H, "Expand Horizontally", wxBitmap(expand_selection_h_xpm), wxEmptyString);
-        selection->AddButton(ID_SELECTION_CONTRACT, "Contract", wxBitmap(auto_crop_selection_xpm), wxBitmap(auto_crop_selection_small_xpm));
+        size_t tool_pos = toolbar->GetToolPos(wxID_PRINT);
+        if (toolbar->GetToolCount() != (tool_pos+1))
+        {
+            wxLogError("wxRibbonToolBar::GetToolPos(int) or wxRibbonToolBar::GetToolCount() is broken");
+        }
+        else if (toolbar->GetToolByPos(tool_pos) != print_tool)
+        {
+            wxLogError("wxRibbonToolBar::GetToolByPos(size_t) is broken");
+        }
 
-        wxRibbonPanel *shapes_panel = new wxRibbonPanel(home, wxID_ANY, "Shapes", wxBitmap(circle_small_xpm));
+        wxRibbonPanel *selection_panel = new wxRibbonPanel(home, wxID_ANY, "Selection",
+            MakeSvgBundle(selection_panel_svg, wxSize(16, 16)));
+        wxRibbonButtonBar *selection = new wxRibbonButtonBar(selection_panel);
+        selection->AddButton(ID_SELECTION_EXPAND_V, "Expand Vertically",
+            MakeSvgBundle(expand_selection_v_svg, wxSize(32, 32)),
+            "This is a tooltip for Expand Vertically\ndemonstrating a tooltip");
+        selection->AddButton(ID_SELECTION_EXPAND_H, "Expand Horizontally",
+            MakeSvgBundle(expand_selection_h_svg, wxSize(32, 32)), wxEmptyString);
+        wxBitmapBundle crop_bundle = MakeSvgBundle(auto_crop_selection_svg, wxSize(32, 32));
+        selection->AddButton(ID_SELECTION_CONTRACT, "Contract",
+            crop_bundle, crop_bundle);
+        selection->SetKeyTip(ID_SELECTION_EXPAND_V, "V");
+        selection->SetKeyTip(ID_SELECTION_EXPAND_H, "Z");
+        selection->SetKeyTip(ID_SELECTION_CONTRACT, "C");
+
+        wxRibbonPanel *shapes_panel = new wxRibbonPanel(home, wxID_ANY, "Shapes",
+            MakeSvgBundle(circle_svg, wxSize(16, 16)));
         wxRibbonButtonBar *shapes = new wxRibbonButtonBar(shapes_panel);
-        shapes->AddButton(ID_CIRCLE, "Circle", wxBitmap(circle_xpm), wxBitmap(circle_small_xpm),
-                            wxNullBitmap, wxNullBitmap, wxRIBBON_BUTTON_NORMAL,
+        wxBitmapBundle circle_bundle = MakeSvgBundle(circle_svg, wxSize(32, 32));
+        shapes->AddButton(ID_CIRCLE, "Circle", circle_bundle, circle_bundle,
+                            wxBitmapBundle(), wxBitmapBundle(), wxRIBBON_BUTTON_NORMAL,
                             "This is a tooltip for the circle button\ndemonstrating another tooltip");
-        shapes->AddButton(ID_CROSS, "Cross", wxBitmap(cross_xpm), wxEmptyString);
-        shapes->AddHybridButton(ID_TRIANGLE, "Triangle", wxBitmap(triangle_xpm));
-        shapes->AddButton(ID_SQUARE, "Square", wxBitmap(square_xpm), wxEmptyString);
-        shapes->AddDropdownButton(ID_POLYGON, "Other Polygon", wxBitmap(hexagon_xpm), wxEmptyString);
+        shapes->AddButton(ID_CROSS, "Cross",
+            MakeSvgBundle(cross_svg, wxSize(32, 32)), wxEmptyString);
+        shapes->AddHybridButton(ID_TRIANGLE, "Triangle",
+            MakeSvgBundle(triangle_svg, wxSize(32, 32)));
+        shapes->AddButton(ID_SQUARE, "Square",
+            MakeSvgBundle(square_svg, wxSize(32, 32)), wxEmptyString);
+        shapes->AddDropdownButton(ID_POLYGON, "Other Polygon",
+            MakeSvgBundle(hexagon_svg, wxSize(32, 32)), wxEmptyString);
+        // Shared "S" prefix demonstrates keytip narrowing.
+        shapes->SetKeyTip(ID_CIRCLE, "SC");
+        shapes->SetKeyTip(ID_CROSS, "SX");
+        shapes->SetKeyTip(ID_TRIANGLE, "ST");
+        // "SD" reaches the dropdown arrow's menu, separate from "ST"'s main action.
+        shapes->SetDropdownKeyTip(ID_TRIANGLE, "SD");
+        shapes->SetKeyTip(ID_SQUARE, "SQ");
+        shapes->SetKeyTip(ID_POLYGON, "SP");
 
         wxRibbonPanel *sizer_panel = new wxRibbonPanel(home, wxID_ANY, "Panel with Sizer",
-                                                    wxNullBitmap, wxDefaultPosition, wxDefaultSize,
+                                                    wxBitmapBundle(), wxDefaultPosition, wxDefaultSize,
                                                     wxRIBBON_PANEL_DEFAULT_STYLE);
 
         wxArrayString as;
@@ -371,154 +637,376 @@ MyFrame::MyFrame()
         sizer_panelcombo2->SetMinSize(wxSize(150, -1));
 
         wxRibbonButtonBar* bar = new wxRibbonButtonBar(sizer_panel, wxID_ANY);
-        bar->AddButton(ID_BUTTON_XX, "xx", ribbon_xpm);
-        bar->AddButton(ID_BUTTON_XY, "xy", ribbon_xpm);
+        bar->AddButton(ID_BUTTON_XX, "xx", ribbon_large);
+        bar->AddButton(ID_BUTTON_XY, "xy", ribbon_large);
         // This prevents ribbon buttons in panels with sizer from collapsing.
         bar->SetButtonMinSizeClass(ID_BUTTON_XX, wxRIBBON_BUTTONBAR_BUTTON_LARGE);
         bar->SetButtonMinSizeClass(ID_BUTTON_XY, wxRIBBON_BUTTONBAR_BUTTON_LARGE);
+        // Digit keytips work too.
+        bar->SetKeyTip(ID_BUTTON_XX, "1");
+        bar->SetKeyTip(ID_BUTTON_XY, "2");
 
         wxSizer* sizer_panelsizer_h = new wxBoxSizer(wxHORIZONTAL);
         wxSizer* sizer_panelsizer_v = new wxBoxSizer(wxVERTICAL);
-        sizer_panelsizer_v->AddStretchSpacer(1);
-        sizer_panelsizer_v->Add(sizer_panelcombo, 0, wxALL|wxEXPAND, 2);
-        sizer_panelsizer_v->Add(sizer_panelcombo2, 0, wxALL|wxEXPAND, 2);
-        sizer_panelsizer_v->AddStretchSpacer(1);
-        sizer_panelsizer_h->Add(bar, 0, wxEXPAND);
+        sizer_panelsizer_v->AddStretchSpacer();
+        sizer_panelsizer_v->Add(sizer_panelcombo, wxSizerFlags().Expand().Border(wxALL, FromDIP(2)));
+        sizer_panelsizer_v->Add(sizer_panelcombo2, wxSizerFlags().Expand().Border(wxALL, FromDIP(2)));
+        sizer_panelsizer_v->AddStretchSpacer();
+        sizer_panelsizer_h->Add(bar, wxSizerFlags().Expand());
         sizer_panelsizer_h->Add(sizer_panelsizer_v, 0);
         sizer_panel->SetSizer(sizer_panelsizer_h);
 
         wxFont label_font(wxFontInfo(8).Light());
         m_bitmap_creation_dc.SetFont(label_font);
 
-        wxRibbonPage* scheme = new wxRibbonPage(m_ribbon, wxID_ANY, "Appearance", eye_xpm);
+        wxRibbonPage* scheme = new wxRibbonPage(m_ribbon, wxID_ANY, "Appearance",
+            MakeSvgBundle(eye_svg, wxSize(16, 16)));
+        m_ribbon->SetPageKeyTip(scheme, "A");
         m_ribbon->GetArtProvider()->GetColourScheme(&m_default_primary,
             &m_default_secondary, &m_default_tertiary);
         wxRibbonPanel *provider_panel = new wxRibbonPanel(scheme, wxID_ANY,
-            "Art", wxNullBitmap, wxDefaultPosition, wxDefaultSize, wxRIBBON_PANEL_NO_AUTO_MINIMISE);
-        wxRibbonButtonBar *provider_bar = new wxRibbonButtonBar(provider_panel, wxID_ANY);
-        provider_bar->AddButton(ID_DEFAULT_PROVIDER, "Default Provider",
+            "Art", wxBitmapBundle(), wxDefaultPosition, wxDefaultSize,
+            wxRIBBON_PANEL_NO_AUTO_MINIMISE);
+        m_provider_bar = new wxRibbonButtonBar(provider_panel, wxID_ANY);
+        m_provider_bar->AddToggleButton(ID_DEFAULT_PROVIDER, "Default Provider",
             wxArtProvider::GetBitmap(wxART_QUESTION, wxART_OTHER, wxSize(32, 32)));
-        provider_bar->AddButton(ID_AUI_PROVIDER, "AUI Provider", aui_style_xpm);
-        provider_bar->AddButton(ID_MSW_PROVIDER, "MSW Provider", msw_style_xpm);
+        m_provider_bar->AddToggleButton(ID_AUI_PROVIDER, "AUI Provider",
+            MakeSvgBundle(aui_style_svg, wxSize(32, 32)));
+        m_provider_bar->AddToggleButton(ID_MSW_PROVIDER, "MSW Provider",
+            MakeSvgBundle(msw_style_svg, wxSize(32, 32)));
+        m_provider_bar->AddToggleButton(ID_MSW_FLAT_PROVIDER, "MSW Flat Provider",
+            MakeSvgBundle(msw_flat_style_svg, wxSize(32, 32)));
+        m_provider_bar->SetKeyTip(ID_DEFAULT_PROVIDER, "D");
+        m_provider_bar->SetKeyTip(ID_AUI_PROVIDER, "I");
+        m_provider_bar->SetKeyTip(ID_MSW_PROVIDER, "M");
+        m_provider_bar->SetKeyTip(ID_MSW_FLAT_PROVIDER, "F");
+
+        m_provider_bar->ToggleButton(ID_DEFAULT_PROVIDER, true);
         wxRibbonPanel *primary_panel = new wxRibbonPanel(scheme, wxID_ANY,
-            "Primary Colour", colours_xpm);
+            "Primary Colour", MakeSvgBundle(colours_svg, wxSize(16, 16)));
         m_primary_gallery = PopulateColoursPanel(primary_panel,
             m_default_primary, ID_PRIMARY_COLOUR);
+        m_primary_gallery->SetKeyTip("P");
         wxRibbonPanel *secondary_panel = new wxRibbonPanel(scheme, wxID_ANY,
-            "Secondary Colour", colours_xpm);
+            "Secondary Colour", MakeSvgBundle(colours_svg, wxSize(16, 16)));
         m_secondary_gallery = PopulateColoursPanel(secondary_panel,
             m_default_secondary, ID_SECONDARY_COLOUR);
+        m_secondary_gallery->SetKeyTip("S");
     }
     {
-        wxRibbonPage* page = new wxRibbonPage(m_ribbon, wxID_ANY, "UI Updated", ribbon_xpm);
-        wxRibbonPanel *panel = new wxRibbonPanel(page, wxID_ANY, "Enable/Disable", ribbon_xpm);
+        wxRibbonPage* page = new wxRibbonPage(m_ribbon, wxID_ANY, "UI Updated",
+            ribbon_small);
+        m_ribbon->SetPageKeyTip(page, "U");
+        wxRibbonPanel *panel = new wxRibbonPanel(page, wxID_ANY, "Enable/Disable",
+            ribbon_small);
         wxRibbonButtonBar *bar = new wxRibbonButtonBar(panel, wxID_ANY);
-        bar->AddButton(ID_DISABLED, "Disabled", ribbon_xpm);
-        bar->AddButton(ID_ENABLE,   "Enable", ribbon_xpm);
-        bar->AddButton(ID_DISABLE,  "Disable", ribbon_xpm);
-        bar->AddButton(ID_UI_ENABLE_UPDATED, "Enable UI updated", ribbon_xpm);
+        bar->AddButton(ID_DISABLED, "Disabled", ribbon_large);
+        bar->AddButton(ID_ENABLE,   "Enable", ribbon_large);
+        bar->AddButton(ID_DISABLE,  "Disable", ribbon_large);
+        bar->AddButton(ID_UI_ENABLE_UPDATED, "Enable UI updated", ribbon_large);
         bar->EnableButton(ID_DISABLED, false);
         m_bEnabled = true;
 
-        panel = new wxRibbonPanel(page, wxID_ANY, "Toggle", ribbon_xpm);
+        panel = new wxRibbonPanel(page, wxID_ANY, "Toggle", ribbon_small);
         bar = new wxRibbonButtonBar(panel, wxID_ANY);
-        bar->AddButton(ID_CHECK, "Toggle", ribbon_xpm);
-        bar->AddToggleButton(ID_UI_CHECK_UPDATED, "Toggled UI updated", ribbon_xpm);
+        bar->AddButton(ID_CHECK, "Toggle", ribbon_large);
+        bar->AddToggleButton(ID_UI_CHECK_UPDATED, "Toggled UI updated", ribbon_large);
         m_bChecked = true;
 
-        panel = new wxRibbonPanel(page, wxID_ANY, "Change text", ribbon_xpm);
+        panel = new wxRibbonPanel(page, wxID_ANY, "Change text", ribbon_small);
         bar = new wxRibbonButtonBar(panel, wxID_ANY);
-        bar->AddButton(ID_CHANGE_TEXT1, "One", ribbon_xpm);
-        bar->AddButton(ID_CHANGE_TEXT2, "Two", ribbon_xpm);
-        bar->AddButton(ID_UI_CHANGE_TEXT_UPDATED, "Zero", ribbon_xpm);
+        bar->AddButton(ID_CHANGE_TEXT1, "Set short text", ribbon_large);
+        bar->AddButton(ID_CHANGE_TEXT2, "Set long text", ribbon_large);
+        // This button is never clicked, its label is set from its
+        // wxEVT_UPDATE_UI handler by the two buttons above.
+        bar->AddButton(ID_UI_CHANGE_TEXT_UPDATED, "Target", ribbon_large);
 
         //Also set the general disabled text colour:
         wxRibbonArtProvider* artProvider = m_ribbon->GetArtProvider();
         wxColour tColour = artProvider->GetColor(wxRIBBON_ART_BUTTON_BAR_LABEL_COLOUR);
         artProvider->SetColor(wxRIBBON_ART_BUTTON_BAR_LABEL_DISABLED_COLOUR, tColour.MakeDisabled());
     }
-    new wxRibbonPage(m_ribbon, wxID_ANY, "Empty Page", empty_xpm);
+    new wxRibbonPage(m_ribbon, wxID_ANY, "Empty Page", empty_small);
+    m_ribbon->SetPageKeyTip(m_ribbon->GetPageCount()-1, "T");
     {
-        wxRibbonPage* page = new wxRibbonPage(m_ribbon, wxID_ANY, "Another Page", empty_xpm);
-        wxRibbonPanel *panel = new wxRibbonPanel(page, wxID_ANY, "Page manipulation", ribbon_xpm);
+        wxRibbonPage* page = new wxRibbonPage(m_ribbon, wxID_ANY, "Another Page",
+            empty_small);
+        m_ribbon->SetPageKeyTip(page, "N");
+        wxRibbonPanel *panel = new wxRibbonPanel(page, wxID_ANY, "Page manipulation",
+            ribbon_small);
         wxRibbonButtonBar *bar = new wxRibbonButtonBar(panel, wxID_ANY);
         bar->AddButton(ID_REMOVE_PAGE, "Remove", wxArtProvider::GetBitmap(wxART_DELETE, wxART_OTHER, wxSize(24, 24)));
-        bar->AddButton(ID_HIDE_PAGES, "Hide Pages", ribbon_xpm);
-        bar->AddButton(ID_SHOW_PAGES, "Show Pages", ribbon_xpm);
+        bar->AddButton(ID_REMOVE_PANEL, "Remove Panel", wxArtProvider::GetBitmap(wxART_DELETE, wxART_OTHER, wxSize(24, 24)));
+        bar->AddButton(ID_HIDE_PAGES, "Hide Pages", ribbon_large);
+        bar->AddButton(ID_SHOW_PAGES, "Show Pages", ribbon_large);
+        bar->SetKeyTip(ID_REMOVE_PAGE, "R");
+        bar->SetKeyTip(ID_REMOVE_PANEL, "P");
 
-        panel = new wxRibbonPanel(page, wxID_ANY, "Button bar manipulation", ribbon_xpm);
-        m_mutable_button_bar = new wxRibbonButtonBar(panel, wxID_ANY);
-        m_mutable_button_bar->AddButton(ID_PLUS_MINUS, "+/-",
+        panel = new wxRibbonPanel(page, wxID_ANY, "Button bar manipulation",
+            ribbon_small);
+        wxRibbonButtonBar* button_bar = new wxRibbonButtonBar(panel, wxID_ANY);
+        button_bar->AddButton(ID_PLUS_MINUS, "+/-",
             wxArtProvider::GetBitmap(wxART_PLUS, wxART_OTHER, wxSize(24, 24)));
         m_plus_minus_state = false;
-        m_mutable_button_bar->AddButton(ID_CHANGE_LABEL, "short", ribbon_xpm);
-        m_mutable_button_bar->SetButtonTextMinWidth(ID_CHANGE_LABEL, "some long text");
+        button_bar->AddButton(ID_CHANGE_LABEL, "short", ribbon_large);
+        button_bar->SetButtonTextMinWidth(ID_CHANGE_LABEL, "some long text");
         m_change_label_state = false;
 
-        panel = new wxRibbonPanel(page, wxID_ANY, "Always medium buttons", ribbon_xpm);
+        panel = new wxRibbonPanel(page, wxID_ANY, "Always medium buttons",
+            ribbon_small);
         bar = new wxRibbonButtonBar(panel, wxID_ANY);
-        bar->AddButton(ID_SMALL_BUTTON_1, "Button 1", ribbon_xpm);
+        bar->AddButton(ID_SMALL_BUTTON_1, "Button 1", ribbon_large);
         bar->SetButtonMaxSizeClass(ID_SMALL_BUTTON_1, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
-        bar->AddButton(ID_SMALL_BUTTON_2, "Button 2", ribbon_xpm);
+        bar->AddButton(ID_SMALL_BUTTON_2, "Button 2", ribbon_large);
         bar->SetButtonMaxSizeClass(ID_SMALL_BUTTON_2, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
-        bar->AddButton(ID_SMALL_BUTTON_3, "Button 3", ribbon_xpm);
-        bar->AddButton(ID_SMALL_BUTTON_4, "Button 4", ribbon_xpm);
-        bar->AddButton(ID_SMALL_BUTTON_5, "Button 5", ribbon_xpm);
+        bar->AddButton(ID_SMALL_BUTTON_3, "Button 3", ribbon_large);
+        bar->AddButton(ID_SMALL_BUTTON_4, "Button 4", ribbon_large);
+        bar->AddButton(ID_SMALL_BUTTON_5, "Button 5", ribbon_large);
         bar->SetButtonMaxSizeClass(ID_SMALL_BUTTON_5, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
-        bar->AddButton(ID_SMALL_BUTTON_6, "Button 6", ribbon_xpm);
+        bar->AddButton(ID_SMALL_BUTTON_6, "Button 6", ribbon_large);
         bar->SetButtonMaxSizeClass(ID_SMALL_BUTTON_6, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
     }
-    new wxRibbonPage(m_ribbon, wxID_ANY, "Highlight Page", empty_xpm);
+    new wxRibbonPage(m_ribbon, wxID_ANY, "Highlight Page", empty_small);
     m_ribbon->AddPageHighlight(m_ribbon->GetPageCount()-1);
+    m_ribbon->SetPageKeyTip(m_ribbon->GetPageCount()-1, "L");
 
     {
-        wxRibbonPage* page = new wxRibbonPage(m_ribbon, wxID_ANY, "Advanced", empty_xpm);
-        wxRibbonPanel* panel = new wxRibbonPanel(page, wxID_ANY, "Button bar manipulation", ribbon_xpm);
-        m_mutable_button_bar = new wxRibbonButtonBar(panel, wxID_ANY);
-        m_mutable_button_bar->AddButton(ID_PLUS_MINUS, "+/-",
+        wxRibbonPage* page = new wxRibbonPage(m_ribbon, wxID_ANY, "Advanced",
+            empty_small);
+        m_ribbon->SetPageKeyTip(page, "B");
+        wxRibbonPanel* panel = new wxRibbonPanel(page, wxID_ANY, "Button bar manipulation",
+            ribbon_small);
+        wxRibbonButtonBar* button_bar = new wxRibbonButtonBar(panel, wxID_ANY);
+        button_bar->AddButton(ID_PLUS_MINUS, "+/-",
             wxArtProvider::GetBitmap(wxART_PLUS, wxART_OTHER, wxSize(24, 24)));
         m_plus_minus_state = false;
-        m_mutable_button_bar->AddButton(ID_CHANGE_LABEL, "short", ribbon_xpm);
-        m_mutable_button_bar->SetButtonTextMinWidth(ID_CHANGE_LABEL, "some long text");
+        button_bar->AddButton(ID_CHANGE_LABEL, "short", ribbon_large);
+        button_bar->SetButtonTextMinWidth(ID_CHANGE_LABEL, "some long text");
         m_change_label_state = false;
 
-        panel = new wxRibbonPanel(page, wxID_ANY, "Always medium buttons", ribbon_xpm);
+        panel = new wxRibbonPanel(page, wxID_ANY, "Always medium buttons",
+            ribbon_small);
         wxRibbonButtonBar* bar = new wxRibbonButtonBar(panel, wxID_ANY);
-        bar->AddButton(ID_SMALL_BUTTON_1, "Button 1", ribbon_xpm);
+        bar->AddButton(ID_SMALL_BUTTON_1, "Button 1", ribbon_large);
         bar->SetButtonMaxSizeClass(ID_SMALL_BUTTON_1, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
-        bar->AddButton(ID_SMALL_BUTTON_2, "Button 2", ribbon_xpm);
+        bar->AddButton(ID_SMALL_BUTTON_2, "Button 2", ribbon_large);
         bar->SetButtonMaxSizeClass(ID_SMALL_BUTTON_2, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
-        bar->AddButton(ID_SMALL_BUTTON_3, "Button 3", ribbon_xpm);
-        bar->AddButton(ID_SMALL_BUTTON_4, "Button 4", ribbon_xpm);
-        bar->AddButton(ID_SMALL_BUTTON_5, "Button 5", ribbon_xpm);
+        bar->AddButton(ID_SMALL_BUTTON_3, "Button 3", ribbon_large);
+        bar->AddButton(ID_SMALL_BUTTON_4, "Button 4", ribbon_large);
+        bar->AddButton(ID_SMALL_BUTTON_5, "Button 5", ribbon_large);
         bar->SetButtonMaxSizeClass(ID_SMALL_BUTTON_5, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
-        bar->AddButton(ID_SMALL_BUTTON_6, "Button 6", ribbon_xpm);
+        bar->AddButton(ID_SMALL_BUTTON_6, "Button 6", ribbon_large);
         bar->SetButtonMaxSizeClass(ID_SMALL_BUTTON_6, wxRIBBON_BUTTONBAR_BUTTON_MEDIUM);
     }
-
     m_ribbon->Realize();
 
-    m_logwindow = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
+    m_logwindow = new wxTextCtrl(m_panel, wxID_ANY, wxEmptyString,
         wxDefaultPosition, wxDefaultSize, wxTE_MULTILINE | wxTE_READONLY |
         wxTE_LEFT | wxTE_BESTWRAP | wxBORDER_NONE);
 
-    m_togglePanels = new wxToggleButton(this, ID_TOGGLE_PANELS, "&Toggle panels");
+    m_togglePanels = new wxToggleButton(m_panel, ID_TOGGLE_PANELS, "&Toggle panels");
     m_togglePanels->SetValue(true);
 
     wxSizer *s = new wxBoxSizer(wxVERTICAL);
 
-    s->Add(m_ribbon, 0, wxEXPAND);
-    s->Add(m_logwindow, 1, wxEXPAND);
+    s->Add(m_ribbon, wxSizerFlags().Expand());
+    s->Add(m_logwindow, wxSizerFlags(1).Expand());
+
+    // The backstage takes the place of the log window while the File tab is selected.
+    CreateBackstage();
+    m_backstage->Hide();
+    s->Add(m_backstage, wxSizerFlags(1).Expand());
     s->Add(m_togglePanels, wxSizerFlags().Border());
 
-    SetSizer(s);
+    m_panel->SetSizer(s);
+
+    wxSizer* frameSizer = new wxBoxSizer{ wxVERTICAL };
+    frameSizer->Add(m_panel, wxSizerFlags{ 1 }.Expand());
+    SetSizer(frameSizer);
+
+    m_ribbon->SetBackstage(m_backstage, m_logwindow);
+}
+
+void MyFrame::CreateBackstage()
+{
+    m_backstage = new wxBackstage(m_panel);
+
+    m_backstage->AddButton(ID_BACKSTAGE_INFO, "Info");
+    m_backstage->AddButton(ID_BACKSTAGE_NEW, "New");
+    m_backstage->AddButton(ID_BACKSTAGE_OPEN, "Open");
+    m_backstage->AddButton(ID_BACKSTAGE_SAVE, "Save");
+    m_backstage->AddButton(ID_BACKSTAGE_SAVE_AS, "Save As");
+    m_backstage->AddSeparator();
+    m_backstage->AddFlexibleSpace();
+    m_backstage->AddButton(ID_BACKSTAGE_EXIT, "Exit");
+
+    // Save and Exit have no page, so they are just actions.
+    const int margin = FromDIP(30);
+
+    {
+        wxBackstagePage* page = m_backstage->AddPage(ID_BACKSTAGE_INFO);
+        wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+        sizer->Add(new wxBackstageHeading(page, wxID_ANY, "Information"),
+                   wxSizerFlags().Border(wxLEFT | wxTOP, margin));
+
+        wxBackstageCallout* callout = new wxBackstageCallout(page, wxID_ANY,
+            "Checked Out Document",
+            "No one else can edit this document or view your changes\n"
+            "until it is checked in.");
+        callout->SetAction(new wxBackstageButton(callout, ID_BACKSTAGE_DISCARD,
+            "Discard Check Out", wxBitmapBundle(),
+            wxBackstageButtonStyle::Wide));
+        sizer->Add(callout, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxTOP, margin));
+
+        wxBackstageButton* protect = new wxBackstageButton(page, ID_BACKSTAGE_PROTECT,
+            "Protect Document", wxBitmapBundle(),
+            wxBackstageButtonStyle::Wide,
+            "Control what types of changes people can make");
+        protect->ShowDropDownArrow();
+        sizer->Add(protect, wxSizerFlags().Border(wxLEFT | wxTOP, margin));
+        page->SetSizer(sizer);
+    }
+
+    {
+        wxBackstagePage* page = m_backstage->AddPage(ID_BACKSTAGE_NEW);
+        wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+        sizer->Add(new wxBackstageHeading(page, wxID_ANY, "New"),
+                   wxSizerFlags().Border(wxLEFT | wxTOP, margin));
+        sizer->Add(new wxBackstageHeading(page, wxID_ANY, "Featured",
+                       wxBackstageHeadingStyle::Section),
+                   wxSizerFlags().Border(wxLEFT | wxTOP, margin));
+
+        // wxREMOVE_LEADING_SPACES keeps the last card on a row from being stretched
+        wxWrapSizer* cards = new wxWrapSizer(wxHORIZONTAL, wxREMOVE_LEADING_SPACES);
+        const wxSizerFlags cardFlags = wxSizerFlags().Border(wxRIGHT | wxTOP, FromDIP(16));
+        const struct
+        {
+            wxWindowID m_id;
+            const char* m_label;
+            const char* m_svg;
+        } templates[] = {
+            { ID_BACKSTAGE_TEMPLATE_BLANK, "Blank Document", empty_svg },
+            { ID_BACKSTAGE_TEMPLATE_RIBBON, "Ribbon Layout", ribbon_svg },
+            { ID_BACKSTAGE_TEMPLATE_COLOURS, "Colour Study", colours_svg }
+        };
+        for ( const auto& tmpl : templates )
+        {
+            cards->Add(new wxBackstageButton(page, tmpl.m_id, tmpl.m_label,
+                           MakeSvgBundle(tmpl.m_svg, wxSize(64, 64)),
+                           wxBackstageButtonStyle::Card),
+                       cardFlags);
+        }
+        sizer->Add(cards, wxSizerFlags(1).Expand().Border(wxLEFT | wxRIGHT, margin));
+        page->SetSizer(sizer);
+    }
+
+    {
+        wxBackstagePage* page = m_backstage->AddPage(ID_BACKSTAGE_OPEN);
+        wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+        sizer->Add(new wxBackstageHeading(page, wxID_ANY, "Open"),
+                   wxSizerFlags().Border(wxLEFT | wxTOP, margin));
+
+        // The list sorts by modified date and groups the files into sections
+        // ("Today", "Yesterday", ...). The files here don't need to exist.
+        wxBackstageMRUList* recent = new wxBackstageMRUList(page, ID_BACKSTAGE_RECENT_LIST);
+        recent->SetEmptyText("You haven't opened any files recently.");
+        const wxDateTime now = wxDateTime::Now();
+        recent->AddFile("/Documents/Marketing Proposal.txt", now - wxTimeSpan::Minutes(12));
+        recent->AddFile("/Documents/Invoices/March.txt", now - wxTimeSpan::Hours(5));
+        recent->AddFile("/Documents/Notes.txt", now - wxDateSpan::Days(1));
+        recent->AddFile("/Documents/Reports/Q1.txt", now - wxDateSpan::Days(4));
+        recent->AddFile("/Documents/Old/Archive.txt", now - wxDateSpan::Days(40));
+        recent->SetMinSize(FromDIP(wxSize(560, 340)));
+        sizer->Add(recent, wxSizerFlags(1).Expand().Border(wxALL, margin));
+        page->SetSizer(sizer);
+    }
+
+    {
+        wxBackstagePage* page = m_backstage->AddPage(ID_BACKSTAGE_SAVE_AS);
+        wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+        sizer->Add(new wxBackstageHeading(page, wxID_ANY, "Save As"),
+                   wxSizerFlags().Border(wxLEFT | wxTOP, margin));
+
+        wxBackstageItemList* folders = new wxBackstageItemList(page, ID_BACKSTAGE_FOLDER_LIST);
+        folders->AddHeader("Current Folder");
+        const wxString folderSeparator = wxString::FromUTF8(" » ");
+        folders->AddItem("Marketing", "Documents" + folderSeparator + "Marketing", wxString(),
+                         wxBitmapBundle(), "/Documents/Marketing");
+        folders->AddHeader("Recent");
+        folders->AddItem("Reports", "Documents" + folderSeparator + "Reports", wxString(),
+                         wxBitmapBundle(), "/Documents/Reports");
+        folders->AddItem("Downloads", wxString(), wxString(),
+                         wxBitmapBundle(), "/Downloads");
+        folders->SetMinSize(FromDIP(wxSize(380, 340)));
+        sizer->Add(folders, wxSizerFlags(1).Expand().Border(wxALL, margin));
+        page->SetSizer(sizer);
+    }
+
+    Bind(wxEVT_BACKSTAGE_CLICKED, &MyFrame::OnBackstageClicked, this);
+    Bind(wxEVT_BACKSTAGE_ITEM_CLICKED, &MyFrame::OnBackstageItemClicked, this);
+    Bind(wxEVT_BUTTON, &MyFrame::OnBackstageButton, this,
+         ID_BACKSTAGE_DISCARD, ID_BACKSTAGE_TEMPLATE_COLOURS);
+}
+
+void MyFrame::OnBackstageClicked(wxNotifyEvent& evt)
+{
+    // A button with a page shows it after this returns, unless evt.Veto() is called.
+    switch ( evt.GetId() )
+    {
+        case ID_BACKSTAGE_SAVE:
+            wxMessageBox(wxString::Format("The \"%s\" button was clicked.", evt.GetString()),
+                         "Backstage Button", wxOK | wxICON_INFORMATION, this);
+            break;
+
+        case ID_BACKSTAGE_EXIT:
+            Close(true);
+            break;
+    }
+}
+
+void MyFrame::OnBackstageItemClicked(wxCommandEvent& evt)
+{
+    // GetId() is the ID of the list, GetInt() is the index of the item, and
+    // GetString() is its user string (here it's the path).
+    wxMessageBox(wxString::Format("Item #%d of list %d was clicked:\n%s",
+                                  evt.GetInt(), evt.GetId(), evt.GetString()),
+                 evt.GetId() == ID_BACKSTAGE_RECENT_LIST ? "Open Recent File"
+                                                         : "Save To Folder",
+                 wxOK | wxICON_INFORMATION, this);
+}
+
+void MyFrame::OnBackstageButton(wxCommandEvent& evt)
+{
+    if ( evt.GetId() == ID_BACKSTAGE_PROTECT )
+    {
+        wxMenu menu;
+        const wxString choices[] = { "Mark as Final", "Encrypt with Password", "Restrict Access" };
+        for ( const wxString& choice : choices )
+        {
+            const wxMenuItem* item = menu.Append(wxID_ANY, choice);
+            menu.Bind(wxEVT_MENU,
+                [choice](wxCommandEvent&)
+                {
+                    wxMessageBox(wxString::Format("\"%s\" was chosen.", choice),
+                                 "Protect Document", wxOK | wxICON_INFORMATION);
+                },
+                item->GetId());
+        }
+        if ( wxWindow* button = wxDynamicCast(evt.GetEventObject(), wxWindow) )
+            button->PopupMenu(&menu, wxPoint(0, button->GetSize().GetHeight()));
+        return;
+    }
+
+    wxMessageBox(wxString::Format("The button \"%s\" (ID %d) was clicked.",
+                                  evt.GetString(), evt.GetId()),
+                 "Backstage Page Button", wxOK | wxICON_INFORMATION, this);
 }
 
 void MyFrame::SetBarStyle(long style)
 {
     m_ribbon->Freeze();
     m_ribbon->SetWindowStyleFlag(style);
-    wxBoxSizer *pTopSize = reinterpret_cast<wxBoxSizer*>(GetSizer());
+    wxBoxSizer *pTopSize = reinterpret_cast<wxBoxSizer*>(m_panel->GetSizer());
     wxRibbonToolBar *pToolbar = wxDynamicCast(FindWindow(ID_MAIN_TOOLBAR), wxRibbonToolBar);
     if(style & wxRIBBON_BAR_FLOW_VERTICAL)
     {
@@ -535,7 +1023,7 @@ void MyFrame::SetBarStyle(long style)
             pToolbar->SetRows(2, 3);
     }
     m_ribbon->Realise();
-    Layout();
+    m_panel->Layout();
     m_ribbon->Thaw();
 }
 
@@ -614,7 +1102,7 @@ wxColour MyFrame::GetGalleryColour(wxRibbonGallery *gallery,
                                    wxRibbonGalleryItem* item, wxString* name)
 {
     ColourClientData *data = (ColourClientData*)gallery->GetItemClientObject(item);
-    if(name != NULL)
+    if(name != nullptr)
         *name = data->GetName();
     return data->GetColour();
 }
@@ -627,7 +1115,7 @@ void MyFrame::OnHoveredColourChange(wxRibbonGalleryEvent& evt)
     wxRibbonGallery *gallery = evt.GetGallery();
     wxRibbonArtProvider *provider = gallery->GetArtProvider();
 
-    if(evt.GetGalleryItem() != NULL)
+    if(evt.GetGalleryItem() != nullptr)
     {
         if(provider == m_ribbon->GetArtProvider())
         {
@@ -635,7 +1123,7 @@ void MyFrame::OnHoveredColourChange(wxRibbonGalleryEvent& evt)
             gallery->SetArtProvider(provider);
         }
         provider->SetColour(wxRIBBON_ART_GALLERY_HOVER_BACKGROUND_COLOUR,
-            GetGalleryColour(evt.GetGallery(), evt.GetGalleryItem(), NULL));
+            GetGalleryColour(evt.GetGallery(), evt.GetGalleryItem(), nullptr));
     }
     else
     {
@@ -653,7 +1141,7 @@ void MyFrame::OnPrimaryColourSelect(wxRibbonGalleryEvent& evt)
     wxColour colour = GetGalleryColour(evt.GetGallery(), evt.GetGalleryItem(), &name);
     AddText("Colour \"" + name + "\" selected as primary.");
     wxColour secondary, tertiary;
-    m_ribbon->GetArtProvider()->GetColourScheme(NULL, &secondary, &tertiary);
+    m_ribbon->GetArtProvider()->GetColourScheme(nullptr, &secondary, &tertiary);
     m_ribbon->GetArtProvider()->SetColourScheme(colour, secondary, tertiary);
     ResetGalleryArtProviders();
     m_ribbon->Refresh();
@@ -665,7 +1153,7 @@ void MyFrame::OnSecondaryColourSelect(wxRibbonGalleryEvent& evt)
     wxColour colour = GetGalleryColour(evt.GetGallery(), evt.GetGalleryItem(), &name);
     AddText("Colour \"" + name + "\" selected as secondary.");
     wxColour primary, tertiary;
-    m_ribbon->GetArtProvider()->GetColourScheme(&primary, NULL, &tertiary);
+    m_ribbon->GetArtProvider()->GetColourScheme(&primary, nullptr, &tertiary);
     m_ribbon->GetArtProvider()->SetColourScheme(primary, colour, tertiary);
     ResetGalleryArtProviders();
     m_ribbon->Refresh();
@@ -687,12 +1175,12 @@ void MyFrame::ResetGalleryArtProviders()
 
 void MyFrame::OnChangeText1(wxRibbonButtonBarEvent& WXUNUSED(evt))
 {
-    m_new_text = "One";
+    m_new_text = "Short";
 }
 
 void MyFrame::OnChangeText2(wxRibbonButtonBarEvent& WXUNUSED(evt))
 {
-    m_new_text = "Two";
+    m_new_text = "A much longer label";
 }
 
 void MyFrame::OnEnable(wxRibbonButtonBarEvent& WXUNUSED(evt))
@@ -963,7 +1451,7 @@ wxRibbonGalleryItem* MyFrame::AddColourToGallery(wxRibbonGallery *gallery,
                                  wxString colour, wxMemoryDC& dc,
                                  wxColour* value)
 {
-    wxRibbonGalleryItem* item = NULL;
+    wxRibbonGalleryItem* item = nullptr;
     wxColour c;
     if (colour != "Default")
         c = wxColour(colour);
@@ -997,7 +1485,7 @@ wxRibbonGalleryItem* MyFrame::AddColourToGallery(wxRibbonGallery *gallery,
             (iHeight - size.GetHeight()) / 2);
         dc.SelectObjectAsSource(wxNullBitmap);
 
-        item = gallery->Append(bitmap, wxID_ANY);
+        item = gallery->Append(bitmap, wxID_ANY, colour);
         gallery->SetItemClientObject(item, new ColourClientData(colour, c));
     }
     return item;
@@ -1006,12 +1494,12 @@ wxRibbonGalleryItem* MyFrame::AddColourToGallery(wxRibbonGallery *gallery,
 void MyFrame::OnColourGalleryButton(wxCommandEvent& evt)
 {
     wxRibbonGallery *gallery = wxDynamicCast(evt.GetEventObject(), wxRibbonGallery);
-    if(gallery == NULL)
+    if(gallery == nullptr)
         return;
 
     m_ribbon->DismissExpandedPanel();
     if(gallery->GetSelection())
-        m_colour_data.SetColour(GetGalleryColour(gallery, gallery->GetSelection(), NULL));
+        m_colour_data.SetColour(GetGalleryColour(gallery, gallery->GetSelection(), nullptr));
     wxColourDialog dlg(this, &m_colour_data);
     if(dlg.ShowModal() == wxID_OK)
     {
@@ -1019,18 +1507,18 @@ void MyFrame::OnColourGalleryButton(wxCommandEvent& evt)
         wxColour clr = m_colour_data.GetColour();
 
         // Try to find colour in gallery
-        wxRibbonGalleryItem *item = NULL;
+        wxRibbonGalleryItem *item = nullptr;
         for(unsigned int i = 0; i < gallery->GetCount(); ++i)
         {
             item = gallery->GetItem(i);
-            if(GetGalleryColour(gallery, item, NULL) == clr)
+            if(GetGalleryColour(gallery, item, nullptr) == clr)
                 break;
             else
-                item = NULL;
+                item = nullptr;
         }
 
         // Colour not in gallery - add it
-        if(item == NULL)
+        if(item == nullptr)
         {
             item = AddColourToGallery(gallery,
                 clr.GetAsString(wxC2S_HTML_SYNTAX), m_bitmap_creation_dc,
@@ -1054,22 +1542,28 @@ void MyFrame::OnColourGalleryButton(wxCommandEvent& evt)
 void MyFrame::OnDefaultProvider(wxRibbonButtonBarEvent& WXUNUSED(evt))
 {
     m_ribbon->DismissExpandedPanel();
-    SetArtProvider(new wxRibbonDefaultArtProvider);
+    SetArtProvider(ID_DEFAULT_PROVIDER, new wxRibbonDefaultArtProvider);
 }
 
 void MyFrame::OnAUIProvider(wxRibbonButtonBarEvent& WXUNUSED(evt))
 {
     m_ribbon->DismissExpandedPanel();
-    SetArtProvider(new wxRibbonAUIArtProvider);
+    SetArtProvider(ID_AUI_PROVIDER, new wxRibbonAUIArtProvider);
 }
 
 void MyFrame::OnMSWProvider(wxRibbonButtonBarEvent& WXUNUSED(evt))
 {
     m_ribbon->DismissExpandedPanel();
-    SetArtProvider(new wxRibbonMSWArtProvider);
+    SetArtProvider(ID_MSW_PROVIDER, new wxRibbonMSWArtProvider);
 }
 
-void MyFrame::SetArtProvider(wxRibbonArtProvider *prov)
+void MyFrame::OnMSWFlatProvider(wxRibbonButtonBarEvent& WXUNUSED(evt))
+{
+    m_ribbon->DismissExpandedPanel();
+    SetArtProvider(ID_MSW_FLAT_PROVIDER, new wxRibbonMSWFlatArtProvider);
+}
+
+void MyFrame::SetArtProvider(int button_id, wxRibbonArtProvider *prov)
 {
     m_ribbon->Freeze();
     m_ribbon->SetArtProvider(prov);
@@ -1081,9 +1575,18 @@ void MyFrame::SetArtProvider(wxRibbonArtProvider *prov)
     PopulateColoursPanel(m_secondary_gallery->GetParent(), m_default_secondary,
         ID_SECONDARY_COLOUR);
 
+    m_provider_bar->ToggleButton(ID_DEFAULT_PROVIDER,
+        button_id == ID_DEFAULT_PROVIDER);
+    m_provider_bar->ToggleButton(ID_AUI_PROVIDER,
+        button_id == ID_AUI_PROVIDER);
+    m_provider_bar->ToggleButton(ID_MSW_PROVIDER,
+        button_id == ID_MSW_PROVIDER);
+    m_provider_bar->ToggleButton(ID_MSW_FLAT_PROVIDER,
+        button_id == ID_MSW_FLAT_PROVIDER);
+
     m_ribbon->Realize();
     m_ribbon->Thaw();
-    GetSizer()->Layout();
+    m_panel->Layout();
 }
 
 void MyFrame::OnRemovePage(wxRibbonButtonBarEvent& WXUNUSED(evt))
@@ -1096,48 +1599,75 @@ void MyFrame::OnRemovePage(wxRibbonButtonBarEvent& WXUNUSED(evt))
     }
 }
 
+void MyFrame::OnRemovePanel(wxRibbonButtonBarEvent& WXUNUSED(evt))
+{
+    // Delete a panel of the current page and then make the page too narrow for
+    // the remaining ones, so that they have to be collapsed.
+    wxRibbonPage* page = m_ribbon->GetPage(m_ribbon->GetActivePage());
+    if(page == nullptr || page->GetPanelCount() < 2)
+    {
+        AddText("No panel to remove on the current page");
+        return;
+    }
+
+    page->Realize();
+
+    // Any panel other than the one containing this button will do.
+    wxRibbonPanel* panel = page->GetPanel(1);
+    AddText("Deleting panel \"" + panel->GetLabel() + "\"");
+    panel->Destroy();
+
+    const wxPoint pos = page->GetPosition();
+    const wxSize size = page->GetSize();
+    page->SetSizeWithScrollButtonAdjustment(pos.x, pos.y, size.x / 8, size.y);
+
+    // Not reached if the stale entry was used above.
+    m_ribbon->Realize();
+    m_panel->Layout();
+}
+
 void MyFrame::OnHidePages(wxRibbonButtonBarEvent& WXUNUSED(evt))
 {
-    m_ribbon->HidePage(1);
     m_ribbon->HidePage(2);
     m_ribbon->HidePage(3);
+    m_ribbon->HidePage(4);
     m_ribbon->Realize();
 }
 
 void MyFrame::OnShowPages(wxRibbonButtonBarEvent& WXUNUSED(evt))
 {
-    m_ribbon->ShowPage(1);
     m_ribbon->ShowPage(2);
     m_ribbon->ShowPage(3);
+    m_ribbon->ShowPage(4);
     m_ribbon->Realize();
 }
 
-void MyFrame::OnPlusMinus(wxRibbonButtonBarEvent& WXUNUSED(evt))
+void MyFrame::OnPlusMinus(wxRibbonButtonBarEvent& evt)
 {
     if(m_plus_minus_state)
     {
-        m_mutable_button_bar->SetButtonIcon(ID_PLUS_MINUS,
+        evt.GetBar()->SetButtonIcon(ID_PLUS_MINUS,
             wxArtProvider::GetBitmap(wxART_PLUS, wxART_OTHER, wxSize(24, 24)));
         m_plus_minus_state = false;
     }
     else
     {
-        m_mutable_button_bar->SetButtonIcon(ID_PLUS_MINUS,
+        evt.GetBar()->SetButtonIcon(ID_PLUS_MINUS,
             wxArtProvider::GetBitmap(wxART_MINUS, wxART_OTHER, wxSize(24, 24)));
         m_plus_minus_state = true;
     }
 }
 
-void MyFrame::OnChangeLabel(wxRibbonButtonBarEvent& WXUNUSED(evt))
+void MyFrame::OnChangeLabel(wxRibbonButtonBarEvent& evt)
 {
     if(m_change_label_state)
     {
-        m_mutable_button_bar->SetButtonText(ID_CHANGE_LABEL, "short");
+        evt.GetBar()->SetButtonText(ID_CHANGE_LABEL, "short");
         m_change_label_state = false;
     }
     else
     {
-        m_mutable_button_bar->SetButtonText(ID_CHANGE_LABEL, "some long text");
+        evt.GetBar()->SetButtonText(ID_CHANGE_LABEL, "some long text");
         m_change_label_state = true;
     }
 }
@@ -1153,6 +1683,21 @@ void MyFrame::OnRibbonBarToggled(wxRibbonBarEvent& WXUNUSED(evt))
 void MyFrame::OnRibbonBarHelpClicked(wxRibbonBarEvent& WXUNUSED(evt))
 {
     AddText("Ribbon bar help clicked");
+}
+
+void MyFrame::OnDPIChanged(wxDPIChangedEvent& evt)
+{
+    const wxSize oldDPI = evt.GetOldDPI();
+    const wxSize newDPI = evt.GetNewDPI();
+
+    AddText(wxString::Format(
+        "DPI changed from %d x %d to %d x %d (scale: %.0f%% -> %.0f%%)",
+        oldDPI.x, oldDPI.y,
+        newDPI.x, newDPI.y,
+        oldDPI.x * 100.0 / 96.0,
+        newDPI.x * 100.0 / 96.0));
+
+    evt.Skip();
 }
 
 // This shows how to hide ribbon dynamically if there is not enough space.

@@ -2,7 +2,6 @@
 // Name:        wx/msw/ole/access.h
 // Purpose:     declaration of the wxAccessible class
 // Author:      Julian Smart
-// Modified by:
 // Created:     2003-02-12
 // Copyright:   (c) 2003 Julian Smart
 // Licence:     wxWindows licence
@@ -32,7 +31,7 @@ class WXDLLIMPEXP_FWD_CORE wxWindow;
 class WXDLLIMPEXP_CORE wxAccessible : public wxAccessibleBase
 {
 public:
-    wxAccessible(wxWindow *win = NULL);
+    wxAccessible(wxWindow *win = nullptr);
     virtual ~wxAccessible();
 
 // Overridables
@@ -44,6 +43,11 @@ public:
 
     // Returns the IAccessible standard interface pointer
     IAccessible* GetIAccessibleStd();
+
+    // Sets the name used for the object itself instead of the one returned
+    // by GetName(), used by wxWindow::SetAccessibleName().
+    void SetNameOverride(const wxString& name) { m_nameOverride = name; }
+    const wxString& GetNameOverride() const { return m_nameOverride; }
 
 // Operations
 
@@ -58,6 +62,7 @@ private:
     wxIAccessible * m_pIAccessible;  // the pointer to COM interface
     IAccessible*    m_pIAccessibleStd;  // the pointer to the standard COM interface,
                                         // for default processing
+    wxString        m_nameOverride;     // the name set by SetNameOverride()
 
     wxDECLARE_NO_COPY_CLASS(wxAccessible);
 };

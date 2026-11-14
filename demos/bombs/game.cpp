@@ -10,9 +10,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-  #pragma hdrstop
-#endif
 
 #ifndef  WX_PRECOMP
 #   include "wx/wx.h"
@@ -22,7 +19,7 @@
 #include <stdlib.h>
 #include <limits.h>
 
-#define PROB 0.2
+#define PROB 0.2f
 
 #ifndef RAND_MAX
 #   define RAND_MAX INT_MAX

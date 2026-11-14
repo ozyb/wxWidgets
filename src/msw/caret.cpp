@@ -2,7 +2,6 @@
 // Name:        src/msw/caret.cpp
 // Purpose:     MSW implementation of wxCaret
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     23.05.99
 // Copyright:   (c) wxWidgets team
 // Licence:     wxWindows licence
@@ -19,9 +18,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/window.h"
@@ -184,6 +180,26 @@ void wxCaret::DoSize()
         MSWCreateCaret();
         OnSetFocus();
     }
+}
+
+void wxCaret::DoGetPosition(int* x, int* y) const
+{
+    POINT pt = { };
+    if ( m_hasCaret )
+    {
+        CALL_CARET_API(GetCaretPos, (&pt));
+    }
+    else
+    {
+        // Return the last position the caret was Move()-d to.
+        pt.x = m_x;
+        pt.y = m_y;
+    }
+
+    if ( x )
+        *x = pt.x;
+    if ( y )
+        *y = pt.y;
 }
 
 #endif

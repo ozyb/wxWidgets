@@ -2,7 +2,6 @@
 // Name:        src/osx/iphone/msgdlg.mm
 // Purpose:     wxMessageDialog
 // Author:      Stefan Csomor
-// Modified by:
 // Created:     04/01/98
 // Copyright:   (c) Stefan Csomor
 // Licence:     wxWindows licence
@@ -17,6 +16,7 @@
     #include "wx/app.h"
 #endif
 
+#include "wx/evtloop.h"
 #include "wx/thread.h"
 #include "wx/osx/private.h"
 #include "wx/modalhook.h"
@@ -38,8 +38,26 @@ int wxMessageDialog::ShowModal()
 {
     WX_HOOK_MODAL_DIALOG();
 
-    int resultbutton = wxID_CANCEL;
+    m_messageClosed = false;
+    m_clickedbutton = 0;
 
+    // as all native dialogs are never modal in the sense of code flow only for behavior
+    // so we must run a local event loop until ModalFinishedCallback is called to imitate
+    // the wx sense of modal
+
+    ShowWindowModal();
+
+    wxGUIEventLoop loop;
+    while( !m_messageClosed )
+    {
+        loop.Dispatch();
+    }
+    return m_clickedbutton;
+}
+
+
+void wxMessageDialog::ShowWindowModal()
+{
     const long style = GetMessageDialogStyle();
 
     // work out what to display
@@ -60,56 +78,92 @@ int wxMessageDialog::ShowModal()
         msgtext  = m_extendedMessage;
     }
 
-    wxCFStringRef cfNoString( GetNoLabel(), GetFont().GetEncoding() );
-    wxCFStringRef cfYesString( GetYesLabel(), GetFont().GetEncoding() );
-    wxCFStringRef cfOKString( GetOKLabel(), GetFont().GetEncoding() );
-    wxCFStringRef cfCancelString( GetCancelLabel(), GetFont().GetEncoding() );
+    wxCFStringRef cfNoString( GetNoLabel() );
+    wxCFStringRef cfYesString( GetYesLabel() );
+    wxCFStringRef cfOKString( GetOKLabel() );
+    wxCFStringRef cfCancelString( GetCancelLabel() );
 
-    wxCFStringRef cfTitle( msgtitle, GetFont().GetEncoding() );
-    wxCFStringRef cfText( msgtext, GetFont().GetEncoding() );
+    wxCFStringRef cfTitle( msgtitle );
+    wxCFStringRef cfText( msgtext );
 
-    UIAlertView* alert = [[UIAlertView alloc] initWithTitle:cfTitle.AsNSString() message:cfText.AsNSString() delegate:nil cancelButtonTitle:nil otherButtonTitles:nil];
-
-    int buttonId[3] = { 0, 0, 0 };
-    int buttonCount = 0;
+    UIAlertController* alert = [UIAlertController
+                                alertControllerWithTitle:cfTitle.AsNSString()
+                                message:cfText.AsNSString()
+                                preferredStyle:UIAlertControllerStyleAlert];
 
     if (style & wxYES_NO)
     {
         if ( style & wxNO_DEFAULT )
         {
-            [alert addButtonWithTitle:cfNoString.AsNSString()];
-            buttonId[ buttonCount++ ] = wxID_NO;
-            [alert addButtonWithTitle:cfYesString.AsNSString()];
-            buttonId[ buttonCount++ ] = wxID_YES;
+            [alert addAction:[UIAlertAction
+                              actionWithTitle:cfNoString.AsNSString()
+                              style:UIAlertActionStyleDefault
+                              handler:^(UIAlertAction * action) {
+                this->ModalFinishedCallback(this, wxID_NO);
+                                     }]
+            ];
+            [alert addAction:[UIAlertAction
+                              actionWithTitle:cfYesString.AsNSString()
+                              style:UIAlertActionStyleDefault
+                              handler:^(UIAlertAction * action) {
+                this->ModalFinishedCallback(this, wxID_YES);
+                                }]
+            ];
         }
         else
         {
-            [alert addButtonWithTitle:cfYesString.AsNSString()];
-            buttonId[ buttonCount++ ] = wxID_YES;
-            [alert addButtonWithTitle:cfNoString.AsNSString()];
-            buttonId[ buttonCount++ ] = wxID_NO;
+            [alert addAction:[UIAlertAction
+                              actionWithTitle:cfYesString.AsNSString()
+                              style:UIAlertActionStyleDefault
+                              handler:^(UIAlertAction * action) {
+                this->ModalFinishedCallback(this, wxID_YES);
+                                }]
+            ];
+            [alert addAction:[UIAlertAction
+                              actionWithTitle:cfNoString.AsNSString()
+                              style:UIAlertActionStyleDefault
+                              handler:^(UIAlertAction * action) {
+                this->ModalFinishedCallback(this, wxID_NO);
+                                  }]
+            ];
         }
 
         if (style & wxCANCEL)
         {
-            [alert addButtonWithTitle:cfCancelString.AsNSString()];
-            buttonId[ buttonCount++ ] = wxID_CANCEL;
+            [alert addAction:[UIAlertAction
+                              actionWithTitle:cfCancelString.AsNSString()
+                              style:UIAlertActionStyleCancel
+                              handler:^(UIAlertAction * action) {
+                this->ModalFinishedCallback(this, wxID_CANCEL);
+                                }]
+            ];
         }
     }
     // the MSW implementation even shows an OK button if it is not specified, we'll do the same
     else
     {
-        [alert addButtonWithTitle:cfOKString.AsNSString()];
-        buttonId[ buttonCount++ ] = wxID_OK;
+        [alert addAction:[UIAlertAction
+                          actionWithTitle:cfOKString.AsNSString()
+                          style:UIAlertActionStyleDefault
+                          handler:^(UIAlertAction * action) {
+            this->ModalFinishedCallback(this, wxID_OK);
+        }]
+        ];
         if (style & wxCANCEL)
         {
-            [alert addButtonWithTitle:cfCancelString.AsNSString()];
-            buttonId[ buttonCount++ ] = wxID_CANCEL;
+            [alert addAction:[UIAlertAction
+                              actionWithTitle:cfCancelString.AsNSString()
+                              style:UIAlertActionStyleCancel
+                              handler:^(UIAlertAction * action) {
+                this->ModalFinishedCallback(this, wxID_CANCEL);
+                                 }]
+            ];
         }
     }
 
 
-    wxNonOwnedWindow* parentWindow = NULL;
+/*
+    wxNonOwnedWindow* parentWindow = nullptr;
     int button = -1;
 
     if (GetParent())
@@ -117,7 +171,6 @@ int wxMessageDialog::ShowModal()
         parentWindow = dynamic_cast<wxNonOwnedWindow*>(wxGetTopLevelParent(GetParent()));
     }
 
-/*
     if (parentWindow)
     {
         NSWindow* nativeParent = parentWindow->GetWXWindow();
@@ -131,10 +184,24 @@ int wxMessageDialog::ShowModal()
     }
     else
 */
-    {
-        [alert show];
-    }
-    // [alert release];
 
-    return wxID_CANCEL;
+    wxNonOwnedWindow* parentWindow = nullptr;
+
+    if (GetParent())
+    {
+        parentWindow = dynamic_cast<wxNonOwnedWindow*>(wxGetTopLevelParent(GetParent()));
+    }
+
+    if (parentWindow)
+    {
+        UIWindow* nativeParent = parentWindow->GetWXWindow();
+        [nativeParent.rootViewController presentViewController:alert animated:YES completion:nil ];
+    }
+
+}
+
+void wxMessageDialog::ModalFinishedCallback(void*, int button)
+{
+    m_clickedbutton = button;
+    m_messageClosed = true;
 }

@@ -39,7 +39,7 @@ public:
     */
     wxRibbonPanelEvent(wxEventType command_type = wxEVT_NULL,
                        int win_id = 0,
-                       wxRibbonPanel* panel = NULL);
+                       wxRibbonPanel* panel = nullptr);
 
     /**
         Returns the panel relating to this event.
@@ -65,13 +65,29 @@ wxEventType wxEVT_RIBBONPANEL_EXTBUTTON_ACTIVATED;
     A panel adds a border and label to a group of controls, and can be
     minimised (either automatically to conserve space, or manually by the user).
 
-    Non ribbon controls can be placed on a panel using wxSizers to manage
+    Non-ribbon controls can be placed on a panel using wxSizers to manage
     layout. Panel size is governed by the sizer's minimum calculated size and
-    the parent wxRibbonPage's dimensions. For functional and aesthetic reasons
-    it is recommended that ribbon and non ribbon controls are not mixed in one
+    the parent wxRibbonPage's dimensions. For functional and aesthetic reasons,
+    it is recommended that ribbon and non-ribbon controls are not mixed in one
     panel.
 
-    @sa wxRibbonPage
+    A wxRibbonPage can show or hide its panels to offer a dynamic experience
+    for the end user. For example, a page can hide certain panels and show others
+    when the user interacts with other elements in the application. As an example
+    of toggling the visibility of a panel:
+
+    @code
+        wxRibbonPanel* panel = m_ribbon->GetPage(0)->GetPanelById(ID_EDITOR_PANEL);
+        if ( panel != nullptr )
+        {
+            panel->Show(!panel->IsShown());
+        }
+        // Update the UI
+        m_ribbon->Realise();
+        m_ribbon->Layout();
+    @endcode
+
+    @see wxRibbonPage
 
     @beginStyleTable
     @style{wxRIBBON_PANEL_DEFAULT_STYLE}
@@ -147,7 +163,7 @@ public:
     wxRibbonPanel(wxWindow* parent,
                   wxWindowID id = wxID_ANY,
                   const wxString& label = wxEmptyString,
-                  const wxBitmap& minimised_icon = wxNullBitmap,
+                  const wxBitmapBundle& minimised_icon = wxBitmapBundle(),
                   const wxPoint& pos = wxDefaultPosition,
                   const wxSize& size = wxDefaultSize,
                   long style = wxRIBBON_PANEL_DEFAULT_STYLE);
@@ -160,7 +176,7 @@ public:
     bool Create(wxWindow* parent,
                 wxWindowID id = wxID_ANY,
                 const wxString& label = wxEmptyString,
-                const wxBitmap& icon = wxNullBitmap,
+                const wxBitmapBundle& icon = wxBitmapBundle(),
                 const wxPoint& pos = wxDefaultPosition,
                 const wxSize& size = wxDefaultSize,
                 long style = wxRIBBON_PANEL_DEFAULT_STYLE);
@@ -174,8 +190,13 @@ public:
         Get the bitmap to be used in place of the panel children when it is
         minimised.
     */
-    wxBitmap& GetMinimisedIcon();
-    const wxBitmap& GetMinimisedIcon() const;
+    wxBitmap GetMinimisedIcon();
+
+    /**
+        Get the bitmap bundle defining the bitmap to be used in place of the
+        panel children when it is minimised.
+    */
+    const wxBitmapBundle& GetMinimisedIconBundle() const;
 
     /**
         Test if the panel has an extension button.
@@ -268,7 +289,7 @@ public:
         Get the dummy panel of an expanded panel.
 
         Note that this should be called on an expanded panel to get the dummy
-        associated with it - it will return NULL when called on the dummy
+        associated with it - it will return @NULL when called on the dummy
         itself.
 
         @see ShowExpanded()
@@ -280,11 +301,50 @@ public:
         Get the expanded panel of a dummy panel.
 
         Note that this should be called on a dummy panel to get the expanded
-        panel associated with it - it will return NULL when called on the
+        panel associated with it - it will return @NULL when called on the
         expanded panel itself.
 
         @see ShowExpanded()
         @see GetExpandedDummy()
     */
     wxRibbonPanel* GetExpandedPanel();
+
+    /**
+        Assigns the KeyTip used to click this panel's extension button.
+
+        Pass an empty string to remove it. The KeyTip is stored uppercased.
+        Only has an effect if the panel uses @c wxRIBBON_PANEL_EXT_BUTTON.
+
+        @see wxRibbonBar::ShowKeyTips()
+
+        @since 3.3.4
+    */
+    void SetExtButtonKeyTip(const wxString& keytip);
+
+    /**
+        Returns the extension button's KeyTip, or an empty string.
+
+        @since 3.3.4
+    */
+    wxString GetExtButtonKeyTip() const;
+
+    /**
+        Assigns the KeyTip used to expand this panel while it is minimised.
+
+        A minimised panel is a single button, so its children can't be reached
+        by KeyTip until it is expanded. Activating this one expands the panel
+        and leaves keyboard access mode.
+
+        Pass an empty string to remove it. The KeyTip is stored upper-cased.
+
+        @since 3.3.4
+    */
+    void SetKeyTip(const wxString& keytip);
+
+    /**
+        Returns the panel's own KeyTip, or an empty string.
+
+        @since 3.3.4
+    */
+    wxString GetKeyTip() const;
 };

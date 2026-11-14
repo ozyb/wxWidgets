@@ -18,10 +18,10 @@
 
 class wxEventLoopSource;
 class wxFDIODispatcher;
-class wxWakeUpPipeMT;
+class wxWakeUpPipe;
 
 class WXDLLIMPEXP_BASE wxConsoleEventLoop
-#ifdef __WXOSX__
+#ifdef __DARWIN__
 : public wxCFEventLoop
 #else
 : public wxEventLoopManual
@@ -33,20 +33,20 @@ public:
     virtual ~wxConsoleEventLoop();
 
     // implement base class pure virtuals
-    virtual bool Pending() const wxOVERRIDE;
-    virtual bool Dispatch() wxOVERRIDE;
-    virtual int DispatchTimeout(unsigned long timeout) wxOVERRIDE;
-    virtual void WakeUp() wxOVERRIDE;
-    virtual bool IsOk() const wxOVERRIDE { return m_dispatcher != NULL; }
+    virtual bool Pending() const override;
+    virtual bool Dispatch() override;
+    virtual int DispatchTimeout(unsigned long timeout) override;
+    virtual void WakeUp() override;
+    virtual bool IsOk() const override { return m_dispatcher != nullptr; }
 
 protected:
-    virtual void OnNextIteration() wxOVERRIDE;
-    virtual void DoYieldFor(long eventsToProcess) wxOVERRIDE;
+    virtual void OnNextIteration() override;
+    virtual void DoYieldFor(long eventsToProcess) override;
 
 private:
     // pipe used for wake up messages: when a child thread wants to wake up
     // the event loop in the main thread it writes to this pipe
-    wxWakeUpPipeMT *m_wakeupPipe;
+    wxWakeUpPipe *m_wakeupPipe;
 
     // the event loop source used to monitor this pipe
     wxEventLoopSource* m_wakeupSource;

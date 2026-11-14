@@ -8,11 +8,10 @@
 
 #include "testprec.h"
 
+#include <memory>
+
 #if wxUSE_WEBVIEW && (wxUSE_WEBVIEW_WEBKIT || wxUSE_WEBVIEW_WEBKIT2 || wxUSE_WEBVIEW_IE)
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/app.h"
@@ -25,7 +24,7 @@
     #include "wx/msw/webview_ie.h"
 #endif
 #if wxUSE_WEBVIEW_WEBKIT2
-    #include "wx/stopwatch.h"
+    #include "waitfor.h"
 #endif
 
 //Convenience macro
@@ -36,15 +35,25 @@ class WebViewTestCase
 public:
     WebViewTestCase()
         : m_browser(wxWebView::New()),
-          m_loaded(new EventCounter(m_browser, wxEVT_WEBVIEW_LOADED))
+          m_loaded(new EventCounter(m_browser.get(), wxEVT_WEBVIEW_LOADED))
     {
+#ifdef __WXMSW__
+        if (wxWebView::IsBackendAvailable(wxWebViewBackendEdge))
+        {
+            // The blank page does not have an empty title with edge
+            m_blankTitle = "about:blank";
+            // Edge does not support about: url use a different URL instead
+            m_alternateHistoryURL = "about:blank";
+        }
+        else
+#endif
+#if wxUSE_WEBVIEW_WEBKIT2
+            m_alternateHistoryURL = "about:srcdoc";
+#else
+            m_alternateHistoryURL = "about:";
+#endif
     }
 
-    ~WebViewTestCase()
-    {
-        delete m_loaded;
-        delete m_browser;
-    }
 
 protected:
     void LoadUrl(int times = 1)
@@ -56,13 +65,33 @@ protected:
             if(i % 2 == 1)
                 m_browser->LoadURL("about:blank");
             else
-                m_browser->LoadURL("about:");
+                m_browser->LoadURL(m_alternateHistoryURL);
             ENSURE_LOADED;
         }
     }
 
-    wxWebView* const m_browser;
-    EventCounter* const m_loaded;
+    void OnScriptResult(const wxWebViewEvent& evt)
+    {
+        m_asyncScriptResult = (evt.IsError()) ? 0 : 1;
+        m_asyncScriptString = evt.GetString();
+    }
+
+    void RunAsyncScript(const wxString& javascript)
+    {
+        m_browser->Bind(wxEVT_WEBVIEW_SCRIPT_RESULT, &WebViewTestCase::OnScriptResult, this);
+        m_asyncScriptResult = -1;
+        m_browser->RunScriptAsync(javascript);
+        while (m_asyncScriptResult == -1)
+            wxYield();
+        m_browser->Unbind(wxEVT_WEBVIEW_SCRIPT_RESULT, &WebViewTestCase::OnScriptResult, this);
+    }
+
+    const std::unique_ptr<wxWebView> m_browser;
+    const std::unique_ptr<EventCounter> m_loaded;
+    wxString m_blankTitle;
+    wxString m_alternateHistoryURL;
+    int m_asyncScriptResult;
+    wxString m_asyncScriptString;
 };
 
 TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
@@ -77,8 +106,12 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
     }
 #endif
 
-    m_browser -> Create(wxTheApp->GetTopWindow(), wxID_ANY);
-    ENSURE_LOADED;
+    m_browser->Create(wxTheApp->GetTopWindow(), wxID_ANY);
+
+    // The first load may need to start the browser engine processes, which
+    // can take much longer than the default timeout on slow machines. If its
+    // event arrived late, all the subsequent checks would be off by one.
+    REQUIRE( m_loaded->WaitEvent(10000) );
 
     SECTION("Title")
     {
@@ -91,7 +124,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
 
         //Test title after loading a url, we yield to let events process
         LoadUrl();
-        CHECK(m_browser->GetCurrentTitle() == "");
+        CHECK(m_browser->GetCurrentTitle() == m_blankTitle);
     }
 
     SECTION("URL")
@@ -100,7 +133,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
 
         //After first loading about:blank the next in the sequence is about:
         LoadUrl();
-        CHECK(m_browser->GetCurrentURL() == "about:");
+        CHECK(m_browser->GetCurrentURL() == m_alternateHistoryURL);
     }
 
     SECTION("History")
@@ -126,7 +159,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
         CHECK(m_browser->CanGoForward());
     }
 
-#if !wxUSE_WEBVIEW_WEBKIT2
+#if !wxUSE_WEBVIEW_WEBKIT2 && !defined(__WXOSX__)
     SECTION("HistoryEnable")
     {
         LoadUrl();
@@ -142,7 +175,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
     }
 #endif
 
-#if !wxUSE_WEBVIEW_WEBKIT2
+#if !wxUSE_WEBVIEW_WEBKIT2 && !defined(__WXOSX__)
     SECTION("HistoryClear")
     {
         LoadUrl(2);
@@ -168,7 +201,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
         ENSURE_LOADED;
 
         CHECK(m_browser->GetBackwardHistory().size() == 1);
-        CHECK(m_browser->GetForwardHistory().size() == 1);
+        REQUIRE(m_browser->GetForwardHistory().size() == 1);
 
         m_browser->LoadHistoryItem(m_browser->GetForwardHistory()[0]);
         ENSURE_LOADED;
@@ -177,6 +210,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
         CHECK(m_browser->GetBackwardHistory().size() == 2);
     }
 
+#if !defined(__WXOSX__) && (!defined(wxUSE_WEBVIEW_EDGE) || !wxUSE_WEBVIEW_EDGE)
     SECTION("Editable")
     {
         CHECK(!m_browser->IsEditable());
@@ -189,6 +223,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
 
         CHECK(!m_browser->IsEditable());
     }
+#endif
 
     SECTION("Selection")
     {
@@ -202,14 +237,27 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
         // With WebKit SelectAll() sends a request to perform the selection to
         // another process via proxy and there doesn't seem to be any way to
         // wait until this request is actually handled, so loop here for some a
-        // bit before giving up.
-        for ( wxStopWatch sw; !m_browser->HasSelection() && sw.Time() < 50; )
-            wxMilliSleep(1);
+        // bit before giving up.  Avoid calling HasSelection() right away
+        // without wxYielding a bit because this seems to cause the extension
+        // to hang with webkit 2.40.0+.
+        YieldForAWhile();
+
+        if ( IsRunningUnderWayland() )
+        {
+            // Waiting 50ms doesn't seem to be enough under Wayland, so wait
+            // for the selection to become available for longer time.
+            if ( !WaitFor("selection",
+                          [this]() { return m_browser->HasSelection(); }) )
+            {
+                return;
+            }
+        }
 #endif // wxUSE_WEBVIEW_WEBKIT2
 
         CHECK(m_browser->HasSelection());
         CHECK(m_browser->GetSelectedText() == "Some strong text");
 
+#if !defined(__WXOSX__) && (!defined(wxUSE_WEBVIEW_EDGE) || !wxUSE_WEBVIEW_EDGE)
         // The web engine doesn't necessarily represent the HTML in the same way as
         // we used above, e.g. IE uses upper case for all the tags while WebKit
         // under OS X inserts plenty of its own <span> tags, so don't test for
@@ -221,6 +269,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
             ("Unexpected selection source: \"%s\"", selSource),
             selSource.Lower().Matches("*some*<strong*strong</strong>*text*")
         );
+#endif // !defined(__WXOSX__)
 
         m_browser->ClearSelection();
         CHECK(!m_browser->HasSelection());
@@ -257,9 +306,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
         ENSURE_LOADED;
 
         wxString result;
-    #if wxUSE_WEBVIEW_IE
-        CHECK(wxWebViewIE::MSWSetModernEmulationLevel());
-
+    #if wxUSE_WEBVIEW_IE && !wxUSE_WEBVIEW_EDGE
         // Define a specialized scope guard ensuring that we reset the emulation
         // level to its default value even if any asserts below fail.
         class ResetEmulationLevel
@@ -267,19 +314,34 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
         public:
             ResetEmulationLevel()
             {
-                m_reset = true;
+                // Allow this to fail because it doesn't work in GitHub Actions
+                // environment, but the tests below still pass there.
+                if ( !wxWebViewIE::MSWSetModernEmulationLevel() )
+                {
+                    WARN("Setting IE modern emulation level failed.");
+                    m_reset = false;
+                }
+                else
+                {
+                    m_reset = true;
+                }
             }
 
-            bool DoReset()
+            void DoReset()
             {
-                m_reset = false;
-                return wxWebViewIE::MSWSetModernEmulationLevel(false);
+                if ( m_reset )
+                {
+                    m_reset = false;
+                    if ( !wxWebViewIE::MSWSetModernEmulationLevel(false) )
+                    {
+                        WARN("Resetting IE modern emulation level failed.");
+                    }
+                }
             }
 
             ~ResetEmulationLevel()
             {
-                if ( m_reset )
-                    DoReset();
+                DoReset();
             }
 
         private:
@@ -298,7 +360,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
             &result));
         CHECK(result == "\"2017-10-08T21:30:40.000Z\"");
 
-        CHECK(resetEmulationLevel.DoReset());
+        resetEmulationLevel.DoReset();
     #endif // wxUSE_WEBVIEW_IE
 
         CHECK(m_browser->RunScript("document.write(\"Hello World!\");"));
@@ -322,9 +384,9 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
         CHECK(m_browser->RunScript("function f(a){return a;}f(false);", &result));
         CHECK(result == "false");
 
-        CHECK(m_browser->RunScript("function f(){var person = new Object();person.name = 'Foo'; \
-            person.lastName = 'Bar';return person;}f();", &result));
-        CHECK(result == "{\"name\":\"Foo\",\"lastName\":\"Bar\"}");
+        CHECK(m_browser->RunScript("function f(){var person = new Object();person.lastName = 'Bar'; \
+            person.name = 'Foo';return person;}f();", &result));
+        CHECK(result == "{\"lastName\":\"Bar\",\"name\":\"Foo\"}");
 
         CHECK(m_browser->RunScript("function f(){ return [\"foo\", \"bar\"]; }f();", &result));
         CHECK(result == "[\"foo\",\"bar\"]");
@@ -337,7 +399,7 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
 
         result = "";
         CHECK(!m_browser->RunScript("int main() { return 0; }", &result));
-        CHECK(!result);
+        CHECK(result.empty());
 
         CHECK(m_browser->RunScript("function a() { return eval(\"function b() { \
             return eval(\\\"function c() { return eval(\\\\\\\"function d() { \
@@ -365,6 +427,21 @@ TEST_CASE_METHOD(WebViewTestCase, "WebView", "[wxWebView]")
         CHECK(!m_browser->RunScript("syntax(error"));
         CHECK(!m_browser->RunScript("syntax(error", &result));
         CHECK(!m_browser->RunScript("x.y.z"));
+    }
+
+    SECTION("RunScriptAsync")
+    {
+#ifdef __WXMSW__
+        // IE doesn't support async script execution
+        if (!wxWebView::IsBackendAvailable(wxWebViewBackendEdge))
+            return;
+#endif
+        RunAsyncScript("function f(a){return a;}f('Hello World!');");
+        CHECK(m_asyncScriptResult == 1);
+        CHECK(m_asyncScriptString == "Hello World!");
+
+        RunAsyncScript("int main() { return 0; }");
+        CHECK(m_asyncScriptResult == 0);
     }
 
     SECTION("SetPage")

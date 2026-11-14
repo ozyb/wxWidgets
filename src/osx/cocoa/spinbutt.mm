@@ -2,7 +2,6 @@
 // Name:        src/osx/cocoa/spinbutt.mm
 // Purpose:     wxSpinButton
 // Author:      Stefan Csomor
-// Modified by:
 // Created:     1998-01-01
 // Copyright:   (c) Stefan Csomor
 // Licence:       wxWindows licence
@@ -48,11 +47,13 @@ public :
     {
     }
 
-    virtual void SetValue(wxInt32 v) wxOVERRIDE;
-    virtual void SetMinimum(wxInt32 v) wxOVERRIDE;
-    virtual void SetMaximum(wxInt32 v) wxOVERRIDE;
-    virtual void controlAction(WXWidget slf, void* _cmd, void *sender) wxOVERRIDE;
-    virtual void mouseEvent(WX_NSEvent event, WXWidget slf, void* _cmd) wxOVERRIDE;
+    virtual void SetValue(wxInt32 v) override;
+    virtual void SetMinimum(wxInt32 v) override;
+    virtual void SetMaximum(wxInt32 v) override;
+    virtual void SetIncrement(int value) override;
+    virtual int GetIncrement() const override;
+    virtual void controlAction(WXWidget slf, void* _cmd, void *sender) override;
+    virtual void mouseEvent(WX_NSEvent event, WXWidget slf, void* _cmd) override;
 private:
     int m_formerValue;
     bool m_trackValue;
@@ -123,6 +124,16 @@ void wxSpinButtonCocoaImpl::controlAction( WXWidget WXUNUSED(slf), void *WXUNUSE
     }
 }
 
+void wxSpinButtonCocoaImpl::SetIncrement(int value)
+{
+    [(NSStepper*)m_osxView setIncrement:value];
+}
+
+int wxSpinButtonCocoaImpl::GetIncrement() const
+{
+    return [(NSStepper *) m_osxView increment];
+}
+
 wxWidgetImplType* wxWidgetImpl::CreateSpinButton( wxWindowMac* wxpeer,
                                     wxWindowMac* WXUNUSED(parent),
                                     wxWindowID WXUNUSED(id),
@@ -148,7 +159,7 @@ wxWidgetImplType* wxWidgetImpl::CreateSpinButton( wxWindowMac* wxpeer,
     if ( style & wxSP_WRAP )
         wrap = YES;
     [v setValueWraps:wrap];
-    
+
     wxWidgetCocoaImpl* c = new wxSpinButtonCocoaImpl( wxpeer, v );
     return c;
 }

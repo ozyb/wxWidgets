@@ -2,7 +2,6 @@
 // Name:        life.cpp
 // Purpose:     The game of Life, created by J. H. Conway
 // Author:      Guillermo Rodriguez Garcia, <guille@iies.es>
-// Modified by:
 // Created:     Jan/2000
 // Copyright:   (c) 2000, Guillermo Rodriguez Garcia
 // Licence:     wxWindows licence
@@ -15,9 +14,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
@@ -38,7 +34,7 @@
 // resources
 // --------------------------------------------------------------------------
 
-#if defined(__WXGTK__) || defined(__WXMOTIF__) || defined(__WXMAC__) || defined(__WXMGL__) || defined(__WXX11__) || defined(__WXQT__)
+#ifndef wxHAS_IMAGES_IN_RESOURCES
     // application icon
     #include "mondrian.xpm"
 
@@ -166,11 +162,6 @@ bool LifeApp::OnInit()
     // show it
     frame->Show(true);
 
-    // just for Motif
-#ifdef __WXMOTIF__
-    frame->UpdateInfoText();
-#endif
-
     // enter the main message loop and run the app
     return true;
 }
@@ -181,8 +172,8 @@ bool LifeApp::OnInit()
 
 // frame constructor
 LifeFrame::LifeFrame() :
-  wxFrame( (wxFrame *) NULL, wxID_ANY, _("Life!"), wxDefaultPosition ),
-  m_navigator(NULL)
+  wxFrame( nullptr, wxID_ANY, _("Life!"), wxDefaultPosition ),
+  m_navigator(nullptr)
 {
     // frame icon
     SetIcon(wxICON(mondrian));
@@ -626,7 +617,7 @@ LifeNavigator::LifeNavigator(wxWindow *parent)
         bmpe = wxBITMAP(east),
         bmps = wxBITMAP(south);
 
-#if !defined(__WXGTK__) && !defined(__WXMOTIF__) && !defined(__WXMAC__)
+#if !defined(__WXGTK__) && !defined(__WXMAC__)
     bmpn.SetMask(new wxMask(bmpn, *wxLIGHT_GREY));
     bmpw.SetMask(new wxMask(bmpw, *wxLIGHT_GREY));
     bmpc.SetMask(new wxMask(bmpc, *wxLIGHT_GREY));
@@ -763,15 +754,22 @@ void LifeCanvas::SetCellSize(int cellsize)
     Refresh(false);
 }
 
-// draw a cell
-void LifeCanvas::DrawCell(wxInt32 i, wxInt32 j, bool alive)
+// the area a cell occupies on screen
+wxRect LifeCanvas::CellRect(wxInt32 i, wxInt32 j) const
 {
-    wxClientDC dc(this);
+    return wxRect(CellToX(i), CellToY(j), m_cellsize, m_cellsize);
+}
 
-    dc.SetPen(alive? *wxBLACK_PEN : *wxWHITE_PEN);
-    dc.SetBrush(alive? *wxBLACK_BRUSH : *wxWHITE_BRUSH);
-
-    DrawCell(i, j, dc);
+// mark a cell as needing to be repainted
+//
+// Drawing on a wxClientDC outside a paint handler does not reach the screen on
+// every platform -- see wxClientDC::CanBeUsedForDrawing(), which reports false
+// under wxGTK on Wayland and on the macOS and Qt ports. Repainting from
+// OnPaint(), which already draws whatever the Life object says is alive in the
+// damaged area, works everywhere.
+void LifeCanvas::RefreshCell(wxInt32 i, wxInt32 j)
+{
+    RefreshRect(CellRect(i, j), false);
 }
 
 void LifeCanvas::DrawCell(wxInt32 i, wxInt32 j, wxDC &dc)
@@ -932,17 +930,18 @@ void LifeCanvas::OnMouse(wxMouseEvent& event)
         m_mi = i;
         m_mj = j;
         m_life->SetCell(i, j, m_status == MOUSE_DRAWING);
-        DrawCell(i, j, m_status == MOUSE_DRAWING);
+        RefreshCell(i, j);
     }
     else if ((m_mi != i) || (m_mj != j))
     {
         // no: continue ongoing action
         bool alive = (m_status == MOUSE_DRAWING);
 
-        // prepare DC and pen + brush to optimize drawing
-        wxClientDC dc(this);
-        dc.SetPen(alive? *wxBLACK_PEN : *wxWHITE_PEN);
-        dc.SetBrush(alive? *wxBLACK_BRUSH : *wxWHITE_BRUSH);
+        // Collect everything this segment touches and invalidate it in one
+        // go at the end. Repainting the whole enclosing rectangle costs a
+        // little more than the cells on the line, but the segment spans one
+        // mouse motion, and OnPaint() redraws any cell in it correctly.
+        wxRect damaged;
 
         // draw a line of cells using Bresenham's algorithm
         wxInt32 d, ii, jj, di, ai, si, dj, aj, sj;
@@ -964,7 +963,7 @@ void LifeCanvas::OnMouse(wxMouseEvent& event)
             while (ii != i)
             {
                 m_life->SetCell(ii, jj, alive);
-                DrawCell(ii, jj, dc);
+                damaged.Union(CellRect(ii, jj));
                 if (d >= 0)
                 {
                     jj += sj;
@@ -982,7 +981,7 @@ void LifeCanvas::OnMouse(wxMouseEvent& event)
             while (jj != j)
             {
                 m_life->SetCell(ii, jj, alive);
-                DrawCell(ii, jj, dc);
+                damaged.Union(CellRect(ii, jj));
                 if (d >= 0)
                 {
                     ii += si;
@@ -995,9 +994,11 @@ void LifeCanvas::OnMouse(wxMouseEvent& event)
 
         // last cell
         m_life->SetCell(ii, jj, alive);
-        DrawCell(ii, jj, dc);
+        damaged.Union(CellRect(ii, jj));
         m_mi = ii;
         m_mj = jj;
+
+        RefreshRect(damaged, false);
     }
 
     ((LifeFrame *) wxGetApp().GetTopWindow())->UpdateInfoText();
@@ -1096,8 +1097,8 @@ void LifeCanvas::OnScroll(wxScrollWinEvent& event)
         m_thumbY = m_viewportH;
     }
 
-#if defined(__WXGTK__) || defined(__WXMOTIF__)
-    // wxGTK and wxMotif update the thumb automatically (wxMSW doesn't);
+#if defined(__WXGTK__)
+    // wxGTK updates the thumb automatically (wxMSW doesn't);
     // so reset it back as we always want it to be in the same position.
     if (type != wxEVT_SCROLLWIN_THUMBTRACK)
     {
@@ -1112,12 +1113,12 @@ void LifeCanvas::OnScroll(wxScrollWinEvent& event)
     if (orient == wxHORIZONTAL)
     {
         m_viewportX += scrollinc;
-        ScrollWindow( -m_cellsize * scrollinc, 0, (const wxRect *) NULL);
+        ScrollWindow( -m_cellsize * scrollinc, 0, nullptr);
     }
     else
     {
         m_viewportY += scrollinc;
-        ScrollWindow( 0, -m_cellsize * scrollinc, (const wxRect *) NULL);
+        ScrollWindow( 0, -m_cellsize * scrollinc, nullptr);
     }
 }
 

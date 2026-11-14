@@ -2,7 +2,6 @@
 // Name:        src/msw/mediactrl_am.cpp
 // Purpose:     ActiveMovie/WMP6/PocketPC 2000 Media Backend for Windows
 // Author:      Ryan Norton <wxprojects@comcast.net>
-// Modified by:
 // Created:     01/29/05
 // Copyright:   (c) Ryan Norton
 // Licence:     wxWindows licence
@@ -36,9 +35,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_MEDIACTRL && wxUSE_ACTIVEX
 
@@ -824,44 +820,45 @@ public:
                                      const wxSize& size,
                                      long style,
                                      const wxValidator& validator,
-                                     const wxString& name) wxOVERRIDE;
+                                     const wxString& name) override;
 
-    virtual bool Play() wxOVERRIDE;
-    virtual bool Pause() wxOVERRIDE;
-    virtual bool Stop() wxOVERRIDE;
+    virtual bool Play() override;
+    virtual bool Pause() override;
+    virtual bool Stop() override;
 
-    virtual bool Load(const wxString& fileName) wxOVERRIDE;
-    virtual bool Load(const wxURI& location) wxOVERRIDE;
-    virtual bool Load(const wxURI& location, const wxURI& proxy) wxOVERRIDE;
+    virtual bool Load(const wxString& fileName) override;
+    virtual bool Load(const wxURI& location) override;
+    virtual bool Load(const wxURI& location, const wxURI& proxy) override;
 
     bool DoLoad(const wxString& location);
     void FinishLoad();
+    void FinishPlaying();
 
-    virtual wxMediaState GetState() wxOVERRIDE;
+    virtual wxMediaState GetState() override;
 
-    virtual bool SetPosition(wxLongLong where) wxOVERRIDE;
-    virtual wxLongLong GetPosition() wxOVERRIDE;
-    virtual wxLongLong GetDuration() wxOVERRIDE;
+    virtual bool SetPosition(wxLongLong where) override;
+    virtual wxLongLong GetPosition() override;
+    virtual wxLongLong GetDuration() override;
 
-    virtual void Move(int x, int y, int w, int h) wxOVERRIDE;
-    wxSize GetVideoSize() const wxOVERRIDE;
+    virtual void Move(int x, int y, int w, int h) override;
+    wxSize GetVideoSize() const override;
 
-    virtual double GetPlaybackRate() wxOVERRIDE;
-    virtual bool SetPlaybackRate(double) wxOVERRIDE;
+    virtual double GetPlaybackRate() override;
+    virtual bool SetPlaybackRate(double) override;
 
-    virtual double GetVolume() wxOVERRIDE;
-    virtual bool SetVolume(double) wxOVERRIDE;
+    virtual double GetVolume() override;
+    virtual bool SetVolume(double) override;
 
-    virtual bool ShowPlayerControls(wxMediaCtrlPlayerControls flags) wxOVERRIDE;
+    virtual bool ShowPlayerControls(wxMediaCtrlPlayerControls flags) override;
 
     void DoGetDownloadProgress(wxLongLong*, wxLongLong*);
-    virtual wxLongLong GetDownloadProgress() wxOVERRIDE
+    virtual wxLongLong GetDownloadProgress() override
     {
         wxLongLong progress, total;
         DoGetDownloadProgress(&progress, &total);
         return progress;
     }
-    virtual wxLongLong GetDownloadTotal() wxOVERRIDE
+    virtual wxLongLong GetDownloadTotal() override
     {
         wxLongLong progress, total;
         DoGetDownloadProgress(&progress, &total);
@@ -933,7 +930,7 @@ wxIMPLEMENT_DYNAMIC_CLASS(wxAMMediaBackend, wxMediaBackend);
 wxString wxAMMediaBackend::GetErrorString(HRESULT hrdsv)
 {
     wxChar szError[MAX_ERROR_TEXT_LEN];
-    if( m_lpAMGetErrorText != NULL &&
+    if( m_lpAMGetErrorText != nullptr &&
        (*m_lpAMGetErrorText)(hrdsv, szError, MAX_ERROR_TEXT_LEN) == 0)
     {
         return wxString::Format(wxT("DirectShow error \"%s\" \n")
@@ -964,12 +961,12 @@ wxString wxAMMediaBackend::GetErrorString(HRESULT hrdsv)
 // wxAMMediaBackend Constructor
 //---------------------------------------------------------------------------
 wxAMMediaBackend::wxAMMediaBackend()
-                 :m_pAX(NULL),
-                  m_pAM(NULL),
-                  m_pMP(NULL),
+                 :m_pAX(nullptr),
+                  m_pAM(nullptr),
+                  m_pMP(nullptr),
                   m_bestSize(wxDefaultSize)
 {
-   m_evthandler = NULL;
+   m_evthandler = nullptr;
 }
 
 //---------------------------------------------------------------------------
@@ -1019,11 +1016,11 @@ bool wxAMMediaBackend::CreateControl(wxControl* ctrl, wxWindow* parent,
 
     // Now determine which (if any) media player interface is
     // available - IMediaPlayer or IActiveMovie
-    if( ::CoCreateInstance(CLSID_MediaPlayer, NULL,
+    if( ::CoCreateInstance(CLSID_MediaPlayer, nullptr,
                                   CLSCTX_INPROC_SERVER,
                                   IID_IMediaPlayer, (void**)&m_pMP) != 0 )
     {
-        if( ::CoCreateInstance(CLSID_ActiveMovie, NULL,
+        if( ::CoCreateInstance(CLSID_ActiveMovie, nullptr,
                                   CLSCTX_INPROC_SERVER,
                                   IID_IActiveMovie, (void**)&m_pAM) != 0 )
             return false;
@@ -1106,7 +1103,7 @@ bool wxAMMediaBackend::Load(const wxURI& location)
 {
     //  Turn off loading from a proxy as user
     //  may have set it previously
-    INSPlay* pPlay = NULL;
+    INSPlay* pPlay = nullptr;
     GetAM()->QueryInterface(IID_INSPlay, (void**) &pPlay);
     if(pPlay)
     {
@@ -1123,7 +1120,7 @@ bool wxAMMediaBackend::Load(const wxURI& location)
 bool wxAMMediaBackend::Load(const wxURI& location, const wxURI& proxy)
 {
     // Set the proxy of the NETSHOW interface
-    INSPlay* pPlay = NULL;
+    INSPlay* pPlay = nullptr;
     GetAM()->QueryInterface(IID_INSPlay, (void**) &pPlay);
 
     if(pPlay)
@@ -1177,6 +1174,26 @@ bool wxAMMediaBackend::DoLoad(const wxString& location)
 void wxAMMediaBackend::FinishLoad()
 {
     NotifyMovieLoaded();
+}
+
+//---------------------------------------------------------------------------
+// wxAMMediaBackend::FinishPlaying
+//
+// Called when the end of the media has been reached.
+//
+// Sends the stop event and, unless it is vetoed, rewinds the media and sends
+// the finished event.
+//---------------------------------------------------------------------------
+void wxAMMediaBackend::FinishPlaying()
+{
+    if ( SendStopEvent() )
+    {
+        // Seek to beginning of movie
+        wxAMMediaBackend::SetPosition(0);
+
+        // send the event to our child
+        QueueFinishEvent();
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -1378,15 +1395,7 @@ wxLongLong wxAMMediaBackend::GetDuration()
 
         case S_OK:
             // outDuration is in seconds, we need milliseconds
-#ifdef wxLongLong_t
             return static_cast<wxLongLong_t>(outDuration * 1000);
-#else
-            // In principle it's possible to have video of duration greater
-            // than ~1193 hours which corresponds LONG_MAX in milliseconds so
-            // cast to wxLongLong first and multiply by 1000 only then to avoid
-            // the overflow (resulting in maximal duration of ~136 years).
-            return wxLongLong(static_cast<long>(outDuration)) * 1000;
-#endif
     }
 }
 
@@ -1454,14 +1463,14 @@ bool wxAMMediaBackend::SetPlaybackRate(double dRate)
 void wxAMMediaBackend::DoGetDownloadProgress(wxLongLong* pLoadProgress,
                                              wxLongLong* pLoadTotal)
 {
-    IUnknown* pFG = NULL;
+    IUnknown* pFG = nullptr;
 
     HRESULT hr = m_pAM->get_FilterGraph(&pFG);
 
-    // notice that the call above may return S_FALSE and leave pFG NULL
+    // notice that the call above may return S_FALSE and leave pFG null
     if(SUCCEEDED(hr) && pFG)
     {
-        IAMOpenProgress* pOP = NULL;
+        IAMOpenProgress* pOP = nullptr;
         hr = pFG->QueryInterface(IID_IAMOpenProgress, (void**)&pOP);
         if(SUCCEEDED(hr) && pOP)
         {
@@ -1543,17 +1552,19 @@ void wxAMMediaEvtHandler::OnActiveX(wxActiveXEvent& event)
             switch (event[1].GetInteger())
             {
             case 0: // stopping
-                if( m_amb->wxAMMediaBackend::GetPosition() ==
+                // IMediaPlayer sends endofstream event when the end of the
+                // media is reached, see below, and comparing the position
+                // with the duration doesn't work for it: at the end of the
+                // media the position is already reset to 0 when we get here,
+                // while when another media is being opened, this event is
+                // sent from inside Open() and both the position and the
+                // duration are 0, so we would wrongly consider that the
+                // media has finished playing and fail to change its position.
+                if( !m_amb->GetMP() &&
+                    m_amb->wxAMMediaBackend::GetPosition() ==
                     m_amb->wxAMMediaBackend::GetDuration() )
                 {
-                    if ( m_amb->SendStopEvent() )
-                    {
-                        // Seek to beginning of movie
-                        m_amb->wxAMMediaBackend::SetPosition(0);
-
-                        // send the event to our child
-                        m_amb->QueueFinishEvent();
-                    }
+                    m_amb->FinishPlaying();
                 }
                 else
                 {
@@ -1574,9 +1585,27 @@ void wxAMMediaEvtHandler::OnActiveX(wxActiveXEvent& event)
             event.Skip();
         break;
 
+    case 0x00000bba: // endofstream in IMediaPlayer
+        m_amb->FinishPlaying();
+        break;
+
     case 0x00000032: // opencomplete in IActiveMovie
         if(!m_bLoadEventSent)
         {
+            m_amb->FinishLoad();
+        }
+        break;
+
+    case 0x00000bc0: // newstream in IMediaPlayer
+        // This event is sent when the media has been successfully opened.
+        //
+        // Notice that we can't rely on readystatechange for IMediaPlayer:
+        // for local files and HTTP streams it goes directly from loading to
+        // complete, skipping the interactive state, and it also changes to
+        // complete when opening the media fails, before reporting the error.
+        if(!m_bLoadEventSent)
+        {
+            m_bLoadEventSent = true;
             m_amb->FinishLoad();
         }
         break;
@@ -1592,7 +1621,10 @@ void wxAMMediaEvtHandler::OnActiveX(wxActiveXEvent& event)
             // size of the video (will error) - however on 4
             // it won't play on downloaded things until it is
             // completely downloaded so we use the lesser of two evils...
+            //
+            // IMediaPlayer uses newstream event instead, see above.
             else if(event[0].GetInteger() == 3 &&
+                !m_amb->GetMP() &&
                 !m_bLoadEventSent)
             {
                 m_bLoadEventSent = true;

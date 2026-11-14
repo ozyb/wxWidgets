@@ -18,9 +18,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-#pragma hdrstop
-#endif
 
 #if wxUSE_STATBMP
 
@@ -31,6 +28,7 @@
 #endif
 
 #include "wx/osx/private.h"
+#include "wx/private/bmpbndl.h"
 
 class wxStaticBitmapIPhoneImpl : public wxWidgetIPhoneImpl
 {
@@ -44,9 +42,16 @@ public :
     {
     }
 
-	void SetLabel( const wxString& title, wxFontEncoding encoding ) wxOVERRIDE
+    void SetLabel( const wxString& /*title*/ ) override
     {
         // although NSControl has this method, NSImageView throws an exception if it is called
+    }
+
+    void SetBitmap( const wxBitmapBundle& bitmap ) wxOVERRIDE
+    {
+        UIImageView* v = (UIImageView*) m_osxView;
+        [v setImage: wxOSXGetImageFromBundle(bitmap)];
+        [v setNeedsDisplay];
     }
 
     void SetScaleMode(wxStaticBitmap::ScaleMode scaleMode)
@@ -85,7 +90,7 @@ void wxStaticBitmap::SetScaleMode(ScaleMode scaleMode)
 wxWidgetImplType* wxWidgetImpl::CreateStaticBitmap( wxWindowMac* wxpeer,
                                                    wxWindowMac* WXUNUSED(parent),
                                                    wxWindowID WXUNUSED(id),
-                                                   const wxBitmap& bitmap,
+                                                   const wxBitmapBundle& WXUNUSED(bitmap),
                                                    const wxPoint& pos,
                                                    const wxSize& size,
                                                    long WXUNUSED(style),

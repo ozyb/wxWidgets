@@ -2,7 +2,6 @@
 // Name:        src/generic/fontpickerg.cpp
 // Purpose:     wxGenericFontButton class implementation
 // Author:      Francesco Montorsi
-// Modified by:
 // Created:     15/04/2006
 // Copyright:   (c) Francesco Montorsi
 // Licence:     wxWindows licence
@@ -19,11 +18,12 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_FONTPICKERCTRL
+
+#ifndef WX_PRECOMP
+    #include "wx/settings.h"
+#endif // WX_PRECOMP
 
 #include "wx/fontpicker.h"
 
@@ -60,6 +60,8 @@ bool wxGenericFontButton::Create( wxWindow *parent, wxWindowID id,
     // and handle user clicks on it
     Bind(wxEVT_BUTTON, &wxGenericFontButton::OnButtonClick, this, GetId());
 
+    Bind(wxEVT_SYS_COLOUR_CHANGED, &wxGenericFontButton::OnSysColourChanged, this);
+
     InitFontData();
 
     m_selectedFont = initial.IsOk() ? initial : *wxNORMAL_FONT;
@@ -71,7 +73,7 @@ bool wxGenericFontButton::Create( wxWindow *parent, wxWindowID id,
 void wxGenericFontButton::InitFontData()
 {
     m_data.SetAllowSymbols(true);
-    m_data.SetColour(*wxBLACK);
+    m_data.SetColour(wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT));
     m_data.EnableEffects(true);
 }
 
@@ -80,6 +82,9 @@ void wxGenericFontButton::OnButtonClick(wxCommandEvent& WXUNUSED(ev))
     // update the wxFontData to be shown in the dialog
     m_data.SetInitialFont(m_selectedFont);
 
+    // Save the text colour to compare later.
+    const wxColour savedColour = m_data.GetColour();
+
     // create the font dialog and display it
     wxFontDialog dlg(this, m_data);
     if (dlg.ShowModal() == wxID_OK)
@@ -87,10 +92,25 @@ void wxGenericFontButton::OnButtonClick(wxCommandEvent& WXUNUSED(ev))
         m_data = dlg.GetFontData();
         SetSelectedFont(m_data.GetChosenFont());
 
+        if ( m_data.GetColour() != savedColour )
+            m_useUserColour = true;
+
         // fire an event
         wxFontPickerEvent event(this, GetId(), m_selectedFont);
         GetEventHandler()->ProcessEvent(event);
     }
+}
+
+void wxGenericFontButton::OnSysColourChanged(wxSysColourChangedEvent& event)
+{
+    if ( !m_useUserColour )
+    {
+        const wxColour defaultColour = wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT);
+        m_data.SetColour(defaultColour);
+        SetForegroundColour(defaultColour);
+    }
+
+    event.Skip();
 }
 
 void wxGenericFontButton::UpdateFont()

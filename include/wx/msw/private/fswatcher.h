@@ -11,6 +11,7 @@
 #define WX_MSW_PRIVATE_FSWATCHER_H_
 
 #include "wx/filename.h"
+#include "wx/thread.h"
 #include "wx/vector.h"
 #include "wx/msw/private.h"
 
@@ -34,6 +35,15 @@ public:
         // get handle for this path
         m_handle = OpenDir(m_path);
         m_overlapped = (OVERLAPPED*)calloc(1, sizeof(OVERLAPPED));
+        // The IOCP receives read completions, but the event gives
+        // GetOverlappedResult(..., TRUE) a handle to wait on after CancelIoEx(),
+        // so the OVERLAPPED object and buffer are not freed until the pending
+        // ReadDirectoryChangesW() call has really finished.
+        m_overlapped->hEvent = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);
+        if ( !m_overlapped->hEvent )
+        {
+            wxLogLastError("Failed to create event for path monitoring");
+        }
         wxZeroMemory(m_buffer);
     }
 
@@ -43,18 +53,65 @@ public:
 
         if (m_handle != INVALID_HANDLE_VALUE)
         {
-            if (!CloseHandle(m_handle))
+            if ( m_overlapped )
             {
-                wxLogSysError(_("Unable to close the handle for '%s'"),
-                                m_path);
+                // The event buffer and OVERLAPPED object must remain alive
+                // until the asynchronous read has really completed.
+                if ( !::CancelIoEx(m_handle, m_overlapped) )
+                {
+                    const DWORD err = ::GetLastError();
+                    // ERROR_NOT_FOUND means the asynchronous read isn't
+                    // pending any more. This can happen on the normal removal
+                    // path, after the IOCP worker dequeues its completion and
+                    // drops the final reference to this watch. There is then
+                    // nothing left for GetOverlappedResult(..., TRUE) to wait
+                    // for before freeing the OVERLAPPED object and buffer.
+                    if ( err != ERROR_NOT_FOUND )
+                    {
+                        wxLogDebug("Unable to cancel the watch for '%s': %s",
+                                   m_path, wxSysErrorMsgStr(err));
+                    }
+                }
+                else
+                {
+                    DWORD bytes = 0;
+                    if ( !::GetOverlappedResult(m_handle, m_overlapped, &bytes,
+                                                TRUE /* wait */) )
+                    {
+                        const DWORD err = ::GetLastError();
+                        if ( err != ERROR_OPERATION_ABORTED )
+                        {
+                            wxLogSysError(err,
+                                          _("Unable to finish cancelling the "
+                                            "watch for '%s'"),
+                                          m_path);
+                        }
+                    }
+                }
+            }
+
+            if ( !::CloseHandle(m_handle) )
+            {
+                wxLogDebug("Unable to close the watch handle for '%s': %s",
+                           m_path, wxSysErrorMsgStr());
             }
         }
-        free(m_overlapped);
+        if ( m_overlapped )
+        {
+            if ( m_overlapped->hEvent && !::CloseHandle(m_overlapped->hEvent) )
+            {
+                wxLogDebug("Unable to close the watch event for '%s': %s",
+                           m_path, wxSysErrorMsgStr());
+            }
+
+            free(m_overlapped);
+        }
     }
 
     bool IsOk() const
     {
-        return m_handle != INVALID_HANDLE_VALUE;
+        return m_handle != INVALID_HANDLE_VALUE &&
+               m_overlapped && m_overlapped->hEvent;
     }
 
     HANDLE GetHandle() const
@@ -82,11 +139,11 @@ private:
                                    FILE_SHARE_READ |
                                    FILE_SHARE_WRITE |
                                    FILE_SHARE_DELETE,
-                                   NULL,
+                                   nullptr,
                                    OPEN_EXISTING,
                                    FILE_FLAG_BACKUP_SEMANTICS |
                                    FILE_FLAG_OVERLAPPED,
-                                   NULL);
+                                   nullptr);
         if (handle == INVALID_HANDLE_VALUE)
         {
             wxLogSysError(_("Failed to open directory \"%s\" for monitoring."),
@@ -118,6 +175,9 @@ public:
 
     ~wxIOCPService()
     {
+        m_watches.clear();
+        m_removedWatches.clear();
+
         if (m_iocp != INVALID_HANDLE_VALUE)
         {
             if (!CloseHandle(m_iocp))
@@ -125,7 +185,6 @@ public:
                 wxLogSysError(_("Unable to close I/O completion port handle"));
             }
         }
-        m_watches.clear();
     }
 
     // associates a wxFSWatchEntryMSW with completion port
@@ -134,10 +193,12 @@ public:
         wxCHECK_MSG( m_iocp != INVALID_HANDLE_VALUE, false, "IOCP not init" );
         wxCHECK_MSG( watch->IsOk(), false, "Invalid watch" );
 
+        wxCriticalSectionLocker lock(m_critsect);
+
         // associate with IOCP
         HANDLE ret = CreateIoCompletionPort(watch->GetHandle(), m_iocp,
                                             (ULONG_PTR)watch.get(), 0);
-        if (ret == NULL)
+        if (ret == nullptr)
         {
             wxLogSysError(_("Unable to associate handle with "
                             "I/O completion port"));
@@ -163,6 +224,8 @@ public:
         wxCHECK_MSG( m_iocp != INVALID_HANDLE_VALUE, false, "IOCP not init" );
         wxCHECK_MSG( watch->IsOk(), false, "Invalid watch" );
 
+        wxCriticalSectionLocker lock(m_critsect);
+
         const wxString path = watch->GetPath();
         wxFSWatchEntries::iterator it = m_watches.find(path);
         wxCHECK_MSG( it != m_watches.end(), false,
@@ -185,6 +248,8 @@ public:
     // this case we'll just return false and do nothing.
     bool CompleteRemoval(wxFSWatchEntryMSW* watch)
     {
+        wxCriticalSectionLocker lock(m_critsect);
+
         for ( Watches::iterator it = m_removedWatches.begin();
               it != m_removedWatches.end();
               ++it )
@@ -201,13 +266,30 @@ public:
         return false;
     }
 
+    // Forget a watch successfully passed to Add() if no read could be started
+    // for it: as there is no pending I/O using it, it can be dropped at once.
+    void CancelAdd(const wxSharedPtr<wxFSWatchEntryMSW>& watch)
+    {
+        wxCriticalSectionLocker lock(m_critsect);
+
+        const auto it = m_watches.find(watch->GetPath());
+
+        if ( it != m_watches.end() && it->second.get() == watch.get() )
+        {
+            m_watches.erase(it);
+            return;
+        }
+
+        wxFAIL_MSG("No watch to cancel");
+    }
+
     // post completion packet
     bool PostEmptyStatus()
     {
         wxCHECK_MSG( m_iocp != INVALID_HANDLE_VALUE, false, "IOCP not init" );
 
         // The special values of 0 will make GetStatus() return Status_Exit.
-        const int ret = PostQueuedCompletionStatus(m_iocp, 0, 0, NULL);
+        const int ret = PostQueuedCompletionStatus(m_iocp, 0, 0, nullptr);
         if (!ret)
         {
             wxLogSysError(_("Unable to post completion status"));
@@ -242,7 +324,7 @@ public:
         wxCHECK_MSG( m_iocp != INVALID_HANDLE_VALUE, Status_Error,
                      "Invalid IOCP object" );
         wxCHECK_MSG( count && watch && overlapped, Status_Error,
-                     "Output parameters can't be NULL" );
+                     "Output parameters can't be null" );
 
         const int ret = GetQueuedCompletionStatus(m_iocp, count, (ULONG_PTR *)watch,
                                             overlapped, INFINITE);
@@ -251,15 +333,20 @@ public:
             return *count || *watch || *overlapped ? Status_OK : Status_Exit;
         }
 
+        const DWORD err = wxSysErrorCode();
+
+        if ( err == ERROR_OPERATION_ABORTED && *watch )
+            return Status_OK;
+
         // An error is returned if the underlying directory has been deleted,
         // but this is not really an unexpected failure, so handle it
         // specially.
-        if ( wxSysErrorCode() == ERROR_ACCESS_DENIED &&
-                *watch && !wxFileName::DirExists((*watch)->GetPath()) )
+        if ( err == ERROR_ACCESS_DENIED &&
+             *watch && !wxFileName::DirExists((*watch)->GetPath()) )
             return Status_Deleted;
 
         // Some other error, at least log it.
-        wxLogSysError(_("Unable to dequeue completion packet"));
+        wxLogSysError(err, _("Unable to dequeue completion packet"));
 
         return Status_Error;
     }
@@ -267,15 +354,19 @@ public:
 protected:
     bool Init()
     {
-        m_iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-        if (m_iocp == NULL)
+        m_iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
+        if (m_iocp == nullptr)
         {
             wxLogSysError(_("Unable to create I/O completion port"));
         }
-        return m_iocp != NULL;
+        return m_iocp != nullptr;
     }
 
     HANDLE m_iocp;
+
+    // Protects the watch lists shared by the user thread and IOCP thread.
+    // wxFSWatcherImplMSW::SetUpWatch() holds it while starting a new read.
+    wxCriticalSection m_critsect;
 
     // The hash containing all the wxFSWatchEntryMSW objects currently being
     // watched keyed by their paths.
@@ -284,6 +375,8 @@ protected:
     // Contains the watches which had been removed but are still pending.
     typedef wxVector< wxSharedPtr<wxFSWatchEntryMSW> > Watches;
     Watches m_removedWatches;
+
+    friend class wxFSWatcherImplMSW;
 };
 
 
@@ -297,7 +390,7 @@ public:
 
 protected:
     // structure to hold information needed to process one native event
-    // this is just a dummy holder, so it doesn't take ownership of it's data
+    // this is just a dummy holder, so it doesn't take ownership of its data
     struct wxEventProcessingData
     {
         wxEventProcessingData(const FILE_NOTIFY_INFORMATION* ne,
@@ -309,7 +402,7 @@ protected:
         const wxFSWatchEntryMSW* watch;
     };
 
-    virtual ExitCode Entry() wxOVERRIDE;
+    virtual ExitCode Entry() override;
 
     // wait for events to occur, read them and send to interested parties
     // returns false it empty status was read, which means we would exit

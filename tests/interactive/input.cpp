@@ -16,9 +16,6 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/app.h"
 #include "wx/wxcrt.h"           // for wxPuts
@@ -29,51 +26,21 @@
 // ----------------------------------------------------------------------------
 
 #define TEST_SNGLINST
-#define TEST_FTP
+#if wxUSE_PROTOCOL_FTP
+    #define TEST_FTP
+#endif
 #define TEST_INFO_FUNCTIONS
 #if wxUSE_REGEX
     #define TEST_REGEX
 #endif
 #define TEST_DATETIME
 
-// ----------------------------------------------------------------------------
-// test class
-// ----------------------------------------------------------------------------
-
-class InteractiveInputTestCase : public CppUnit::TestCase
-{
-public:
-    InteractiveInputTestCase() { }
-
-private:
-    CPPUNIT_TEST_SUITE( InteractiveInputTestCase );
-        CPPUNIT_TEST( TestSingleIstance );
-        CPPUNIT_TEST( TestFtpInteractive );
-        CPPUNIT_TEST( TestDiskInfo );
-        CPPUNIT_TEST( TestRegExInteractive );
-        CPPUNIT_TEST( TestDateTimeInteractive );
-    CPPUNIT_TEST_SUITE_END();
-
-    void TestSingleIstance();
-    void TestFtpInteractive();
-    void TestDiskInfo();
-    void TestRegExInteractive();
-    void TestDateTimeInteractive();
-
-    wxDECLARE_NO_COPY_CLASS(InteractiveInputTestCase);
-};
-
-// ----------------------------------------------------------------------------
-// CppUnit macros
-// ----------------------------------------------------------------------------
-
-// Register this test case as hidden, it shouldn't be run by default.
-wxREGISTER_UNIT_TEST_WITH_TAGS(InteractiveInputTestCase,
-                               "[!hide][interactive][input]");
-
 // ============================================================================
-// implementation
+// tests
 // ============================================================================
+
+// Note that all the tests here are hidden, i.e. not run by default, as they
+// require user interaction.
 
 // ----------------------------------------------------------------------------
 // misc information functions
@@ -81,7 +48,7 @@ wxREGISTER_UNIT_TEST_WITH_TAGS(InteractiveInputTestCase,
 
 #include "wx/utils.h"
 
-void InteractiveInputTestCase::TestDiskInfo()
+TEST_CASE("InteractiveInput::DiskInfo", "[!hide][interactive][input]")
 {
 #ifdef TEST_INFO_FUNCTIONS
     wxPuts(wxT("*** Testing wxGetDiskSpace() ***"));
@@ -126,7 +93,7 @@ void InteractiveInputTestCase::TestDiskInfo()
 
 #include "wx/regex.h"
 
-void InteractiveInputTestCase::TestRegExInteractive()
+TEST_CASE("InteractiveInput::RegExInteractive", "[!hide][interactive][input]")
 {
 #ifdef TEST_REGEX
     wxPuts(wxT("*** Testing RE interactively ***"));
@@ -202,7 +169,7 @@ void InteractiveInputTestCase::TestRegExInteractive()
     static const wxChar *hostname = "localhost";
 #endif
 
-void InteractiveInputTestCase::TestFtpInteractive()
+TEST_CASE("InteractiveInput::FtpInteractive", "[!hide][interactive][input]")
 {
 #ifdef TEST_FTP
     wxFTP ftp;
@@ -301,7 +268,7 @@ void InteractiveInputTestCase::TestFtpInteractive()
 #include "wx/math.h"
 #include "wx/datetime.h"
 
-void InteractiveInputTestCase::TestDateTimeInteractive()
+TEST_CASE("InteractiveInput::DateTimeInteractive", "[!hide][interactive][input]")
 {
 #ifdef TEST_DATETIME
     wxPuts(wxT("\n*** interactive wxDateTime tests ***"));
@@ -352,7 +319,7 @@ void InteractiveInputTestCase::TestDateTimeInteractive()
 
 #include "wx/snglinst.h"
 
-void InteractiveInputTestCase::TestSingleIstance()
+TEST_CASE("InteractiveInput::SingleIstance", "[!hide][interactive][input]")
 {
 #ifdef TEST_SNGLINST
     wxPuts(wxT("\n*** Testing wxSingleInstanceChecker ***"));

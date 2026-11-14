@@ -2,7 +2,6 @@
 // Name:        src/common/statboxcmn.cpp
 // Purpose:     wxStaticBox common code
 // Author:      Julian Smart
-// Modified by:
 // Created:     04/01/98
 // Copyright:   (c) Julian Smart
 // Licence:     wxWindows licence
@@ -19,9 +18,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_STATBOX
 
@@ -31,7 +27,7 @@ extern WXDLLEXPORT_DATA(const char) wxStaticBoxNameStr[] = "groupBox";
 
 wxStaticBoxBase::wxStaticBoxBase()
 {
-    m_labelWin = NULL;
+    m_labelWin = nullptr;
     m_areChildrenEnabled = true;
 
 #ifndef __WXGTK__
@@ -61,18 +57,16 @@ void wxStaticBoxBase::WXDestroyWithoutChildren()
     // Reparent() calls in the loop.
     const wxWindowList children = GetChildren();
     wxWindow* const parent = GetParent();
-    for ( wxWindowList::const_iterator i = children.begin();
-          i != children.end();
-          ++i )
+    for ( const auto& child : children )
     {
         // The label window doesn't count as our child, it's really a part of
         // static box itself and it makes no sense to leave it alive when the
         // box is destroyed, so do it even when it's supposed to be destroyed
         // without destroying its children -- by not reparenting it, we ensure
         // that it's destroyed when this object itself is below.
-        if ( *i != m_labelWin )
+        if ( child != m_labelWin )
         {
-            (*i)->Reparent(parent);
+            child->Reparent(parent);
         }
     }
 
@@ -100,12 +94,10 @@ bool wxStaticBoxBase::Enable(bool enable)
         m_areChildrenEnabled = enable;
 
         const wxWindowList& children = GetChildren();
-        for ( wxWindowList::const_iterator i = children.begin();
-              i != children.end();
-              ++i )
+        for ( const auto& child : children )
         {
-            if ( *i != m_labelWin )
-                (*i)->Enable(enable);
+            if ( child != m_labelWin )
+                child->Enable(enable);
         }
 
         return true;
@@ -141,7 +133,6 @@ wxBEGIN_FLAGS( wxStaticBoxStyle )
     // standard window styles
     wxFLAGS_MEMBER(wxTAB_TRAVERSAL)
     wxFLAGS_MEMBER(wxCLIP_CHILDREN)
-    wxFLAGS_MEMBER(wxTRANSPARENT_WINDOW)
     wxFLAGS_MEMBER(wxWANTS_CHARS)
     wxFLAGS_MEMBER(wxFULL_REPAINT_ON_RESIZE)
     wxFLAGS_MEMBER(wxALWAYS_SHOW_SB )

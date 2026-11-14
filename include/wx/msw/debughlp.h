@@ -17,20 +17,15 @@
 #include "wx/dynlib.h"
 #include "wx/msw/wrapwin.h"
 
-#ifdef __VISUALC__
-    // Disable a warning that we can do nothing about: we get it at least for
-    // imagehlp.h from 8.1 Windows kit when using VC14.
-    #pragma warning(push)
+// Disable a warning that we can do nothing about: we get it at least for
+// imagehlp.h from 8.1 Windows kit when using VC14.
 
-    // 'typedef ': ignored on left of '' when no variable is declared
-    #pragma warning(disable:4091)
-#endif
+// 'typedef ': ignored on left of '' when no variable is declared
+wxMSVC_WARNING_SUPPRESS(4091)
 
 #include <imagehlp.h>
 
-#ifdef __VISUALC__
-  #pragma warning(pop)
-#endif
+wxMSVC_WARNING_RESTORE(4091)
 
 #include "wx/msw/private.h"
 
@@ -116,21 +111,12 @@ typedef BOOL
 
 #endif // API_VERSION_NUMBER < 10/*}}}*/
 
-// wx-prefixed types map to either the ANSI or Unicode ("W") version depending
-// on the build of wx itself.
-#ifdef UNICODE
-    #define wxPSYM_ENUMERATESYMBOLS_CALLBACK PSYM_ENUMERATESYMBOLS_CALLBACKW
-#else // !UNICODE
-    #define wxPSYM_ENUMERATESYMBOLS_CALLBACK PSYM_ENUMERATESYMBOLS_CALLBACK
-#endif // UNICODE/!UNICODE
+// wx-prefixed types map to Unicode ("W") version
+#define wxPSYM_ENUMERATESYMBOLS_CALLBACK PSYM_ENUMERATESYMBOLS_CALLBACKW
 
 // This one could be already defined by wx/msw/stackwalk.h
 #ifndef wxSYMBOL_INFO
-    #ifdef UNICODE
-        #define wxSYMBOL_INFO SYMBOL_INFOW
-    #else // !UNICODE
-        #define wxSYMBOL_INFO SYMBOL_INFO
-    #endif // UNICODE/!UNICODE
+    #define wxSYMBOL_INFO SYMBOL_INFOW
 #endif // !defined(wxSYMBOL_INFO)
 
 typedef wxSYMBOL_INFO* wxPSYMBOL_INFO;
@@ -391,7 +377,7 @@ private:
     // dereference the given symbol, i.e. return symbol which is not a
     // pointer/reference any more
     //
-    // if ppData != NULL, dereference the pointer as many times as we
+    // if ppData != nullptr, dereference the pointer as many times as we
     // dereferenced the symbol
     //
     // return the tag of the dereferenced symbol

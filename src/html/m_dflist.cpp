@@ -3,14 +3,12 @@
 // Purpose:     wxHtml module for definition lists (DL,DT,DD)
 // Author:      Vaclav Slavik
 // Copyright:   (c) 1999 Vaclav Slavik
+//              (c) 2026 wxWidgets development team
 // Licence:     wxWindows licence
 /////////////////////////////////////////////////////////////////////////////
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_HTML && wxUSE_STREAMS
 
@@ -29,7 +27,13 @@ FORCE_LINK_ME(m_dflist)
 
 TAG_HANDLER_BEGIN(DEFLIST, "DL,DT,DD" )
 
-    TAG_HANDLER_CONSTR(DEFLIST) { }
+    TAG_HANDLER_VARS
+        int m_ListDepth;
+
+    TAG_HANDLER_CONSTR(DEFLIST)
+    {
+        m_ListDepth = 0;
+    }
 
     TAG_HANDLER_PROC(tag)
     {
@@ -38,16 +42,21 @@ TAG_HANDLER_BEGIN(DEFLIST, "DL,DT,DD" )
 
         if (tag.GetName() == wxT("DL"))
         {
-            if (m_WParser->GetContainer()->GetFirstChild() != NULL)
+            if (m_WParser->GetContainer()->GetFirstChild() != nullptr ||
+                    m_WParser->GetContainer()->HasId())
             {
                 m_WParser->CloseContainer();
                 m_WParser->OpenContainer();
             }
+            m_WParser->GetContainer()->CopyId(tag);
             m_WParser->GetContainer()->SetIndent(m_WParser->GetCharHeight(), wxHTML_INDENT_TOP);
 
+            m_ListDepth++;
             ParseInner(tag);
+            m_ListDepth--;
 
-            if (m_WParser->GetContainer()->GetFirstChild() != NULL)
+            if (m_WParser->GetContainer()->GetFirstChild() != nullptr ||
+                    m_WParser->GetContainer()->HasId())
             {
                 m_WParser->CloseContainer();
                 m_WParser->OpenContainer();
@@ -60,15 +69,22 @@ TAG_HANDLER_BEGIN(DEFLIST, "DL,DT,DD" )
         {
             m_WParser->CloseContainer();
             c = m_WParser->OpenContainer();
+            c->CopyId(tag);
             c->SetAlignHor(wxHTML_ALIGN_LEFT);
             c->SetMinHeight(m_WParser->GetCharHeight());
             return false;
         }
         else // "DD"
         {
+            // m_ListDepth is already incremented while parsing a DL body.
+            // Treat a standalone DD as first-level for compatibility.
+            const int depth = m_ListDepth == 0 ? 1 : m_ListDepth;
+
             m_WParser->CloseContainer();
             c = m_WParser->OpenContainer();
-            c->SetIndent(5 * m_WParser->GetCharWidth(), wxHTML_INDENT_LEFT);
+            c->CopyId(tag);
+            c->SetIndent(5 * depth * m_WParser->GetCharWidth(),
+                         wxHTML_INDENT_LEFT);
             return false;
         }
     }

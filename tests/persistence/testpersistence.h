@@ -27,7 +27,7 @@ public:
     }
 
     // Access the config object used for storing the settings.
-    const wxConfigBase& GetConfig() const
+    wxConfigBase& GetConfig() const
     {
         return *m_manager.GetConfig();
     }
@@ -46,12 +46,12 @@ private:
         {
         }
 
-        ~TestPersistenceManager() wxOVERRIDE
+        ~TestPersistenceManager() override
         {
             m_config.DeleteAll();
         }
 
-        wxConfigBase* GetConfig() const wxOVERRIDE
+        wxConfigBase* GetConfig() const override
         {
             return const_cast<wxConfig*>(&m_config);
         }

@@ -33,15 +33,12 @@
     #include <stat.h>
 #endif
 
-#if wxUSE_STD_IOSTREAM
-    #include <fstream>
-#endif
-
 #include "wx/filefn.h"
 #include "wx/sysopt.h"
 #include "wx/thread.h"
 
 #include "wx/osx/private.h"
+#include "wx/osx/private/available.h"
 
 wxBEGIN_EVENT_TABLE(wxTextCtrl, wxTextCtrlBase)
     EVT_DROP_FILES(wxTextCtrl::OnDropFiles)
@@ -71,7 +68,7 @@ void wxTextCtrl::Init()
 {
     m_dirty = false;
 
-    m_privateContextMenu = NULL;
+    m_privateContextMenu = nullptr;
 }
 
 wxTextCtrl::~wxTextCtrl()
@@ -92,9 +89,6 @@ bool wxTextCtrl::Create( wxWindow *parent,
 {
     DontCreatePeer();
     m_editable = true ;
-
-    if ( ! (style & wxNO_BORDER) )
-        style = (style & ~wxBORDER_MASK) | wxSUNKEN_BORDER ;
 
     if ( !wxTextCtrlBase::Create( parent, id, pos, size, style & ~(wxHSCROLL | wxVSCROLL), validator, name ) )
         return false;
@@ -124,9 +118,17 @@ void wxTextCtrl::MacVisibilityChanged()
 {
 }
 
+#if WXWIN_COMPATIBILITY_3_0 && wxUSE_SPELLCHECK
 void wxTextCtrl::MacCheckSpelling(bool check)
 {
-    GetTextPeer()->CheckSpelling(check);
+    GetTextPeer()->CheckSpelling(check ? wxTextProofOptions::Default()
+                                       : wxTextProofOptions::Disable());
+}
+#endif // WXWIN_COMPATIBILITY_3_0 && wxUSE_SPELLCHECK
+
+void wxTextCtrl::OSXEnableNewLineReplacement(bool enable)
+{
+    GetTextPeer()->EnableNewLineReplacement(enable);
 }
 
 void wxTextCtrl::OSXEnableAutomaticQuoteSubstitution(bool enable)
@@ -145,12 +147,27 @@ void wxTextCtrl::OSXDisableAllSmartSubstitutions()
     OSXEnableAutomaticQuoteSubstitution(false);
 }
 
+wxTextSearchResult wxTextCtrl::SearchText(const wxTextSearch& search) const
+{
+    return GetTextPeer()->SearchText(search);
+}
+
+wxString wxTextCtrl::GetRTFValue() const
+{
+    return GetTextPeer()->GetRTFValue();
+}
+
+void wxTextCtrl::SetRTFValue(const wxString& val)
+{
+    GetTextPeer()->SetRTFValue(val);
+}
+
 bool wxTextCtrl::SetFont( const wxFont& font )
 {
     if ( !wxTextCtrlBase::SetFont( font ) )
         return false ;
 
-    GetPeer()->SetFont( font , GetForegroundColour() , GetWindowStyle(), false /* dont ignore black */ ) ;
+    GetPeer()->SetFont(font) ;
 
     return true ;
 }
@@ -192,6 +209,7 @@ wxSize wxTextCtrl::DoGetBestSize() const
 wxSize wxTextCtrl::DoGetSizeFromTextSize(int xlen, int ylen) const
 {
     static const int TEXTCTRL_BORDER_SIZE = 5;
+    static const int TEXTCTRL_MAX_EMPTY_WIDTH = 5;
 
     // Compute the default height if not specified.
     int hText = ylen;
@@ -200,22 +218,24 @@ wxSize wxTextCtrl::DoGetSizeFromTextSize(int xlen, int ylen) const
         // these are the numbers from the HIG:
         switch ( m_windowVariant )
         {
-            case wxWINDOW_VARIANT_NORMAL :
-                hText = 22;
-                break ;
-
             case wxWINDOW_VARIANT_SMALL :
                 hText = 19;
                 break ;
 
             case wxWINDOW_VARIANT_MINI :
-                hText = 15;
+                hText = 16;
                 break ;
 
+            case wxWINDOW_VARIANT_NORMAL :
             default :
-                hText = 22;
+                hText = 21;
                 break ;
         }
+
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_26_0
+        if ( WX_IS_MACOS_AVAILABLE(26, 0) )
+            hText += 3;
+#endif
 
         // the numbers above include the border size, so subtract it before
         // possibly adding it back below
@@ -229,11 +249,15 @@ wxSize wxTextCtrl::DoGetSizeFromTextSize(int xlen, int ylen) const
 
     // Keep using the same default 100px width as was used previously in the
     // special case of having invalid width.
-    wxSize size(xlen > 0 ? xlen : 100, hText);
+    // since this method is now called with native field widths, an empty field still
+    // has small positive xlen, therefore don't compare just with > 0 anymore
+    wxSize size(xlen > TEXTCTRL_MAX_EMPTY_WIDTH ? xlen : 100, hText);
+
+    // !!! Any changes to these adjustments must be mirrored in wxNSTextFieldControl::GetBestSize() !!!
 
     // Use extra margin size which works under macOS 10.15: note that we don't
     // need the vertical margin when using the automatically determined hText.
-    if ( xlen > 0 )
+    if ( xlen > TEXTCTRL_MAX_EMPTY_WIDTH )
         size.x += 4;
     if ( ylen > 0 )
         size.y += 2;
@@ -242,6 +266,17 @@ wxSize wxTextCtrl::DoGetSizeFromTextSize(int xlen, int ylen) const
         size += wxSize(TEXTCTRL_BORDER_SIZE, TEXTCTRL_BORDER_SIZE) ;
 
     return size;
+}
+
+void wxTextCtrl::DoSetSize(int x, int y, int width, int height, int sizeFlags)
+{
+    wxTextCtrlBase::DoSetSize(x, y, width, height, sizeFlags);
+    wxWindow* parent = GetParent();
+    if ( parent && parent->MacIsUserPane() && GetPosition().y == 0 )
+    {
+        if ( parent->MacDoesClipToBounds() )
+            parent->MacClipsToBounds(false);
+    }
 }
 
 bool wxTextCtrl::GetStyle(long position, wxTextAttr& style)
@@ -257,6 +292,13 @@ void wxTextCtrl::MarkDirty()
 void wxTextCtrl::DiscardEdits()
 {
     m_dirty = false;
+}
+
+void wxTextCtrl::EmptyUndoBuffer()
+{
+    wxCHECK_RET( GetTextPeer(), "Must create the control first" );
+
+    GetTextPeer()->EmptyUndoBuffer() ;
 }
 
 int wxTextCtrl::GetNumberOfLines() const
@@ -333,6 +375,22 @@ void wxTextCtrl::Paste()
     }
 }
 
+#if wxUSE_SPELLCHECK
+
+bool wxTextCtrl::EnableProofCheck(const wxTextProofOptions& options)
+{
+    GetTextPeer()->CheckSpelling(options);
+
+    return true;
+}
+
+wxTextProofOptions wxTextCtrl::GetProofCheckOptions() const
+{
+    return GetTextPeer()->GetCheckingOptions();
+}
+
+#endif // wxUSE_SPELLCHECK
+
 void wxTextCtrl::OnDropFiles(wxDropFilesEvent& event)
 {
     // By default, load the first file into the text window.
@@ -342,7 +400,7 @@ void wxTextCtrl::OnDropFiles(wxDropFilesEvent& event)
 
 void wxTextCtrl::OnKeyDown(wxKeyEvent& event)
 {
-    if ( event.GetModifiers() == wxMOD_CONTROL )
+    if ( event.ControlDown() )
     {
         switch( event.GetKeyCode() )
         {
@@ -360,6 +418,19 @@ void wxTextCtrl::OnKeyDown(wxKeyEvent& event)
             case 'X':
                 if ( CanCut() )
                     Cut() ;
+                return;
+            case 'Z':
+                if ( !event.ShiftDown() )
+                {
+                    if ( CanUndo() )
+                        Undo() ;
+                    return;
+                }
+                // else fall through to Redo
+                wxFALLTHROUGH;
+            case 'Y':
+                if ( CanRedo() )
+                    Redo() ;
                 return;
             default:
                 break;
@@ -413,14 +484,14 @@ void wxTextCtrl::OnChar(wxKeyEvent& event)
         case WXK_NUMPAD_ENTER:
             if (m_windowStyle & wxTE_PROCESS_ENTER)
             {
-                wxCommandEvent event(wxEVT_TEXT_ENTER, m_windowId);
-                event.SetEventObject( this );
-                event.SetString( GetValue() );
-                if ( HandleWindowEvent(event) )
+                wxCommandEvent evt(wxEVT_TEXT_ENTER, m_windowId);
+                evt.SetEventObject(this);
+                evt.SetString(GetValue());
+                if (HandleWindowEvent(evt))
                     return;
             }
 
-            if ( !(m_windowStyle & wxTE_MULTILINE) )
+            if ( GetTextPeer()->GetNewLineReplacement() )
             {
                 wxTopLevelWindow *tlw = wxDynamicCast(wxGetTopLevelParent(this), wxTopLevelWindow);
                 if ( tlw && tlw->GetDefaultItem() )
@@ -428,9 +499,9 @@ void wxTextCtrl::OnChar(wxKeyEvent& event)
                     wxButton *def = wxDynamicCast(tlw->GetDefaultItem(), wxButton);
                     if ( def && def->IsEnabled() )
                     {
-                        wxCommandEvent event(wxEVT_BUTTON, def->GetId() );
-                        event.SetEventObject(def);
-                        def->Command(event);
+                        wxCommandEvent evt(wxEVT_BUTTON, def->GetId());
+                        evt.SetEventObject(def);
+                        def->Command(evt);
 
                         return ;
                     }
@@ -585,7 +656,7 @@ void wxTextCtrl::OnContextMenu(wxContextMenuEvent& event)
     }
 
 #if wxUSE_MENUS
-    if (m_privateContextMenu == NULL)
+    if (m_privateContextMenu == nullptr)
     {
         m_privateContextMenu = new wxMenu;
         m_privateContextMenu->Append(wxID_UNDO, _("&Undo"));
@@ -688,6 +759,10 @@ void wxTextWidgetImpl::Redo()
 {
 }
 
+void wxTextWidgetImpl::EmptyUndoBuffer()
+{
+}
+
 long wxTextWidgetImpl::XYToPosition(long WXUNUSED(x), long WXUNUSED(y)) const
 {
     return 0 ;
@@ -784,6 +859,15 @@ int wxTextWidgetImpl::GetLineLength(long lineNo) const
 
     return -1 ;
 }
+
+#if wxUSE_SPELLCHECK
+
+wxTextProofOptions wxTextWidgetImpl::GetCheckingOptions() const
+{
+    return wxTextProofOptions::Disable();
+}
+
+#endif // wxUSE_SPELLCHECK
 
 void wxTextWidgetImpl::SetJustification()
 {

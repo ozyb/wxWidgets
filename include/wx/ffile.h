@@ -2,7 +2,6 @@
 // Name:        wx/ffile.h
 // Purpose:     wxFFile - encapsulates "FILE *" stream
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     14.07.99
 // Copyright:   (c) 1998 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 // Licence:     wxWindows licence
@@ -34,7 +33,7 @@ public:
   // ctors
   // -----
     // def ctor
-  wxFFile() { m_fp = NULL; }
+  wxFFile() { m_fp = nullptr; }
     // open specified file (may fail, use IsOpened())
   wxFFile(const wxString& filename, const wxString& mode = wxT("r"));
     // attach to (already opened) file
@@ -49,7 +48,7 @@ public:
   // assign an existing file descriptor and get it back from wxFFile object
   void Attach(FILE *lfp, const wxString& name = wxEmptyString)
     { Close(); m_fp = lfp; m_name = name; }
-  FILE* Detach() { FILE* fpOld = m_fp; m_fp = NULL; return fpOld; }
+  FILE* Detach() { FILE* fpOld = m_fp; m_fp = nullptr; return fpOld; }
   FILE *fp() const { return m_fp; }
 
   // read/write (unbuffered)
@@ -64,6 +63,10 @@ public:
   bool Write(const wxString& s, const wxMBConv& conv = wxConvAuto());
     // flush data not yet written
   bool Flush();
+    // flush the data and also ensure that it reaches the physical disk: this
+    // is slower than Flush(), which only flushes the buffers to the OS, but
+    // guarantees that the data survives a system crash
+  bool FlushAndSync();
 
   // file pointer operations (return ofsInvalid on failure)
     // move ptr ofs bytes related to start/current pos/end of file
@@ -78,7 +81,7 @@ public:
   // simple accessors: note that Eof() and Error() may only be called if
   // IsOpened(). Otherwise they assert and return false.
     // is file opened?
-  bool IsOpened() const { return m_fp != NULL; }
+  bool IsOpened() const { return m_fp != nullptr; }
     // is end of file reached?
   bool Eof() const;
     // has an error occurred?
@@ -98,7 +101,7 @@ private:
   wxFFile(const wxFFile&);
   wxFFile& operator=(const wxFFile&);
 
-  FILE *m_fp;       // IO stream or NULL if not opened
+  FILE *m_fp;       // IO stream or nullptr if not opened
 
   wxString m_name;  // the name of the file (for diagnostic messages)
 };
@@ -116,7 +119,7 @@ class WXDLLIMPEXP_BASE wxTempFFile
 public:
   // ctors
     // default
-  wxTempFFile() { }
+  wxTempFFile() = default;
     // associates the temp file with the file to be replaced and opens it
   explicit wxTempFFile(const wxString& strName);
 

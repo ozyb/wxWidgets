@@ -33,8 +33,8 @@ which are implementation details.
 Running Doxygen
 ---------------
 
-First, make sure you have a recent version of Doxygen (currently Doxygen 1.8.8
-is used) and Graphviz installed in your system (under Windows Graphviz
+First, make sure you have the exact version of Doxygen supported (currently
+1.15.0 is used) and Graphviz installed in your system (under Windows Graphviz
 location should be in %PATH%).
 
 On Unix:
@@ -73,7 +73,7 @@ DO:
   It's also very important to make a consistent use of the ALIASES
   defined by wxWidgets' Doxyfile. Open that file for more info.
 
-- when you write true, false and NULL with their C++ semantic meaning,
+- when you write true, false and nullptr with their C++ semantic meaning,
   then use the @true, @false and @NULL commands.
 
 - separate different paragraphs with an empty comment line.

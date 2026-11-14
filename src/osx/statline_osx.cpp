@@ -18,9 +18,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_STATLINE
 
@@ -46,9 +43,9 @@ bool wxStaticLine::Create( wxWindow *parent,
                            const wxSize &size,
                            long style,
                            const wxString &name)
-{    
+{
     DontCreatePeer();
-    
+
     if ( !wxStaticLineBase::Create(parent, id, pos, size,
                                    style, wxDefaultValidator, name) )
         return false;

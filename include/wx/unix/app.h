@@ -10,6 +10,8 @@
 //Ensure that sigset_t is being defined
 #include <signal.h>
 
+#include <unordered_map>
+
 class wxFDIODispatcher;
 class wxFDIOHandler;
 class wxWakeUpPipe;
@@ -22,7 +24,7 @@ public:
     virtual ~wxAppConsole();
 
     // override base class initialization
-    virtual bool Initialize(int& argc, wxChar** argv) wxOVERRIDE;
+    virtual bool Initialize(int& argc, wxChar** argv) override;
 
 
     // Unix-specific: Unix signal handling
@@ -54,18 +56,13 @@ public:
 
 private:
     // signal handler set up by SetSignalHandler() for all signals we handle,
-    // it just adds the signal to m_signalsCaught -- the real processing is
+    // it just remembers that the signal was caught -- the real processing is
     // done later, when CheckSignal() is called
     static void HandleSignal(int signal);
 
 
-    // signals for which HandleSignal() had been called (reset from
-    // CheckSignal())
-    sigset_t m_signalsCaught;
-
     // the signal handlers
-    WX_DECLARE_HASH_MAP(int, SignalHandler, wxIntegerHash, wxIntegerEqual, SignalHandlerHash);
-    SignalHandlerHash m_signalHandlerHash;
+    std::unordered_map<int, SignalHandler> m_signalHandlerHash;
 
     // pipe used for wake up signal handling: if a signal arrives while we're
     // blocking for input, writing to this pipe triggers a call to our CheckSignal()

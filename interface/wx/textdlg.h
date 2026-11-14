@@ -96,7 +96,8 @@ public:
                       const wxString& caption = wxGetTextFromUserPromptStr,
                       const wxString& value = wxEmptyString,
                       long style = wxTextEntryDialogStyle,
-                      const wxPoint& pos = wxDefaultPosition);
+                      const wxPoint& pos = wxDefaultPosition,
+                      const wxSize sz = wxDefaultSize);
 
     /**
         @param parent
@@ -109,11 +110,14 @@ public:
             The default value, which may be the empty string.
         @param style
             A dialog style, specifying the buttons (wxOK, wxCANCEL)
-            and an optional wxCENTRE style. Additionally, wxTextCtrl styles
-            (such as @c wxTE_PASSWORD or @c wxTE_MULTILINE) may be specified
-            here.
+            and an optional wxCENTRE style. Additionally, most wxTextCtrl
+            styles (such as @c wxTE_PASSWORD or @c wxTE_MULTILINE) may be
+            specified here, but @c wxTE_READONLY may not be used, as it doesn't
+            make sense for this dialog, used for text input.
         @param pos
             Dialog position.
+        @param sz
+            The size of the dialog (this parameter is only available since wxWidgets 3.3.0).
 
         @since 2.9.5
     */
@@ -121,7 +125,8 @@ public:
                       const wxString& caption = wxGetTextFromUserPromptStr,
                       const wxString& value = wxEmptyString,
                       long style = wxTextEntryDialogStyle,
-                      const wxPoint& pos = wxDefaultPosition);
+                      const wxPoint& pos = wxDefaultPosition,
+                      const wxSize sz = wxDefaultSize);
 
     /**
         Destructor.
@@ -153,10 +158,10 @@ public:
         custom class derived from wxTextValidator while the second one creates
         a wxTextValidator with the specified @a style.
      */
-    //@{
+    ///@{
     void SetTextValidator(const wxTextValidator& validator);
     void SetTextValidator(wxTextValidatorStyle style = wxFILTER_NONE);
-    //@}
+    ///@}
 
     /**
         This function sets the maximum number of characters the user can enter
@@ -172,6 +177,15 @@ public:
         Sets the default text value.
     */
     void SetValue(const wxString& value);
+
+    /**
+        Sets the hint shown in the empty text control.
+
+        @see wxTextEntry::SetHint()
+
+        @since 3.3.2
+    */
+    void SetHint(const wxString &hint);
 
     /**
         Convert all text entered into the text control used by the dialog to upper case.
@@ -204,15 +218,24 @@ public:
 // ============================================================================
 
 /** @addtogroup group_funcmacro_dialog */
-//@{
+///@{
 
 /**
     Pop up a dialog box with title set to @e caption, @c message, and a
     @c default_value. The user may type in text and press OK to return this
     text, or press Cancel to return the empty string.
 
-    If @c centre is @true, the message text (which may include new line
-    characters) is centred; if @false, the message is left-justified.
+    If both @a x and @a y are specified, i.e. are not wxDefaultCoord, the dialog
+    is shown at this position and @a centre is ignored. It is an error to
+    specify only one of them. Otherwise, the dialog is centred on the screen or
+    on its parent window if @a centre is @true (which is the default) or shown
+    at the default position if it is @false.
+
+    The second overload also allows to specify the @a size of the dialog, which
+    is then made at least this big, but never smaller than the size needed to
+    show its contents. As the dialog can only show a single line of text, its
+    height is normally determined by its contents and only the width of @a size
+    is useful, so the height should usually be left as wxDefaultCoord.
 
     This function is a wrapper around wxTextEntryDialog and while it is usually
     more convenient to use, using the dialog directly is more flexible, e.g. it
@@ -220,14 +243,25 @@ public:
     multiple lines of text while this function is limited to single line entry
     only.
 
+    @note Before wxWidgets 3.3.4, the position was ignored if @a centre was
+        @true, i.e. by default, and the second overload didn't exist.
+
     @header{wx/textdlg.h}
 */
 wxString wxGetTextFromUser(const wxString& message,
                            const wxString& caption = wxGetTextFromUserPromptStr,
                            const wxString& default_value = wxEmptyString,
-                           wxWindow* parent = NULL,
+                           wxWindow* parent = nullptr,
                            int x = wxDefaultCoord,
                            int y = wxDefaultCoord,
+                           bool centre = true);
+
+wxString wxGetTextFromUser(const wxString& message,
+                           const wxString& caption,
+                           const wxString& default_value,
+                           wxWindow* parent,
+                           const wxPoint& pos,
+                           const wxSize& size = wxDefaultSize,
                            bool centre = true);
 
 /**
@@ -235,15 +269,21 @@ wxString wxGetTextFromUser(const wxString& message,
     shown on screen but replaced with stars. This is intended to be used for
     entering passwords as the function name implies.
 
+    The @a x, @a y and @a centre parameters are used in the same way as in
+    wxGetTextFromUser().
+
+    @note Before wxWidgets 3.3.4, the position was ignored if @a centre was
+        @true, i.e. by default.
+
     @header{wx/textdlg.h}
 */
 wxString wxGetPasswordFromUser(const wxString& message,
                                const wxString& caption = wxGetPasswordFromUserPromptStr,
                                const wxString& default_value = wxEmptyString,
-                               wxWindow* parent = NULL,
+                               wxWindow* parent = nullptr,
                                int x = wxDefaultCoord,
                                int y = wxDefaultCoord,
                                bool centre = true);
 
-//@}
+///@}
 

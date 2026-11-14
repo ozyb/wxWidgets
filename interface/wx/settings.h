@@ -109,15 +109,37 @@ enum wxSystemColour
     wxSYS_COLOUR_LISTBOXTEXT,
 
     /**
-        Text colour for the unfocused selection of list-like controls.
+        Text colour for the selected items in list-like controls.
+
+        This colour is supposed to have good contrast with the background drawn
+        by wxRendererNative::DrawItemSelectionRect().
 
         @since 2.9.1
      */
     wxSYS_COLOUR_LISTBOXHIGHLIGHTTEXT,
 
-    wxSYS_COLOUR_MAX
+    /**
+        Colour of separator lines in grid-like controls.
 
+        On macOS, this maps to `[NSColor gridColor]`, in wxGTK 3 it is the
+        colour of the lines separating the column headers in `GtkTreeView` and
+        elsewhere it is currently the same as ::wxSYS_COLOUR_BTNFACE.
 
+        @since 3.3.2
+     */
+    wxSYS_COLOUR_GRIDLINES,
+
+    /**
+        Background colour of a selected item in a wxListBox or similar control.
+
+        This colour is usually either identical or close to the main accent or
+        theme colour of the operating system.
+
+        On macOS, this maps to `[NSColor selectedContentBackgroundColor]`.
+
+        @since 3.3.2
+     */
+    wxSYS_COLOUR_LISTBOXHIGHLIGHT,
 
     // synonyms:
 
@@ -155,8 +177,17 @@ enum wxSystemMetric
     wxSYS_MOUSE_BUTTONS,      //!< Number of buttons on mouse, or zero if no mouse was installed.
     wxSYS_BORDER_X,           //!< Width of single border.
     wxSYS_BORDER_Y,           //!< Height of single border.
-    wxSYS_CURSOR_X,           //!< Width of cursor.
-    wxSYS_CURSOR_Y,           //!< Height of cursor.
+    wxSYS_CURSOR_X,           //!< Width of cursor in logical pixels.
+    wxSYS_CURSOR_Y,           //!< Height of cursor in logical pixels.
+    /**
+        Width or height of cursor in logical pixels.
+
+        This is the same as wxSYS_CURSOR_X and wxSYS_CURSOR_Y as cursors are
+        always square.
+
+        @since 3.3.0
+     */
+    wxSYS_CURSOR_SIZE,
     wxSYS_DCLICK_X,           //!< Width in pixels of rectangle within which two successive mouse clicks must fall to generate a double-click.
     wxSYS_DCLICK_Y,           //!< Height in pixels of rectangle within which two successive mouse clicks must fall to generate a double-click.
     wxSYS_DRAG_X,             //!< Width in pixels of a rectangle centered on a drag point to allow for limited movement of the mouse pointer before a drag operation begins.
@@ -174,12 +205,28 @@ enum wxSystemMetric
     wxSYS_WINDOWMIN_Y,        //!< Minimum height of a window.
     wxSYS_SCREEN_X,           //!< Width of the screen in pixels.
     wxSYS_SCREEN_Y,           //!< Height of the screen in pixels.
-    wxSYS_FRAMESIZE_X,        //!< Width of the window frame for a wxTHICK_FRAME window.
-    wxSYS_FRAMESIZE_Y,        //!< Height of the window frame for a wxTHICK_FRAME window.
+    wxSYS_FRAMESIZE_X,        //!< Width of the window frame for a window with wxRESIZE_BORDER.
+    wxSYS_FRAMESIZE_Y,        //!< Height of the window frame for a window with wxRESIZE_BORDER.
     wxSYS_SMALLICON_X,        //!< Recommended width of a small icon (in window captions, and small icon view).
     wxSYS_SMALLICON_Y,        //!< Recommended height of a small icon (in window captions, and small icon view).
-    wxSYS_HSCROLL_Y,          //!< Height of horizontal scrollbar in pixels.
-    wxSYS_VSCROLL_X,          //!< Width of vertical scrollbar in pixels.
+    /**
+        Height of horizontal scrollbar in pixels.
+
+        Use wxWindow::GetScrollbarSize() instead of this metric when
+        determining the space taken by the scrollbars of a window.
+
+        See also wxSYS_HSCROLL_X.
+    */
+    wxSYS_HSCROLL_Y,
+    /**
+        Width of vertical scrollbar in pixels
+
+        Use wxWindow::GetScrollbarSize() instead of this metric when
+        determining the space taken by the scrollbars of a window.
+
+        See also wxSYS_HSCROLL_Y.
+     */
+    wxSYS_VSCROLL_X,
     wxSYS_VSCROLL_ARROW_X,    //!< Width of arrow bitmap on a vertical scrollbar.
     wxSYS_VSCROLL_ARROW_Y,    //!< Height of arrow bitmap on a vertical scrollbar.
     wxSYS_VTHUMB_Y,           //!< Height of vertical scrollbar thumb.
@@ -266,11 +313,30 @@ enum wxSystemScreenType
     colours, as they need to adjust the colours used for drawing them to fit in
     the system look.
 
+    Note that this class is only used to query the current appearance, see
+    wxApp::SetAppearance() for changing it.
+
     @since 3.1.3
  */
 class wxSystemAppearance
 {
 public:
+    /**
+        Return true if the applications on this system use dark theme by
+        default.
+
+        This function returns @true if dark mode is enabled for the
+        applications system-wide, even if it's not enabled for this particular
+        application.
+
+        Note that for non-MSW platforms this is currently the same as IsDark(),
+        but under MSW these two functions can return different values as dark
+        mode requires to opt-in into it specifically.
+
+        @since 3.3.0
+     */
+    bool AreAppsDark() const;
+
     /**
         Return the name if available or empty string otherwise.
 
@@ -286,8 +352,27 @@ public:
 
         This method should be used to check whether custom colours more
         appropriate for the default (light) or dark appearance should be used.
+
+        Note that this checks the appearance of the current application and not
+        the other applications on the system, so under MSW, for example, it
+        will return @false even if dark mode is used system-wide unless the
+        application opted in using dark mode using wxApp::MSWEnableDarkMode().
+        You can use IsSystemDark() or AreAppsDark() to check if the system is
+        using dark mode by default.
      */
     bool IsDark() const;
+
+    /**
+        Return true if the system UI uses dark theme.
+
+        This is the same as AreAppsDark() on the non-MSW platforms, but can be
+        different from the other function under MSW as it is possible to
+        configure default "Windows mode" and "app mode" to use different colour
+        schemes under Windows.
+
+        @since 3.3.0
+     */
+    bool IsSystemDark() const;
 
     /**
         Return true if the default window background is significantly darker
@@ -363,12 +448,12 @@ public:
 
         @a win is a pointer to the window for which the metric is requested.
         Specifying the @a win parameter is encouraged, because some metrics on some
-        ports are not supported without one,or they might be capable of reporting
+        ports are not supported without one, or they might be capable of reporting
         better values if given one. If a window does not make sense for a metric,
         one should still be given, as for example it might determine which displays
         cursor width is requested with wxSYS_CURSOR_X.
     */
-    static int GetMetric(wxSystemMetric index, wxWindow* win = NULL);
+    static int GetMetric(wxSystemMetric index, wxWindow* win = nullptr);
 
     /**
         Returns the screen type.
@@ -388,5 +473,38 @@ public:
         See the ::wxSystemFeature enum values.
     */
     static bool HasFeature(wxSystemFeature index);
+
+    /**
+        Select one of the two colours depending on whether light or dark mode
+        is used.
+
+        This is just a convenient helper using wxSystemAppearance::IsDark() to
+        select between the two colours.
+
+        @param colForLight Colour returned when using light appearance.
+        @param colForDark Colour returned when using dark appearance, as
+            detected by wxSystemAppearance::IsDark().
+
+        @since 3.3.0
+     */
+    static wxColour SelectLightDark(wxColour colForLight, wxColour colForDark);
+
+    /**
+        Check if the mouse moved far enough to start a drag operation.
+
+        This function simply checks if the mouse has travelled further than the
+        configured drag threshold from the click position to consider that the
+        user intends to drag something.
+
+        @param origin Position of the mouse click.
+        @param current Current position of the mouse.
+        @param win Window to use for determining the drag threshold.
+            May be @NULL but it's recommended to provide it, see GetMetric().
+
+        @since 3.3.4
+     */
+    static bool ExceedsDragThreshold(const wxPoint& origin,
+                                     const wxPoint& current,
+                                     const wxWindow* win = nullptr);
 };
 

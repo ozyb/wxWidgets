@@ -2,7 +2,6 @@
 // Name:        wx/msw/registry.h
 // Purpose:     Registry classes and functions
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     03.04.1998
 // Copyright:   (c) 1998 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 // Licence:     wxWindows licence
@@ -42,7 +41,8 @@ public:
     Type_Multi_String,               // Multiple Unicode strings
     Type_Resource_list,              // Resource list in the resource map
     Type_Full_resource_descriptor,   // Resource list in the hardware description
-    Type_Resource_requirements_list  // ???
+    Type_Resource_requirements_list, // ???
+    Type_Qword                       // 64-bit number
   };
 
   // predefined registry keys
@@ -130,15 +130,17 @@ public:
     WOW64ViewMode GetView() const { return m_viewMode; }
     // return true if the key exists
   bool  Exists() const;
-    // get the info about key (any number of these pointers may be NULL)
+    // get the info about key (any number of these pointers may be null)
   bool  GetKeyInfo(size_t *pnSubKeys,      // number of subkeys
                    size_t *pnMaxKeyLen,    // max length of subkey name
                    size_t *pnValues,       // number of values
                    size_t *pnMaxValueLen) const;
     // return true if the key is opened
-  bool  IsOpened() const { return m_hKey != NULL; }
+  bool  IsOpened() const { return m_hKey != nullptr; }
     // for "if ( !key ) wxLogError(...)" kind of expressions
   operator bool()  const { return m_dwLastError == 0; }
+    // return the associated HKEY, possibly null if the key is not opened
+  WXHKEY GetHkey() const { return m_hKey; }
 
   // operations on the key itself
     // explicitly open the key (will be automatically done by all functions
@@ -197,10 +199,14 @@ public:
     // retrieve either raw or expanded string value
   bool  QueryValue(const wxString& szValue, wxString& strValue, bool raw) const;
 
-    // set the numeric value
+    // set the 32-bit numeric value
   bool  SetValue(const wxString& szValue, long lValue);
-    // return the numeric value
+    // return the 32-bit numeric value
   bool  QueryValue(const wxString& szValue, long *plValue) const;
+    // set the 64-bit numeric value
+  bool  SetValue64(const wxString& szValue, wxLongLong_t llValue);
+    // return the 64-bit numeric value
+  bool  QueryValue64(const wxString& szValue, wxLongLong_t *pllValue) const;
     // set the binary value
   bool  SetValue(const wxString& szValue, const wxMemoryBuffer& buf);
     // return the binary value
@@ -243,7 +249,7 @@ private:
   // common part of all ctors
   void Init()
   {
-    m_hKey = (WXHKEY) NULL;
+    m_hKey = (WXHKEY) nullptr;
     m_dwLastError = 0;
   }
 

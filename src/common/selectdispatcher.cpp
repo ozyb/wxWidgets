@@ -18,9 +18,6 @@
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_SELECT_DISPATCHER
 
@@ -28,7 +25,6 @@
 #include "wx/unix/private.h"
 
 #ifndef WX_PRECOMP
-    #include "wx/hash.h"
     #include "wx/log.h"
     #include "wx/intl.h"
 #endif
@@ -68,17 +64,17 @@ wxSelectSets::Callback wxSelectSets::ms_handlers[wxSelectSets::Max] =
 
 wxSelectSets::wxSelectSets()
 {
-    for ( int n = 0; n < Max; n++ )
+    for ( auto& fd : m_fds )
     {
-        wxFD_ZERO(&m_fds[n]);
+        wxFD_ZERO(&fd);
     }
 }
 
 bool wxSelectSets::HasFD(int fd) const
 {
-    for ( int n = 0; n < Max; n++ )
+    for ( const auto& fdSet : m_fds )
     {
-        if ( wxFD_ISSET(fd, const_cast<fd_set*>(&m_fds[n])) )
+        if ( wxFD_ISSET(fd, const_cast<fd_set*>(&fdSet)) )
             return true;
     }
 
@@ -179,13 +175,11 @@ bool wxSelectDispatcher::UnregisterFD(int fd)
         {
             // need to find new max fd
             m_maxFD = -1;
-            for ( wxFDIOHandlerMap::const_iterator it = m_handlers.begin();
-                  it != m_handlers.end();
-                  ++it )
+            for ( const auto& handler : m_handlers )
             {
-                if ( it->first > m_maxFD )
+                if ( handler.first > m_maxFD )
                 {
-                    m_maxFD = it->first;
+                    m_maxFD = handler.first;
                 }
             }
         }
@@ -207,7 +201,7 @@ int wxSelectDispatcher::ProcessSets(const wxSelectSets& sets)
         wxFDIOHandler * const handler = FindHandler(fd);
         if ( !handler )
         {
-            wxFAIL_MSG( wxT("NULL handler in wxSelectDispatcher?") );
+            wxFAIL_MSG( wxT("null handler in wxSelectDispatcher?") );
             continue;
         }
 
@@ -230,7 +224,7 @@ int wxSelectDispatcher::DoSelect(wxSelectSets& sets, int timeout) const
     }
     else // no timeout
     {
-        ptv = NULL;
+        ptv = nullptr;
     }
 
     int ret = sets.Select(m_maxFD + 1, ptv);

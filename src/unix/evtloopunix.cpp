@@ -30,7 +30,6 @@
 #endif
 
 #include "wx/apptrait.h"
-#include "wx/scopedptr.h"
 #include "wx/thread.h"
 #include "wx/module.h"
 #include "wx/unix/private/timer.h"
@@ -45,6 +44,8 @@
     #include "wx/evtloopsrc.h"
 #endif // wxUSE_EVENTLOOP_SOURCE
 
+#include <memory>
+
 // ===========================================================================
 // wxEventLoop implementation
 // ===========================================================================
@@ -56,12 +57,12 @@
 wxConsoleEventLoop::wxConsoleEventLoop()
 {
     // Be pessimistic initially and assume that we failed to initialize.
-    m_dispatcher = NULL;
-    m_wakeupPipe = NULL;
-    m_wakeupSource = NULL;
+    m_dispatcher = nullptr;
+    m_wakeupPipe = nullptr;
+    m_wakeupSource = nullptr;
 
     // Create the pipe.
-    wxScopedPtr<wxWakeUpPipeMT> wakeupPipe(new wxWakeUpPipeMT);
+    std::unique_ptr<wxWakeUpPipe> wakeupPipe(new wxWakeUpPipe);
     const int pipeFD = wakeupPipe->GetReadFd();
     if ( pipeFD == wxPipe::INVALID_FD )
         return;
@@ -109,9 +110,9 @@ class wxConsoleEventLoopSourcesManager : public wxEventLoopSourcesManagerBase
 public:
     wxEventLoopSource* AddSourceForFD( int fd,
                                        wxEventLoopSourceHandler *handler,
-                                       int flags) wxOVERRIDE
+                                       int flags) override
     {
-        wxCHECK_MSG( fd != -1, NULL, "can't monitor invalid fd" );
+        wxCHECK_MSG( fd != -1, nullptr, "can't monitor invalid fd" );
 
         wxLogTrace(wxTRACE_EVT_SOURCE,
                     "Adding event loop source for fd=%d", fd);
@@ -119,11 +120,11 @@ public:
         // we need a bridge to wxFDIODispatcher
         //
         // TODO: refactor the code so that only wxEventLoopSourceHandler is used
-        wxScopedPtr<wxFDIOHandler>
+        std::unique_ptr<wxFDIOHandler>
             fdioHandler(new wxFDIOEventLoopSourceHandler(handler));
 
         if ( !wxFDIODispatcher::Get()->RegisterFD(fd, fdioHandler.get(), flags) )
-            return NULL;
+            return nullptr;
 
         return new wxUnixEventLoopSource(wxFDIODispatcher::Get(), fdioHandler.release(),
                                          fd, handler, flags);
@@ -201,11 +202,7 @@ int wxConsoleEventLoop::DispatchTimeout(unsigned long timeout)
 
 void wxConsoleEventLoop::WakeUp()
 {
-#if wxUSE_THREADS
     m_wakeupPipe->WakeUp();
-#else
-    m_wakeupPipe->WakeUpNoLock();
-#endif
 }
 
 void wxConsoleEventLoop::OnNextIteration()
@@ -221,7 +218,11 @@ void wxConsoleEventLoop::DoYieldFor(long eventsToProcess)
 
 wxEventLoopBase *wxConsoleAppTraits::CreateEventLoop()
 {
-    return new wxEventLoop();
+    // Use wxConsoleEventLoop explicitly and not wxEventLoop because the
+    // latter is defined as wxGUIEventLoop when this file is compiled as part
+    // of a monolithic library (which is always built with wxUSE_GUI==1) and
+    // using a GUI event loop in console applications doesn't work, see #24909.
+    return new wxConsoleEventLoop();
 }
 
 #endif // wxUSE_CONSOLE_EVENTLOOP

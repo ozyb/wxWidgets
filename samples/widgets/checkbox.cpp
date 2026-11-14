@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 // for all others, include the necessary headers
 #ifndef WX_PRECOMP
@@ -39,8 +36,6 @@
 #endif
 
 #include "widgets.h"
-
-#include "icons/checkbox.xpm"
 
 // ----------------------------------------------------------------------------
 // constants
@@ -72,13 +67,13 @@ enum
 class CheckBoxWidgetsPage : public WidgetsPage
 {
 public:
-    CheckBoxWidgetsPage(WidgetsBookCtrl *book, wxImageList *imaglist);
+    CheckBoxWidgetsPage(WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist);
 
-    virtual wxWindow *GetWidget() const wxOVERRIDE { return m_checkbox; }
-    virtual void RecreateWidget() wxOVERRIDE { CreateCheckbox(); }
+    virtual wxWindow *GetWidget() const override { return m_checkbox; }
+    virtual void RecreateWidget() override { CreateCheckbox(); }
 
     // lazy creation of the content
-    virtual void CreateContent() wxOVERRIDE;
+    virtual void CreateContent() override;
 
 protected:
     // event handlers
@@ -158,8 +153,8 @@ wxEND_EVENT_TABLE()
 IMPLEMENT_WIDGETS_PAGE(CheckBoxWidgetsPage, "CheckBox", FAMILY_CTRLS );
 
 CheckBoxWidgetsPage::CheckBoxWidgetsPage(WidgetsBookCtrl *book,
-                                         wxImageList *imaglist)
-                  : WidgetsPage(book, imaglist, checkbox_xpm)
+                                         wxVector<wxBitmapBundle>& imaglist)
+                  : WidgetsPage(book, imaglist, WidgetsIcon::CheckBox)
 {
 }
 
@@ -168,18 +163,18 @@ void CheckBoxWidgetsPage::CreateContent()
     wxSizer *sizerTop = new wxBoxSizer(wxHORIZONTAL);
 
     // left pane
-    wxStaticBox *box = new wxStaticBox(this, wxID_ANY, "&Set style");
-
-    wxSizer *sizerLeft = new wxStaticBoxSizer(box, wxVERTICAL);
+    wxStaticBoxSizer *sizerLeft = new wxStaticBoxSizer(wxVERTICAL, this, "&Set style");
+    wxStaticBox* const sizerLeftBox = sizerLeft->GetStaticBox();
 
     m_chkRight = CreateCheckBoxAndAddToSizer
                  (
                     sizerLeft,
                     "&Right aligned",
-                    CheckboxPage_ChkRight
+                    CheckboxPage_ChkRight,
+                    sizerLeftBox
                  );
 
-    sizerLeft->Add(5, 5, 0, wxGROW | wxALL, 5); // spacer
+    sizerLeft->AddSpacer(FromDIP(15));
 
     static const wxString kinds[] =
     {
@@ -188,44 +183,45 @@ void CheckBoxWidgetsPage::CreateContent()
         "&user-settable 3rd state",
     };
 
-    m_radioKind = new wxRadioBox(this, wxID_ANY, "&Kind",
+    m_radioKind = new wxRadioBox(sizerLeftBox, wxID_ANY, "&Kind",
                                  wxDefaultPosition, wxDefaultSize,
                                  WXSIZEOF(kinds), kinds,
                                  1);
-    sizerLeft->Add(m_radioKind, 0, wxGROW | wxALL, 5);
-    wxButton *btn = new wxButton(this, CheckboxPage_Reset, "&Reset");
-    sizerLeft->Add(btn, 0, wxALIGN_CENTRE_HORIZONTAL | wxALL, 15);
+    sizerLeft->Add(m_radioKind, wxSizerFlags().Expand().Border());
+    wxButton *btn = new wxButton(sizerLeftBox, CheckboxPage_Reset, "&Reset");
+    sizerLeft->Add(btn, wxSizerFlags().CentreHorizontal().TripleBorder());
 
     // middle pane
-    wxStaticBox *box2 = new wxStaticBox(this, wxID_ANY, "&Operations");
-    wxSizer *sizerMiddle = new wxStaticBoxSizer(box2, wxVERTICAL);
+    wxStaticBoxSizer *sizerMiddle = new wxStaticBoxSizer(wxVERTICAL, this, "&Operations");
+    wxStaticBox* const sizerMiddleBox = sizerMiddle->GetStaticBox();
 
     sizerMiddle->Add(CreateSizerWithTextAndButton(CheckboxPage_ChangeLabel,
                                                      "Change label",
                                                      wxID_ANY,
-                                                     &m_textLabel),
-                     0, wxALL | wxGROW, 5);
-    sizerMiddle->Add(new wxButton(this, CheckboxPage_Check, "&Check it"),
-                     0, wxALL | wxGROW, 5);
-    sizerMiddle->Add(new wxButton(this, CheckboxPage_Uncheck, "&Uncheck it"),
-                     0, wxALL | wxGROW, 5);
-    sizerMiddle->Add(new wxButton(this, CheckboxPage_PartCheck,
+                                                     &m_textLabel,
+                                                     sizerMiddleBox),
+                     wxSizerFlags().Expand().Border());
+    sizerMiddle->Add(new wxButton(sizerMiddleBox, CheckboxPage_Check, "&Check it"),
+                     wxSizerFlags().Expand().Border());
+    sizerMiddle->Add(new wxButton(sizerMiddleBox, CheckboxPage_Uncheck, "&Uncheck it"),
+                     wxSizerFlags().Expand().Border());
+    sizerMiddle->Add(new wxButton(sizerMiddleBox, CheckboxPage_PartCheck,
                                   "Put in &3rd state"),
-                     0, wxALL | wxGROW, 5);
+                     wxSizerFlags().Expand().Border());
 
     // right pane
     wxSizer *sizerRight = new wxBoxSizer(wxHORIZONTAL);
     m_checkbox = new wxCheckBox(this, CheckboxPage_Checkbox, "&Check me!");
-    sizerRight->Add(0, 0, 1, wxCENTRE);
-    sizerRight->Add(m_checkbox, 1, wxCENTRE);
-    sizerRight->Add(0, 0, 1, wxCENTRE);
-    sizerRight->SetMinSize(150, 0);
+    sizerRight->AddStretchSpacer();
+    sizerRight->Add(m_checkbox, wxSizerFlags(1).Centre());
+    sizerRight->AddStretchSpacer();
+    sizerRight->SetMinSize(FromDIP(150), 0);
     m_sizerCheckbox = sizerRight; // save it to modify it later
 
     // the 3 panes panes compose the window
-    sizerTop->Add(sizerLeft, 0, wxGROW | (wxALL & ~wxLEFT), 10);
-    sizerTop->Add(sizerMiddle, 1, wxGROW | wxALL, 10);
-    sizerTop->Add(sizerRight, 1, wxGROW | (wxALL & ~wxRIGHT), 10);
+    sizerTop->Add(sizerLeft, wxSizerFlags().Expand().DoubleBorder(wxALL & ~wxLEFT));
+    sizerTop->Add(sizerMiddle, wxSizerFlags(1).Expand().DoubleBorder());
+    sizerTop->Add(sizerRight, wxSizerFlags(1).Expand().DoubleBorder(wxALL & ~wxRIGHT));
 
     // final initializations
     Reset();
@@ -278,9 +274,11 @@ void CheckBoxWidgetsPage::CreateCheckbox()
                               wxDefaultPosition, wxDefaultSize,
                               flags);
 
-    m_sizerCheckbox->Add(0, 0, 1, wxCENTRE);
-    m_sizerCheckbox->Add(m_checkbox, 1, wxCENTRE);
-    m_sizerCheckbox->Add(0, 0, 1, wxCENTRE);
+    NotifyWidgetRecreation(m_checkbox);
+
+    m_sizerCheckbox->AddStretchSpacer();
+    m_sizerCheckbox->Add(m_checkbox, wxSizerFlags(1).Centre());
+    m_sizerCheckbox->AddStretchSpacer();
     m_sizerCheckbox->Layout();
 }
 

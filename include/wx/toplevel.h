@@ -3,7 +3,6 @@
 // Purpose:     declares wxTopLevelWindow class, the base class for all
 //              top level windows (such as frames and dialogs)
 // Author:      Vadim Zeitlin, Vaclav Slavik
-// Modified by:
 // Created:     06.08.01
 // Copyright:   (c) 2001 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 //                       Vaclav Slavik <vaclav@wxwidgets.org>
@@ -75,13 +74,6 @@ extern WXDLLIMPEXP_DATA_CORE(const char) wxFrameNameStr[];
 #define wxTINY_CAPTION          0x0080  // clashes with wxNO_DEFAULT
 #define wxRESIZE_BORDER         0x0040  // == wxCLOSE
 
-#if WXWIN_COMPATIBILITY_2_8
-    // HORIZ and VERT styles are equivalent anyhow so don't use different names
-    // for them
-    #define wxTINY_CAPTION_HORIZ    wxTINY_CAPTION
-    #define wxTINY_CAPTION_VERT     wxTINY_CAPTION
-#endif
-
 // default style
 #define wxDEFAULT_FRAME_STYLE \
             (wxSYSTEM_MENU | \
@@ -117,6 +109,27 @@ enum
 {
     wxUSER_ATTENTION_INFO = 1,
     wxUSER_ATTENTION_ERROR = 2
+};
+
+// Values for Get/SetContentProtection
+enum wxContentProtection
+{
+    wxCONTENT_PROTECTION_NONE,
+    wxCONTENT_PROTECTION_ENABLED
+};
+
+enum class wxWindowMode
+{
+    // Normal, not modal, window.
+    Normal,
+
+    // Modal in parent window scope, i.e. the user must close this window
+    // before being able to interact with the parent window again.
+    WindowModal,
+
+    // Modal in application scope, i.e. the user must close this window
+    // before being able to interact with any other window in the application.
+    AppModal
 };
 
 // ----------------------------------------------------------------------------
@@ -164,7 +177,8 @@ public:
     // set the frame icons
     virtual void SetIcons(const wxIconBundle& icons) { m_icons = icons; }
 
-    virtual bool EnableFullScreenView(bool WXUNUSED(enable) = true)
+    virtual bool EnableFullScreenView(bool WXUNUSED(enable) = true,
+                                      long WXUNUSED(style) = wxFULLSCREEN_ALL)
     {
         return false;
     }
@@ -181,10 +195,19 @@ public:
     // return true if the frame is in fullscreen mode
     virtual bool IsFullScreen() const = 0;
 
+    virtual wxContentProtection GetContentProtection() const
+        { return wxCONTENT_PROTECTION_NONE; }
+    virtual bool SetContentProtection(wxContentProtection WXUNUSED(contentProtection))
+        { return false; }
+
     // the title of the top level window: the text which the
     // window shows usually at the top of the frame/dialog in dedicated bar
     virtual void SetTitle(const wxString& title) = 0;
     virtual wxString GetTitle() const = 0;
+
+    // label is the same as title for top-level windows
+    virtual void SetLabel(const wxString& label) override { SetTitle( label ); }
+    virtual wxString GetLabel() const override            { return GetTitle(); }
 
     // enable/disable close button [x]
     virtual bool EnableCloseButton(bool WXUNUSED(enable) = true) { return false; }
@@ -227,58 +250,104 @@ public:
         { return m_winTmpDefault ? m_winTmpDefault : m_winDefault; }
 
     // set the permanent default item, return the old default
-    wxWindow *SetDefaultItem(wxWindow *win)
-        { wxWindow *old = GetDefaultItem(); m_winDefault = win; return old; }
+    wxWindow *SetDefaultItem(wxWindow *win);
 
-    // return the temporary default item, can be NULL
+    // return the temporary default item, can be null
     wxWindow *GetTmpDefaultItem() const { return m_winTmpDefault; }
 
-    // set a temporary default item, SetTmpDefaultItem(NULL) should be called
+    // set a temporary default item, SetTmpDefaultItem(nullptr) should be called
     // soon after a call to SetTmpDefaultItem(window), return the old default
-    wxWindow *SetTmpDefaultItem(wxWindow *win)
-        { wxWindow *old = GetDefaultItem(); m_winTmpDefault = win; return old; }
+    wxWindow *SetTmpDefaultItem(wxWindow *win);
 
 
-    // Class for saving/restoring fields describing the window geometry.
+    // Class for saving/restoring values describing the window geometry.
     //
     // This class is used by the functions below to allow saving the geometry
     // of the window and restoring it later. The components describing geometry
     // are platform-dependent, so there is no struct containing them and
     // instead the methods of this class are used to save or [try to] restore
     // whichever components are used under the current platform.
-    class GeometrySerializer
+    class GeometryStore
     {
     public:
-        virtual ~GeometrySerializer() {}
+        virtual ~GeometryStore() = default;
 
-        // If saving a field returns false, it's fatal error and SaveGeometry()
+        // If saving a value returns false, it's fatal error and SaveGeometry()
         // will return false.
-        virtual bool SaveField(const wxString& name, int value) const = 0;
+        virtual bool SaveValue(const wxString& name, int value) = 0;
 
-        // If restoring a field returns false, it just means that the field is
+        // Same as above but for string values, not implemented by default
+        // because this only needs to be implemented when using wxGTK with
+        // Wayland XDG session management protocol and so can be ignored when
+        // not targeting this platform.
+        virtual bool SaveString(const wxString& name, const wxString& value)
+        {
+            wxUnusedVar(name);
+            wxUnusedVar(value);
+            return false;
+        }
+
+        // If restoring a value returns false, it just means that the value is
         // not present and RestoreToGeometry() still continues with restoring
         // the other values.
-        virtual bool RestoreField(const wxString& name, int* value) = 0;
+        virtual bool RestoreValue(const wxString& name, int* value) const = 0;
+
+        // Same as for but for string values, not implemented by default, see
+        // comment for SaveString() above.
+        virtual bool RestoreString(const wxString& name, wxString* value) const
+        {
+            wxUnusedVar(name);
+            wxUnusedVar(value);
+            return false;
+        }
     };
 
     // Save the current window geometry using the provided serializer and
     // restore the window to the previously saved geometry.
-    bool SaveGeometry(const GeometrySerializer& ser) const;
-    bool RestoreToGeometry(GeometrySerializer& ser);
+    bool SaveGeometry(GeometryStore& store) const;
+    bool RestoreToGeometry(const GeometryStore& store);
+
+
+    // Deprecated class using wrong const qualifiers for its member functions,
+    // change your code to use GeometryStore instead and don't use in new code.
+    class wxDEPRECATED_MSG("Use GeometryStore instead") GeometrySerializer
+        : public GeometryStore
+    {
+    public:
+        virtual bool SaveValue(const wxString& name, int value) override
+        {
+            return SaveField(name, value);
+        }
+
+        virtual bool RestoreValue(const wxString& name, int* value) const override
+        {
+            // Compilers not using [[deprecated]] for wxDEPRECATED_MSG() give a
+            // warning for referencing deprecated class in the const-cast below.
+            wxWARNING_SUPPRESS_DEPRECATED()
+
+            return const_cast<GeometrySerializer*>(this)->RestoreField(name, value);
+
+            wxWARNING_RESTORE_DEPRECATED()
+        }
+
+        virtual bool SaveField(const wxString& name, int value) const = 0;
+        virtual bool RestoreField(const wxString& name, int* value) = 0;
+    };
 
 
     // implementation only from now on
     // -------------------------------
 
     // override some base class virtuals
-    virtual bool Destroy() wxOVERRIDE;
-    virtual bool IsTopLevel() const wxOVERRIDE { return true; }
-    virtual bool IsTopNavigationDomain(NavigationKind kind) const wxOVERRIDE;
+    virtual bool Destroy() override;
+    virtual bool IsTopLevel() const override { return true; }
+    virtual bool IsTopNavigationDomain(NavigationKind kind) const override;
     virtual bool IsVisible() const { return IsShown(); }
 
     // override to do TLW-specific layout: we resize our unique child to fill
     // the entire client area
-    virtual bool Layout() wxOVERRIDE;
+    virtual bool Layout() override;
+    virtual void Fit() override;
 
     // event handlers
     void OnCloseWindow(wxCloseEvent& event);
@@ -292,11 +361,11 @@ public:
     void OnActivate(wxActivateEvent &WXUNUSED(event)) { }
 
     // do the window-specific processing after processing the update event
-    virtual void DoUpdateWindowUI(wxUpdateUIEvent& event) wxOVERRIDE ;
+    virtual void DoUpdateWindowUI(wxUpdateUIEvent& event) override ;
 
     // a different API for SetSizeHints
-    virtual void SetMinSize(const wxSize& minSize) wxOVERRIDE;
-    virtual void SetMaxSize(const wxSize& maxSize) wxOVERRIDE;
+    virtual void SetMinSize(const wxSize& minSize) override;
+    virtual void SetMaxSize(const wxSize& maxSize) override;
 
     virtual void OSXSetModified(bool modified) { m_modified = modified; }
     virtual bool OSXIsModified() const { return m_modified; }
@@ -306,18 +375,20 @@ public:
 protected:
     // the frame client to screen translation should take account of the
     // toolbar which may shift the origin of the client area
-    virtual void DoClientToScreen(int *x, int *y) const wxOVERRIDE;
-    virtual void DoScreenToClient(int *x, int *y) const wxOVERRIDE;
+    virtual void DoClientToScreen(int *x, int *y) const override;
+    virtual void DoScreenToClient(int *x, int *y) const override;
 
     // add support for wxCENTRE_ON_SCREEN
-    virtual void DoCentre(int dir) wxOVERRIDE;
+    virtual void DoCentre(int dir) override;
 
     // no need to do client to screen translation to get our position in screen
     // coordinates: this is already the case
-    virtual void DoGetScreenPosition(int *x, int *y) const wxOVERRIDE
+    virtual void DoGetScreenPosition(int *x, int *y) const override
     {
         DoGetPosition(x, y);
     }
+
+    virtual wxSize DoGetBestClientSize() const override;
 
     // test whether this window makes part of the frame
     // (menubar, toolbar and statusbar are excluded from automatic layout)
@@ -340,13 +411,21 @@ protected:
     // the frame icon
     wxIconBundle m_icons;
 
-    // a default window (usually a button) or NULL
+    // a default window (usually a button) or nullptr
     wxWindowRef m_winDefault;
 
-    // a temporary override of m_winDefault, use the latter if NULL
+    // a temporary override of m_winDefault, use the latter if nullptr
     wxWindowRef m_winTmpDefault;
 
     bool m_modified;
+
+private:
+    // Return true if this window uses some automatic layout mechanism.
+    bool UsesAutoLayout() const;
+
+    // Return the only child of this window if it has exactly one or null
+    // pointer otherwise.
+    wxWindow* GetUniqueChild() const;
 
     wxDECLARE_NO_COPY_CLASS(wxTopLevelWindowBase);
     wxDECLARE_EVENT_TABLE();
@@ -357,11 +436,8 @@ protected:
 #if defined(__WXMSW__)
     #include "wx/msw/toplevel.h"
     #define wxTopLevelWindowNative wxTopLevelWindowMSW
-#elif defined(__WXGTK20__)
-    #include "wx/gtk/toplevel.h"
-    #define wxTopLevelWindowNative wxTopLevelWindowGTK
 #elif defined(__WXGTK__)
-    #include "wx/gtk1/toplevel.h"
+    #include "wx/gtk/toplevel.h"
     #define wxTopLevelWindowNative wxTopLevelWindowGTK
 #elif defined(__WXX11__)
     #include "wx/x11/toplevel.h"
@@ -372,9 +448,6 @@ protected:
 #elif defined(__WXMAC__)
     #include "wx/osx/toplevel.h"
     #define wxTopLevelWindowNative wxTopLevelWindowMac
-#elif defined(__WXMOTIF__)
-    #include "wx/motif/toplevel.h"
-    #define wxTopLevelWindowNative wxTopLevelWindowMotif
 #elif defined(__WXQT__)
     #include "wx/qt/toplevel.h"
 #define wxTopLevelWindowNative wxTopLevelWindowQt
@@ -387,7 +460,7 @@ protected:
     {
     public:
         // construction
-        wxTopLevelWindow() { }
+        wxTopLevelWindow() = default;
         wxTopLevelWindow(wxWindow *parent,
                    wxWindowID winid,
                    const wxString& title,

@@ -2,7 +2,6 @@
 // Name:        wx/ribbon/panel.h
 // Purpose:     Ribbon-style container for a group of related tools / controls
 // Author:      Peter Cawley
-// Modified by:
 // Created:     2009-05-25
 // Copyright:   (C) Peter Cawley
 // Licence:     wxWindows licence
@@ -14,7 +13,8 @@
 
 #if wxUSE_RIBBON
 
-#include "wx/bitmap.h"
+#include "wx/bmpbndl.h"
+#include "wx/weakref.h"
 #include "wx/ribbon/control.h"
 
 enum wxRibbonPanelOption
@@ -36,7 +36,7 @@ public:
     wxRibbonPanel(wxWindow* parent,
                   wxWindowID id = wxID_ANY,
                   const wxString& label = wxEmptyString,
-                  const wxBitmap& minimised_icon = wxNullBitmap,
+                  const wxBitmapBundle& minimised_icon = wxBitmapBundle(),
                   const wxPoint& pos = wxDefaultPosition,
                   const wxSize& size = wxDefaultSize,
                   long style = wxRIBBON_PANEL_DEFAULT_STYLE);
@@ -46,13 +46,13 @@ public:
     bool Create(wxWindow* parent,
                 wxWindowID id = wxID_ANY,
                 const wxString& label = wxEmptyString,
-                const wxBitmap& icon = wxNullBitmap,
+                const wxBitmapBundle& icon = wxBitmapBundle(),
                 const wxPoint& pos = wxDefaultPosition,
                 const wxSize& size = wxDefaultSize,
                 long style = wxRIBBON_PANEL_DEFAULT_STYLE);
 
-    wxBitmap& GetMinimisedIcon() {return m_minimised_icon;}
-    const wxBitmap& GetMinimisedIcon() const {return m_minimised_icon;}
+    wxBitmap GetMinimisedIcon() {return m_minimised_icon.GetBitmapFor(this);}
+    const wxBitmapBundle& GetMinimisedIconBundle() const {return m_minimised_icon;}
     bool IsMinimised() const;
     bool IsMinimised(wxSize at_size) const;
     bool IsHovered() const;
@@ -62,16 +62,16 @@ public:
     bool ShowExpanded();
     bool HideExpanded();
 
-    void SetArtProvider(wxRibbonArtProvider* art) wxOVERRIDE;
+    void SetArtProvider(wxRibbonArtProvider* art) override;
 
-    virtual bool Realize() wxOVERRIDE;
-    virtual bool Layout() wxOVERRIDE;
-    virtual wxSize GetMinSize() const wxOVERRIDE;
+    virtual bool Realize() override;
+    virtual bool Layout() override;
+    virtual wxSize GetMinSize() const override;
 
-    virtual bool IsSizingContinuous() const wxOVERRIDE;
+    virtual bool IsSizingContinuous() const override;
 
-    virtual void AddChild(wxWindowBase *child) wxOVERRIDE;
-    virtual void RemoveChild(wxWindowBase *child) wxOVERRIDE;
+    virtual void AddChild(wxWindowBase *child) override;
+    virtual void RemoveChild(wxWindowBase *child) override;
 
     virtual bool HasExtButton() const;
 
@@ -79,25 +79,52 @@ public:
     wxRibbonPanel* GetExpandedPanel();
 
     // Finds the best width and height given the parent's width and height
-    virtual wxSize GetBestSizeForParentSize(const wxSize& parentSize) const wxOVERRIDE;
+    virtual wxSize GetBestSizeForParentSize(const wxSize& parentSize) const override;
 
     long GetFlags() { return m_flags; }
 
     void HideIfExpanded();
 
+    // KeyTips (keyboard access mode).
+    void SetExtButtonKeyTip(const wxString& keytip) { m_extButtonKeyTip = keytip.Upper(); }
+    wxString GetExtButtonKeyTip() const { return m_extButtonKeyTip; }
+    wxRect GetExtButtonRect() const { return m_ext_button_rect; }
+
+    // Used when the panel is minimised.
+    void SetKeyTip(const wxString& keytip) { m_keyTip = keytip.Upper(); }
+    wxString GetKeyTip() const { return m_keyTip; }
+
+    // Keyboard navigation.
+    bool HasFocusableItems() const override;
+    bool FocusFirstItem() override;
+    bool FocusLastItem() override;
+    void ClearFocusedItem() override;
+    void ActivateFocusedItem(bool dropdown = false) override;
+
+    // Implementation only: appends the controls of this panel which can be
+    // navigated to with the keyboard, in navigation order.
+    void AppendFocusableControls(std::vector<wxRibbonControl*>& controls);
+
+#if wxUSE_ACCESSIBILITY
+    virtual wxAccessible* CreateAccessible() override;
+#endif // wxUSE_ACCESSIBILITY
+
 protected:
-    virtual wxSize DoGetBestSize() const wxOVERRIDE;
+#if wxUSE_ACCESSIBILITY
+    friend class wxRibbonPanelAccessible;
+#endif // wxUSE_ACCESSIBILITY
+    virtual wxSize DoGetBestSize() const override;
     virtual wxSize GetPanelSizerBestSize() const;
     wxSize  GetPanelSizerMinSize() const;
-    wxBorder GetDefaultBorder() const wxOVERRIDE { return wxBORDER_NONE; }
+    wxBorder GetDefaultBorder() const override { return wxBORDER_NONE; }
     wxSize GetMinNotMinimisedSize() const;
 
     virtual wxSize DoGetNextSmallerSize(wxOrientation direction,
-                                      wxSize relative_to) const wxOVERRIDE;
+                                      wxSize relative_to) const override;
     virtual wxSize DoGetNextLargerSize(wxOrientation direction,
-                                     wxSize relative_to) const wxOVERRIDE;
+                                     wxSize relative_to) const override;
 
-    void DoSetSize(int x, int y, int width, int height, int sizeFlags = wxSIZE_AUTO) wxOVERRIDE;
+    void DoSetSize(int x, int y, int width, int height, int sizeFlags = wxSIZE_AUTO) override;
     void OnSize(wxSizeEvent& evt);
     void OnEraseBackground(wxEraseEvent& evt);
     void OnPaint(wxPaintEvent& evt);
@@ -109,29 +136,42 @@ protected:
     void OnMotion(wxMouseEvent& evt);
     void OnKillFocus(wxFocusEvent& evt);
     void OnChildKillFocus(wxFocusEvent& evt);
+    void OnKeyDown(wxKeyEvent& evt);
+    void DoActivateExtButton();
+    void OnDPIChanged(wxDPIChangedEvent& evt);
+    void OnSysColourChanged(wxSysColourChangedEvent& evt);
 
     void TestPositionForHover(const wxPoint& pos);
     bool ShouldSendEventToDummy(wxEvent& evt);
-    virtual bool TryAfter(wxEvent& evt) wxOVERRIDE;
+    virtual bool TryAfter(wxEvent& evt) override;
 
-    void CommonInit(const wxString& label, const wxBitmap& icon, long style);
+    void CommonInit(const wxString& label, const wxBitmapBundle& icon, long style);
     static wxRect GetExpandedPosition(wxRect panel,
                                       wxSize expanded_size,
                                       wxDirection direction);
 
-    wxBitmap m_minimised_icon;
+    wxBitmapBundle m_minimised_icon;
     wxBitmap m_minimised_icon_resized;
     wxSize m_smallest_unminimised_size;
     wxSize m_minimised_size;
-    wxDirection m_preferred_expand_direction;
-    wxRibbonPanel* m_expanded_dummy;
-    wxRibbonPanel* m_expanded_panel;
-    wxWindow* m_child_with_focus;
-    long m_flags;
-    bool m_minimised;
-    bool m_hovered;
-    bool m_ext_button_hovered;
+    wxDirection m_preferred_expand_direction = wxSOUTH;
+    wxRibbonPanel* m_expanded_dummy = nullptr;
+    wxRibbonPanel* m_expanded_panel = nullptr;
+    wxWindow* m_child_with_focus = nullptr;
+    long m_flags = 0;
+    bool m_minimised = false;
+    bool m_hovered = false;
+    bool m_ext_button_hovered = false;
+    // True if the keyboard focus is on this panel's item.
+    bool m_item_focused = false;
     wxRect m_ext_button_rect;
+
+    wxWeakRef<wxRibbonControl> m_focusedControl;
+
+    // Both are always stored in upper case, to allow case-insensitive
+    // matching.
+    wxString m_extButtonKeyTip;
+    wxString m_keyTip;
 
 #ifndef SWIG
     wxDECLARE_CLASS(wxRibbonPanel);
@@ -145,12 +185,14 @@ class WXDLLIMPEXP_RIBBON wxRibbonPanelEvent : public wxCommandEvent
 public:
     wxRibbonPanelEvent(wxEventType command_type = wxEVT_NULL,
                        int win_id = 0,
-                       wxRibbonPanel* panel = NULL)
+                       wxRibbonPanel* panel = nullptr)
         : wxCommandEvent(command_type, win_id)
         , m_panel(panel)
     {
     }
-    wxEvent *Clone() const wxOVERRIDE { return new wxRibbonPanelEvent(*this); }
+
+    wxRibbonPanelEvent(const wxRibbonPanelEvent& e) = default;
+    wxNODISCARD wxEvent *Clone() const override { return new wxRibbonPanelEvent(*this); }
 
     wxRibbonPanel* GetPanel() {return m_panel;}
     void SetPanel(wxRibbonPanel* panel) {m_panel = panel;}

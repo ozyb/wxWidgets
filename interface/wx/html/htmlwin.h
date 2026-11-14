@@ -58,7 +58,7 @@ public:
         @param url      URL the parser wants to open
         @param redirect If the return value is wxHTML_REDIRECT, then the
                         URL to redirect to will be stored in this variable
-                        (the pointer must never be NULL)
+                        (the pointer must never be @NULL)
 
         @return indicator of how to treat the request
      */
@@ -73,7 +73,7 @@ public:
     virtual wxPoint HTMLCoordsToWindow(wxHtmlCell *cell,
                                        const wxPoint& pos) const = 0;
 
-    /// Returns the window used for rendering (may be NULL).
+    /// Returns the window used for rendering (may be @NULL).
     virtual wxWindow* GetHTMLWindow() = 0;
 
     /// Returns background colour to use by default.
@@ -83,7 +83,7 @@ public:
     virtual void SetHTMLBackgroundColour(const wxColour& clr) = 0;
 
     /// Sets window's background to given bitmap.
-    virtual void SetHTMLBackgroundImage(const wxBitmap& bmpBg) = 0;
+    virtual void SetHTMLBackgroundImage(const wxBitmapBundle& bmpBg) = 0;
 
     /// Sets status bar text.
     virtual void SetHTMLStatusText(const wxString& text) = 0;
@@ -123,9 +123,17 @@ public:
     @note If you want complete HTML/CSS support as well as a Javascript engine,
           consider using wxWebView instead.
 
-    wxHtmlWindow uses the wxImage class for displaying images, so you need to
-    initialize the handlers for any image formats you use before loading a page.
+    wxHtmlWindow uses the wxBitmapBundle class for displaying images, so you
+    need to initialize the handlers for any raster formats you use before
+    loading a page.
     See ::wxInitAllImageHandlers and wxImage::AddHandler.
+
+    New to wxWidgets 3.3.4 is the ability to load vector graphics in SVG format
+    as well. To enable this support, you need to use a port with wxHAS_SVG
+    defined and, optionally, if you want to use LunaSVG library for better
+    SVG support, define wxUSE_LUNASVG and use a C++17 (or later) compiler.
+    Define wxUSE_ZLIB to load compressed SVGZ files. See
+    wxBitmapBundle::FromSVG() for more details.
 
     @beginStyleTable
     @style{wxHW_SCROLLBAR_NEVER}
@@ -395,7 +403,7 @@ public:
         @see SetSize()
     */
     void SetFonts(const wxString& normal_face, const wxString& fixed_face,
-                  const int* sizes = NULL);
+                  const int* sizes = nullptr);
 
     /**
         Sets default font sizes and/or default font size.
@@ -479,10 +487,16 @@ public:
 
         @param type
             HTMLCursor type to retrieve.
+        @param window
+            The window for which the cursor is requested, should be non-@NULL
+            to use the appropriate DPI. If @NULL, default application window is
+            used to determine the desired cursor size. This parameter is new
+            since wxWidgets 3.3.0.
 
         @since 3.1.0
     */
-    static wxCursor GetDefaultHTMLCursor(HTMLCursor type);
+    static wxCursor GetDefaultHTMLCursor(HTMLCursor type,
+                                         const wxWindow* window = nullptr);
 
     /**
         Sets the default cursor for a given HTMLCursor type.
@@ -504,7 +518,7 @@ protected:
     /**
         This method is called when a mouse button is clicked inside wxHtmlWindow.
         The default behaviour is to emit a wxHtmlCellEvent and, if the event was
-        not processed or skipped, call OnLinkClicked() if the cell contains an
+        not processed or skipped, call OnLinkClicked() if the cell contains a
         hypertext link.
 
         Overloading this method is deprecated; intercept the event instead.
@@ -559,7 +573,7 @@ wxEventType wxEVT_HTML_LINK_CLICKED;
     @endEventTable
 
     @library{wxhtml}
-    @category{html}
+    @category{html,events}
 */
 class wxHtmlLinkEvent : public wxCommandEvent
 {
@@ -592,7 +606,7 @@ public:
     @endEventTable
 
     @library{wxhtml}
-    @category{html}
+    @category{html,events}
 */
 class wxHtmlCellEvent : public wxCommandEvent
 {

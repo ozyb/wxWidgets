@@ -13,9 +13,6 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
@@ -58,71 +55,20 @@ struct FooObject : public wxObject
 size_t FooObject::count = 0;
 
 // --------------------------------------------------------------------------
-// test class
+// tests
 // --------------------------------------------------------------------------
 
-class HashesTestCase : public CppUnit::TestCase
-{
-public:
-    HashesTestCase() { }
-
-private:
-    CPPUNIT_TEST_SUITE( HashesTestCase );
-        CPPUNIT_TEST( wxHashTableTest );
-        CPPUNIT_TEST( wxUntypedHashTableDeleteContents );
-        CPPUNIT_TEST( wxTypedHashTableTest );
-        CPPUNIT_TEST( StringHashMapTest );
-        CPPUNIT_TEST( PtrHashMapTest );
-        CPPUNIT_TEST( LongHashMapTest );
-        CPPUNIT_TEST( ULongHashMapTest );
-        CPPUNIT_TEST( UIntHashMapTest );
-        CPPUNIT_TEST( IntHashMapTest );
-        CPPUNIT_TEST( ShortHashMapTest );
-        CPPUNIT_TEST( UShortHashMapTest );
-#ifdef TEST_LONGLONG
-        CPPUNIT_TEST( LLongHashMapTest );
-        CPPUNIT_TEST( ULLongHashMapTest );
-#endif
-        CPPUNIT_TEST( wxHashSetTest );
-    CPPUNIT_TEST_SUITE_END();
-
-    void wxHashTableTest();
-    void wxUntypedHashTableDeleteContents();
-    void wxTypedHashTableTest();
-    void StringHashMapTest();
-    void PtrHashMapTest();
-    void LongHashMapTest();
-    void ULongHashMapTest();
-    void UIntHashMapTest();
-    void IntHashMapTest();
-    void ShortHashMapTest();
-    void UShortHashMapTest();
-#ifdef TEST_LONGLONG
-    void LLongHashMapTest();
-    void ULLongHashMapTest();
-#endif
-    void wxHashSetTest();
-
-    wxDECLARE_NO_COPY_CLASS(HashesTestCase);
-};
-
-// register in the unnamed registry so that these tests are run by default
-CPPUNIT_TEST_SUITE_REGISTRATION( HashesTestCase );
-
-// also include in its own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( HashesTestCase, "HashesTestCase" );
-
-void HashesTestCase::wxHashTableTest()
+TEST_CASE("Hashes::wxHashTable", "[hash]")
 {
     const int COUNT = 100;
 
     {
         wxHashTable hash(wxKEY_INTEGER, 10), hash2(wxKEY_STRING);
-        wxObject o;
+        wxObject o[20];
         int i;
 
         for ( i = 0; i < COUNT; ++i )
-            hash.Put(i, &o + i);
+            hash.Put(i, o + i);
 
         hash.BeginFind();
         wxHashTable::compatibility_iterator it = hash.Next();
@@ -134,42 +80,42 @@ void HashesTestCase::wxHashTableTest()
             it = hash.Next();
         }
 
-        CPPUNIT_ASSERT( i == COUNT );
+        CHECK( i == COUNT );
 
         for ( i = 99; i >= 0; --i )
-            CPPUNIT_ASSERT( hash.Get(i) == &o + i );
+            CHECK( hash.Get(i) == o + i );
 
         for ( i = 0; i < COUNT; ++i )
-            hash.Put(i, &o + i + 20);
+            hash.Put(i, o + i + 20);
 
         for ( i = 99; i >= 0; --i )
-            CPPUNIT_ASSERT( hash.Get(i) == &o + i);
+            CHECK( hash.Get(i) == o + i);
 
         for ( i = 0; i < COUNT/2; ++i )
-            CPPUNIT_ASSERT( hash.Delete(i) == &o + i);
+            CHECK( hash.Delete(i) == o + i);
 
         for ( i = COUNT/2; i < COUNT; ++i )
-            CPPUNIT_ASSERT( hash.Get(i) == &o + i);
+            CHECK( hash.Get(i) == o + i);
 
         for ( i = 0; i < COUNT/2; ++i )
-            CPPUNIT_ASSERT( hash.Get(i) == &o + i + 20);
+            CHECK( hash.Get(i) == o + i + 20);
 
         for ( i = 0; i < COUNT/2; ++i )
-            CPPUNIT_ASSERT( hash.Delete(i) == &o + i + 20);
+            CHECK( hash.Delete(i) == o + i + 20);
 
         for ( i = 0; i < COUNT/2; ++i )
-            CPPUNIT_ASSERT( hash.Get(i) == NULL);
+            CHECK( hash.Get(i) == nullptr);
 
-        hash2.Put(wxT("foo"), &o + 1);
-        hash2.Put(wxT("bar"), &o + 2);
-        hash2.Put(wxT("baz"), &o + 3);
+        hash2.Put(wxT("foo"), o + 1);
+        hash2.Put(wxT("bar"), o + 2);
+        hash2.Put(wxT("baz"), o + 3);
 
-        CPPUNIT_ASSERT(hash2.Get(wxT("moo")) == NULL);
-        CPPUNIT_ASSERT(hash2.Get(wxT("bar")) == &o + 2);
+        CHECK(hash2.Get(wxT("moo")) == nullptr);
+        CHECK(hash2.Get(wxT("bar")) == o + 2);
 
-        hash2.Put(wxT("bar"), &o + 0);
+        hash2.Put(wxT("bar"), o + 0);
 
-        CPPUNIT_ASSERT(hash2.Get(wxT("bar")) == &o + 2);
+        CHECK(hash2.Get(wxT("bar")) == o + 2);
     }
 
     // and now some corner-case testing; 3 and 13 hash to the same bucket
@@ -180,61 +126,61 @@ void HashesTestCase::wxHashTableTest()
         hash.Put(3, &dummy);
         hash.Delete(3);
 
-        CPPUNIT_ASSERT(hash.Get(3) == NULL);
+        CHECK(hash.Get(3) == nullptr);
 
         hash.Put(3, &dummy);
         hash.Put(13, &dummy);
         hash.Delete(3);
 
-        CPPUNIT_ASSERT(hash.Get(3) == NULL);
+        CHECK(hash.Get(3) == nullptr);
 
         hash.Delete(13);
 
-        CPPUNIT_ASSERT(hash.Get(13) == NULL);
+        CHECK(hash.Get(13) == nullptr);
 
         hash.Put(3, &dummy);
         hash.Put(13, &dummy);
         hash.Delete(13);
 
-        CPPUNIT_ASSERT(hash.Get(13) == NULL);
+        CHECK(hash.Get(13) == nullptr);
 
         hash.Delete(3);
 
-        CPPUNIT_ASSERT(hash.Get(3) == NULL);
+        CHECK(hash.Get(3) == nullptr);
     }
 
     // test for key + value access (specifically that supplying either
-    // wrong key or wrong value returns NULL)
+    // wrong key or wrong value returns nullptr)
     {
         wxHashTable hash(wxKEY_INTEGER, 10);
-        wxObject dummy;
+        wxObject dummy[8];
 
-        hash.Put(3, 7, &dummy + 7);
-        hash.Put(4, 8, &dummy + 8);
+        hash.Put(3, 7, dummy + 7);
+        hash.Put(4, 8, dummy + 8);
 
-        CPPUNIT_ASSERT(hash.Get(7) == NULL);
-        CPPUNIT_ASSERT(hash.Get(3, 7) == &dummy + 7);
-        CPPUNIT_ASSERT(hash.Get(4) == NULL);
-        CPPUNIT_ASSERT(hash.Get(3) == NULL);
-        CPPUNIT_ASSERT(hash.Get(8) == NULL);
-        CPPUNIT_ASSERT(hash.Get(8, 4) == NULL);
+        CHECK(hash.Get(7) == nullptr);
+        CHECK(hash.Get(3, 7) == dummy + 7);
+        CHECK(hash.Get(4) == nullptr);
+        CHECK(hash.Get(3) == nullptr);
+        CHECK(hash.Get(8) == nullptr);
+        CHECK(hash.Get(8, 4) == nullptr);
 
-        CPPUNIT_ASSERT(hash.Delete(7) == NULL);
-        CPPUNIT_ASSERT(hash.Delete(3) == NULL);
-        CPPUNIT_ASSERT(hash.Delete(3, 7) == &dummy + 7);
+        CHECK(hash.Delete(7) == nullptr);
+        CHECK(hash.Delete(3) == nullptr);
+        CHECK(hash.Delete(3, 7) == dummy + 7);
     }
 
 }
 
-void HashesTestCase::wxUntypedHashTableDeleteContents()
+TEST_CASE("Hashes::wxUntypedHashTableDeleteContents", "[hash]")
 {
     // need a nested scope for destruction
     {
         wxHashTable hash;
         hash.DeleteContents(true);
 
-        CPPUNIT_ASSERT( hash.GetCount() == 0 );
-        CPPUNIT_ASSERT( FooObject::count == 0 );
+        CHECK( hash.GetCount() == 0 );
+        CHECK( FooObject::count == 0 );
 
         static const int hashTestData[] =
         {
@@ -247,32 +193,32 @@ void HashesTestCase::wxUntypedHashTableDeleteContents()
             hash.Put(hashTestData[n], n, new FooObject(n));
         }
 
-        CPPUNIT_ASSERT( hash.GetCount() == WXSIZEOF(hashTestData) );
-        CPPUNIT_ASSERT( FooObject::count == WXSIZEOF(hashTestData) );
+        CHECK( hash.GetCount() == WXSIZEOF(hashTestData) );
+        CHECK( FooObject::count == WXSIZEOF(hashTestData) );
 
         // delete from hash without deleting object
         FooObject* foo = (FooObject*)hash.Delete(0l);
 
-        CPPUNIT_ASSERT( FooObject::count == WXSIZEOF(hashTestData) );
+        CHECK( FooObject::count == WXSIZEOF(hashTestData) );
         delete foo;
-        CPPUNIT_ASSERT( FooObject::count == WXSIZEOF(hashTestData) - 1 );
+        CHECK( FooObject::count == WXSIZEOF(hashTestData) - 1 );
     }
 
     // hash destroyed
-    CPPUNIT_ASSERT( FooObject::count == 0 );
+    CHECK( FooObject::count == 0 );
 }
 
 WX_DECLARE_HASH(Foo, wxListFoos, wxHashFoos);
 
-void HashesTestCase::wxTypedHashTableTest()
+TEST_CASE("Hashes::wxTypedHashTable", "[hash]")
 {
     // need a nested scope for destruction
     {
         wxHashFoos hash;
         hash.DeleteContents(true);
 
-        CPPUNIT_ASSERT( hash.GetCount() == 0 );
-        CPPUNIT_ASSERT( Foo::count == 0 );
+        CHECK( hash.GetCount() == 0 );
+        CHECK( Foo::count == 0 );
 
         static const int hashTestData[] =
         {
@@ -285,31 +231,31 @@ void HashesTestCase::wxTypedHashTableTest()
             hash.Put(hashTestData[n], n, new Foo(n));
         }
 
-        CPPUNIT_ASSERT( hash.GetCount() == WXSIZEOF(hashTestData) );
-        CPPUNIT_ASSERT( Foo::count == WXSIZEOF(hashTestData) );
+        CHECK( hash.GetCount() == WXSIZEOF(hashTestData) );
+        CHECK( Foo::count == WXSIZEOF(hashTestData) );
 
         for ( n = 0; n < WXSIZEOF(hashTestData); n++ )
         {
             Foo *foo = hash.Get(hashTestData[n], n);
 
-            CPPUNIT_ASSERT( foo != NULL );
-            CPPUNIT_ASSERT( foo->n == (int)n );
+            CHECK( foo != nullptr );
+            CHECK( foo->n == (int)n );
         }
 
         // element not in hash
-        CPPUNIT_ASSERT( hash.Get(1234) == NULL );
-        CPPUNIT_ASSERT( hash.Get(1, 0) == NULL );
+        CHECK( hash.Get(1234) == nullptr );
+        CHECK( hash.Get(1, 0) == nullptr );
 
         // delete from hash without deleting object
         Foo* foo = hash.Delete(0);
 
-        CPPUNIT_ASSERT( Foo::count == WXSIZEOF(hashTestData) );
+        CHECK( Foo::count == WXSIZEOF(hashTestData) );
         delete foo;
-        CPPUNIT_ASSERT( Foo::count == WXSIZEOF(hashTestData) - 1 );
+        CHECK( Foo::count == WXSIZEOF(hashTestData) - 1 );
     }
 
     // hash destroyed
-    CPPUNIT_ASSERT( Foo::count == 0 );
+    CHECK( Foo::count == 0 );
 }
 
 // test compilation of basic map types
@@ -404,23 +350,23 @@ HashMapTest()
     }
 
     // test that insertion worked
-    CPPUNIT_ASSERT( sh.size() == count );
+    CHECK( sh.size() == count );
 
     for( i = 0; i < count; ++i )
     {
         MakeKeyValuePair(i, count, buf, value);
-        CPPUNIT_ASSERT( sh[buf] == value );
+        CHECK( sh[buf] == value );
     }
 
     // check that iterators work
     Itor it;
     for( i = 0, it = sh.begin(); it != sh.end(); ++it, ++i )
     {
-        CPPUNIT_ASSERT( i != count );
-        CPPUNIT_ASSERT( it->second == sh[it->first] );
+        CHECK( i != count );
+        CHECK( it->second == sh[it->first] );
     }
 
-    CPPUNIT_ASSERT( sh.size() == i );
+    CHECK( sh.size() == i );
 
     // test copy ctor, assignment operator
     HashMapT h1( sh ), h2( 0 );
@@ -428,8 +374,8 @@ HashMapTest()
 
     for( i = 0, it = sh.begin(); it != sh.end(); ++it, ++i )
     {
-        CPPUNIT_ASSERT( h1[it->first] == it->second );
-        CPPUNIT_ASSERT( h2[it->first] == it->second );
+        CHECK( h1[it->first] == it->second );
+        CHECK( h2[it->first] == it->second );
     }
 
     // other tests
@@ -442,37 +388,37 @@ HashMapTest()
         if( i < 100 )
         {
             it = sh.find( buf );
-            CPPUNIT_ASSERT( it != sh.end() );
+            CHECK( it != sh.end() );
 
             sh.erase( it );
 
-            CPPUNIT_ASSERT( sh.find( buf ) == sh.end() );
+            CHECK( sh.find( buf ) == sh.end() );
         }
         else
         // test erase(key)
         {
             size_t c = sh.erase( buf );
-            CPPUNIT_ASSERT( c == 1 );
-            CPPUNIT_ASSERT( sh.find( buf ) == sh.end() );
+            CHECK( c == 1 );
+            CHECK( sh.find( buf ) == sh.end() );
         }
 
         // count should decrease
-        CPPUNIT_ASSERT( sh.size() == sz - 1 );
+        CHECK( sh.size() == sz - 1 );
     }
 }
 
-void HashesTestCase::StringHashMapTest() { HashMapTest<myStringHashMap>();   }
-void HashesTestCase::PtrHashMapTest()    { HashMapTest<myPtrHashMap>();      }
-void HashesTestCase::LongHashMapTest()   { HashMapTest<myLongHashMap>();     }
-void HashesTestCase::ULongHashMapTest()  { HashMapTest<myUnsignedHashMap>(); }
-void HashesTestCase::UIntHashMapTest()   { HashMapTest<myTestHashMap1>();    }
-void HashesTestCase::IntHashMapTest()    { HashMapTest<myTestHashMap2>();    }
-void HashesTestCase::ShortHashMapTest()  { HashMapTest<myTestHashMap3>();    }
-void HashesTestCase::UShortHashMapTest() { HashMapTest<myTestHashMap4>();    }
+TEST_CASE("Hashes::StringHashMap", "[hash]") { HashMapTest<myStringHashMap>(); }
+TEST_CASE("Hashes::PtrHashMap", "[hash]") { HashMapTest<myPtrHashMap>(); }
+TEST_CASE("Hashes::LongHashMap", "[hash]") { HashMapTest<myLongHashMap>(); }
+TEST_CASE("Hashes::ULongHashMap", "[hash]") { HashMapTest<myUnsignedHashMap>(); }
+TEST_CASE("Hashes::UIntHashMap", "[hash]") { HashMapTest<myTestHashMap1>(); }
+TEST_CASE("Hashes::IntHashMap", "[hash]") { HashMapTest<myTestHashMap2>(); }
+TEST_CASE("Hashes::ShortHashMap", "[hash]") { HashMapTest<myTestHashMap3>(); }
+TEST_CASE("Hashes::UShortHashMap", "[hash]") { HashMapTest<myTestHashMap4>(); }
 
 #ifdef TEST_LONGLONG
-void HashesTestCase::LLongHashMapTest()  { HashMapTest<myLLongHashMap>();    }
-void HashesTestCase::ULLongHashMapTest() { HashMapTest<myULLongHashMap>();   }
+TEST_CASE("Hashes::LLongHashMap", "[hash]") { HashMapTest<myLLongHashMap>(); }
+TEST_CASE("Hashes::ULLongHashMap", "[hash]") { HashMapTest<myULLongHashMap>(); }
 #endif
 
 // test compilation of basic set types
@@ -500,6 +446,8 @@ struct MyStruct
 class MyHash
 {
 public:
+    MyHash() = default;
+    MyHash(const MyHash&) = default;
     unsigned long operator()(const MyStruct& s) const
         { return m_dummy(s.ptr); }
     MyHash& operator=(const MyHash&) { return *this; }
@@ -510,6 +458,8 @@ private:
 class MyEqual
 {
 public:
+    MyEqual() = default;
+    MyEqual(const MyEqual&) = default;
     bool operator()(const MyStruct& s1, const MyStruct& s2) const
         { return s1.ptr == s2.ptr; }
     MyEqual& operator=(const MyEqual&) { return *this; }
@@ -519,22 +469,22 @@ WX_DECLARE_HASH_SET( MyStruct, MyHash, MyEqual, mySet );
 
 typedef myTestHashSet5 wxStringHashSet;
 
-void HashesTestCase::wxHashSetTest()
+TEST_CASE("Hashes::wxHashSet", "[hash]")
 {
     wxStringHashSet set1;
 
     set1.insert( wxT("abc") );
 
-    CPPUNIT_ASSERT( set1.size() == 1 );
+    CHECK( set1.size() == 1 );
 
     set1.insert( wxT("bbc") );
     set1.insert( wxT("cbc") );
 
-    CPPUNIT_ASSERT( set1.size() == 3 );
+    CHECK( set1.size() == 3 );
 
     set1.insert( wxT("abc") );
 
-    CPPUNIT_ASSERT( set1.size() == 3 );
+    CHECK( set1.size() == 3 );
 
     mySet set2;
     int dummy;
@@ -547,11 +497,11 @@ void HashesTestCase::wxHashSetTest()
     tmp.ptr = &dummy; tmp.str = wxT("CDE");
     set2.insert( tmp );
 
-    CPPUNIT_ASSERT( set2.size() == 2 );
+    CHECK( set2.size() == 2 );
 
     mySet::iterator it = set2.find( tmp );
 
-    CPPUNIT_ASSERT( it != set2.end() );
-    CPPUNIT_ASSERT( it->ptr == &dummy );
-    CPPUNIT_ASSERT( it->str == wxT("ABC") );
+    CHECK( it != set2.end() );
+    CHECK( it->ptr == &dummy );
+    CHECK( it->str == wxT("ABC") );
 }

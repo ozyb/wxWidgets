@@ -9,9 +9,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
 #endif
@@ -73,7 +70,7 @@ class MyApp : public wxApp
 {
 public:
     // 'Main program' equivalent: the program execution "starts" here
-    virtual bool OnInit() wxOVERRIDE
+    virtual bool OnInit() override
     {
         if ( !wxApp::OnInit() )
             return false;
@@ -89,7 +86,7 @@ public:
     }
 
     // create the file system watcher here, because it needs an active loop
-    virtual void OnEventLoopEnter(wxEventLoopBase* WXUNUSED(loop)) wxOVERRIDE
+    virtual void OnEventLoopEnter(wxEventLoopBase* WXUNUSED(loop)) override
     {
         if ( m_frame->CreateWatcherIfNecessary() )
         {
@@ -98,7 +95,7 @@ public:
         }
     }
 
-    virtual void OnInitCmdLine(wxCmdLineParser& parser) wxOVERRIDE
+    virtual void OnInitCmdLine(wxCmdLineParser& parser) override
     {
         wxApp::OnInitCmdLine(parser);
         parser.AddParam("directory to watch",
@@ -106,7 +103,7 @@ public:
                         wxCMD_LINE_PARAM_OPTIONAL);
     }
 
-    virtual bool OnCmdLineParsed(wxCmdLineParser& parser) wxOVERRIDE
+    virtual bool OnCmdLineParsed(wxCmdLineParser& parser) override
     {
         if ( !wxApp::OnCmdLineParsed(parser) )
             return false;
@@ -138,8 +135,8 @@ wxIMPLEMENT_APP(MyApp);
 
 // frame constructor
 MyFrame::MyFrame(const wxString& title)
-    : wxFrame(NULL, wxID_ANY, title),
-      m_watcher(NULL), m_followLinks(false)
+    : wxFrame(nullptr, wxID_ANY, title),
+      m_watcher(nullptr), m_followLinks(false)
 {
     SetIcon(wxICON(sample));
 
@@ -206,7 +203,7 @@ MyFrame::MyFrame(const wxString& title)
 
     // label
     wxStaticText* label = new wxStaticText(panel, wxID_ANY, "Watched paths");
-    leftSizer->Add(label, wxSizerFlags().Center().Border(wxALL));
+    leftSizer->Add(label, wxSizerFlags().Center().Border());
 
     // list of files
     m_filesList = new wxListView(panel, wxID_ANY, wxPoint(-1,-1),
@@ -219,10 +216,10 @@ MyFrame::MyFrame(const wxString& title)
     wxButton* buttonRemove = new wxButton(panel, BTN_ID_REMOVE, "&Remove");
     wxButton* buttonRemoveAll = new wxButton(panel, BTN_ID_REMOVE_ALL, "Remove a&ll");
     wxSizer *btnSizer = new wxGridSizer(2);
-    btnSizer->Add(buttonAdd, wxSizerFlags().Center().Border(wxALL));
-    btnSizer->Add(buttonAddTree, wxSizerFlags().Center().Border(wxALL));
-    btnSizer->Add(buttonRemove, wxSizerFlags().Center().Border(wxALL));
-    btnSizer->Add(buttonRemoveAll, wxSizerFlags().Center().Border(wxALL));
+    btnSizer->Add(buttonAdd, wxSizerFlags().Center().Border());
+    btnSizer->Add(buttonAddTree, wxSizerFlags().Center().Border());
+    btnSizer->Add(buttonRemove, wxSizerFlags().Center().Border());
+    btnSizer->Add(buttonRemoveAll, wxSizerFlags().Center().Border());
 
     // and put it all together
     leftSizer->Add(btnSizer, wxSizerFlags(0).Expand());
@@ -322,7 +319,7 @@ void MyFrame::OnAbout(wxCommandEvent& WXUNUSED(event))
 
 void MyFrame::OnWatch(wxCommandEvent& event)
 {
-    wxLogDebug("%s start=%d", __WXFUNCTION__, event.IsChecked());
+    wxLogDebug("%s start=%d", __func__, event.IsChecked());
 
     if (event.IsChecked())
     {
@@ -484,7 +481,7 @@ void MyFrame::OnFileSystemEvent(wxFileSystemWatcherEvent& event)
         bool found(false);
         for (size_t n = m_filesList->GetItemCount(); n > 0; --n)
         {
-            wxString path, foo = m_filesList->GetItemText(n-1);
+            wxString path;
             if ((!m_filesList->GetItemText(n-1).StartsWith("Dir:  ", &path)) &&
                 (!m_filesList->GetItemText(n-1).StartsWith("Tree: ", &path)))
             {

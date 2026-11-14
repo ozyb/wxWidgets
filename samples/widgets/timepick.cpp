@@ -19,9 +19,6 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_TIMEPICKCTRL
 
@@ -42,8 +39,6 @@
 
 #include "widgets.h"
 
-#include "icons/timepick.xpm"
-
 // ----------------------------------------------------------------------------
 // constants
 // ----------------------------------------------------------------------------
@@ -63,13 +58,13 @@ enum
 class TimePickerWidgetsPage : public WidgetsPage
 {
 public:
-    TimePickerWidgetsPage(WidgetsBookCtrl *book, wxImageList *imaglist);
+    TimePickerWidgetsPage(WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist);
 
-    virtual wxWindow *GetWidget() const wxOVERRIDE { return m_timePicker; }
-    virtual void RecreateWidget() wxOVERRIDE { CreateTimePicker(); }
+    virtual wxWindow *GetWidget() const override { return m_timePicker; }
+    virtual void RecreateWidget() override { CreateTimePicker(); }
 
     // lazy creation of the content
-    virtual void CreateContent() wxOVERRIDE;
+    virtual void CreateContent() override;
 
 protected:
     // event handlers
@@ -124,8 +119,8 @@ IMPLEMENT_WIDGETS_PAGE(TimePickerWidgetsPage, "TimePicker",
                        );
 
 TimePickerWidgetsPage::TimePickerWidgetsPage(WidgetsBookCtrl *book,
-                                         wxImageList *imaglist)
-                     : WidgetsPage(book, imaglist, timepick_xpm)
+                                         wxVector<wxBitmapBundle>& imaglist)
+                     : WidgetsPage(book, imaglist, WidgetsIcon::TimePicker)
 {
 }
 
@@ -151,7 +146,7 @@ void TimePickerWidgetsPage::CreateContent()
                      ),
                      wxSizerFlags().Expand().Border());
 
-    m_textCur->SetMinSize(wxSize(GetTextExtent("  99:99:99  ").x, -1));
+    m_textCur->SetMinSize(m_textCur->GetSizeFromText("00:00:00 AM"));
 
 
     // right pane: control itself
@@ -159,15 +154,15 @@ void TimePickerWidgetsPage::CreateContent()
 
     m_timePicker = new wxTimePickerCtrl(this, TimePickerPage_Picker);
 
-    sizerRight->Add(0, 0, 1, wxCENTRE);
-    sizerRight->Add(m_timePicker, 1, wxCENTRE);
-    sizerRight->Add(0, 0, 1, wxCENTRE);
+    sizerRight->AddStretchSpacer();
+    sizerRight->Add(m_timePicker, wxSizerFlags(1).Centre());
+    sizerRight->AddStretchSpacer();
     m_sizerTimePicker = sizerRight; // save it to modify it later
 
     // the 3 panes panes compose the window
-    sizerTop->Add(sizerLeft, 0, (wxALL & ~wxLEFT), 10);
-    sizerTop->Add(sizerMiddle, 0, (wxTOP | wxBOTTOM), 10);
-    sizerTop->Add(sizerRight, 1, wxGROW | (wxALL & ~wxRIGHT), 10);
+    sizerTop->Add(sizerLeft, wxSizerFlags().DoubleBorder(wxALL & ~wxLEFT));
+    sizerTop->Add(sizerMiddle, wxSizerFlags().DoubleBorder(wxTOP | wxBOTTOM));
+    sizerTop->Add(sizerRight, wxSizerFlags(1).Expand().DoubleBorder(wxALL & ~wxRIGHT));
 
     // final initializations
     Reset();
@@ -201,9 +196,11 @@ void TimePickerWidgetsPage::CreateTimePicker()
                                         wxDefaultPosition, wxDefaultSize,
                                         style);
 
-    m_sizerTimePicker->Add(0, 0, 1, wxCENTRE);
-    m_sizerTimePicker->Add(m_timePicker, 1, wxCENTRE);
-    m_sizerTimePicker->Add(0, 0, 1, wxCENTRE);
+    NotifyWidgetRecreation(m_timePicker);
+
+    m_sizerTimePicker->AddStretchSpacer();
+    m_sizerTimePicker->Add(m_timePicker, wxSizerFlags(1).Centre());
+    m_sizerTimePicker->AddStretchSpacer();
     m_sizerTimePicker->Layout();
 }
 

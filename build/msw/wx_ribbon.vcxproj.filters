@@ -28,10 +28,19 @@
     <ClCompile Include="..\..\src\ribbon\art_aui.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\ribbon\art_msw_flat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\ribbon\art_internal.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\ribbon\art_msw.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\ribbon\backstage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\ribbon\backstagecontrols.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\ribbon\bar.cpp">
@@ -71,6 +80,12 @@
     <ClInclude Include="..\..\include\wx\ribbon\art_internal.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\wx\ribbon\backstage.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\ribbon\backstagecontrols.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\include\wx\ribbon\bar.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
@@ -87,6 +102,9 @@
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\ribbon\panel.h">
+      <Filter>Common Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\wx\ribbon\private\backstage.h">
       <Filter>Common Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\wx\ribbon\toolbar.h">

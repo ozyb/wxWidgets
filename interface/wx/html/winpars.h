@@ -96,7 +96,7 @@ public:
         (@a wndIface is a pointer to interface object for the associated wxHtmlWindow
         or other HTML rendering window such as wxHtmlListBox).
     */
-    wxHtmlWinParser(wxHtmlWindowInterface* wndIface = NULL);
+    wxHtmlWinParser(wxHtmlWindowInterface* wndIface = nullptr);
 
     /**
         Adds module() to the list of wxHtmlWinParser tag handler.
@@ -161,13 +161,6 @@ public:
     wxDC* GetDC();
 
     /**
-        Returns wxEncodingConverter class used to do conversion between the
-        @ref GetInputEncoding() "input encoding" and the
-        @ref GetOutputEncoding() "output encoding".
-    */
-    wxEncodingConverter* GetEncodingConverter() const;
-
-    /**
         Returns @true if actual font is bold, @false otherwise.
     */
     int GetFontBold() const;
@@ -198,11 +191,6 @@ public:
     int GetFontUnderlined() const;
 
     /**
-        Returns input encoding.
-    */
-    wxFontEncoding GetInputEncoding() const;
-
-    /**
         Returns actual hypertext link.
         (This value has a non-empty @ref wxHtmlLinkInfo::GetHref Href string
         if the parser is between \<A\> and \</A\> tags, wxEmptyString otherwise.)
@@ -215,14 +203,8 @@ public:
     const wxColour& GetLinkColor() const;
 
     /**
-        Returns output encoding, i.e. closest match to document's input encoding
-        that is supported by operating system.
-    */
-    wxFontEncoding GetOutputEncoding() const;
-
-    /**
         Returns associated window (wxHtmlWindow). This may be @NULL!
-        (You should always test if it is non-@NULL.
+        (You should always test if it is non-null.
         For example @c TITLE handler sets window title only if some window is
         associated, otherwise it does nothing.
    */
@@ -298,12 +280,6 @@ public:
     */
     void SetFonts(const wxString& normal_face, const wxString& fixed_face,
                   const int* sizes = 0);
-
-    /**
-        Sets input encoding. The parser uses this information to build conversion
-        tables from document's encoding to some encoding supported by operating system.
-    */
-    void SetInputEncoding(wxFontEncoding enc);
 
     /**
         Sets actual hypertext link.

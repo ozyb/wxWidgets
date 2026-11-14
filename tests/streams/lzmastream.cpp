@@ -9,9 +9,6 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_LIBLZMA && wxUSE_STREAMS
 
@@ -25,35 +22,13 @@ class LZMAStream : public BaseStreamTestCase<wxLZMAInputStream, wxLZMAOutputStre
 public:
     LZMAStream();
 
-    CPPUNIT_TEST_SUITE(zlibStream);
-        // Base class stream tests.
-        CPPUNIT_TEST(Input_GetSizeFail);
-        CPPUNIT_TEST(Input_GetC);
-        CPPUNIT_TEST(Input_Read);
-        CPPUNIT_TEST(Input_Eof);
-        CPPUNIT_TEST(Input_LastRead);
-        CPPUNIT_TEST(Input_CanRead);
-        CPPUNIT_TEST(Input_SeekIFail);
-        CPPUNIT_TEST(Input_TellI);
-        CPPUNIT_TEST(Input_Peek);
-        CPPUNIT_TEST(Input_Ungetch);
-
-        CPPUNIT_TEST(Output_PutC);
-        CPPUNIT_TEST(Output_Write);
-        CPPUNIT_TEST(Output_LastWrite);
-        CPPUNIT_TEST(Output_SeekOFail);
-        CPPUNIT_TEST(Output_TellO);
-    CPPUNIT_TEST_SUITE_END();
-
 protected:
-    wxLZMAInputStream *DoCreateInStream() wxOVERRIDE;
-    wxLZMAOutputStream *DoCreateOutStream() wxOVERRIDE;
+    wxLZMAInputStream *DoCreateInStream() override;
+    wxLZMAOutputStream *DoCreateOutStream() override;
 
 private:
     wxDECLARE_NO_COPY_CLASS(LZMAStream);
 };
-
-STREAM_TEST_SUBSUITE_NAMED_REGISTRATION(LZMAStream)
 
 LZMAStream::LZMAStream()
 {
@@ -86,5 +61,23 @@ wxLZMAOutputStream *LZMAStream::DoCreateOutStream()
 {
     return new wxLZMAOutputStream(new wxMemoryOutputStream());
 }
+
+// Base class stream tests.
+WX_STREAM_TEST_CASE(LZMAStream, Input_GetSizeFail)
+WX_STREAM_TEST_CASE(LZMAStream, Input_GetC)
+WX_STREAM_TEST_CASE(LZMAStream, Input_Read)
+WX_STREAM_TEST_CASE(LZMAStream, Input_Eof)
+WX_STREAM_TEST_CASE(LZMAStream, Input_LastRead)
+WX_STREAM_TEST_CASE(LZMAStream, Input_CanRead)
+WX_STREAM_TEST_CASE(LZMAStream, Input_SeekIFail)
+WX_STREAM_TEST_CASE(LZMAStream, Input_TellI)
+WX_STREAM_TEST_CASE(LZMAStream, Input_Peek)
+WX_STREAM_TEST_CASE(LZMAStream, Input_Ungetch)
+
+WX_STREAM_TEST_CASE(LZMAStream, Output_PutC)
+WX_STREAM_TEST_CASE(LZMAStream, Output_Write)
+WX_STREAM_TEST_CASE(LZMAStream, Output_LastWrite)
+WX_STREAM_TEST_CASE(LZMAStream, Output_SeekOFail)
+WX_STREAM_TEST_CASE(LZMAStream, Output_TellO)
 
 #endif // wxUSE_LIBLZMA && wxUSE_STREAMS

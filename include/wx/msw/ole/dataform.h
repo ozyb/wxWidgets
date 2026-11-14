@@ -2,7 +2,6 @@
 // Name:        wx/msw/ole/dataform.h
 // Purpose:     declaration of the wxDataFormat class
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     19.10.99 (extracted from msw/ole/dataobj.h)
 // Copyright:   (c) 1998 Vadim Zeitlin <zeitlin@dptmaths.ens-cachan.fr>
 // Licence:     wxWindows licence
@@ -29,6 +28,12 @@ public:
     wxDataFormat(const wxString& format) { SetId(format); }
 #ifndef wxNO_IMPLICIT_WXSTRING_ENCODING
     wxDataFormat(const char *format) { SetId(format); }
+#elif defined(wxALLOW_UTF8_LITERALS)
+    template <size_t N>
+    wxDataFormat(const char (&format)[N])
+        { SetId(wxString::FromUTF8Unchecked(format)); }
+    template <size_t N>
+    wxDataFormat(char (&format)[N]) = delete;
 #endif // wxNO_IMPLICIT_WXSTRING_ENCODING
     wxDataFormat(const wchar_t *format) { SetId(format); }
     wxDataFormat(const wxCStrData& format) { SetId(format); }

@@ -19,15 +19,12 @@
 // for compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 // this file is included from native.mm which ensures that it is compiled as
 // Objective C++, but it's also still compiled by the makefiles directly as C++
 // source because we can't easily exclude it, so check for this and only
 // compile the rest of this file once
-#if !defined(__WXOSX_COCOA__) || defined(__OBJC__)
+#if !defined(__DARWIN__) || defined(__OBJC__)
 
 // for all others, include the necessary headers
 #ifndef WX_PRECOMP
@@ -43,8 +40,6 @@
 #ifdef wxHAS_NATIVE_WINDOW
 
 #include "widgets.h"
-
-#include "icons/native.xpm"
 
 // Helper to create a menu to be shown in our button.
 //
@@ -90,7 +85,7 @@ public:
         // When creating the native window, we must specify the valid parent
         // and while we don't have to specify any position if it's going to be
         // laid out by sizers, we do need the size.
-        const wxSize size = FromDIP(wxSize(140, 30));
+        const wxSize size = FromDIP(FromDIP(wxSize(140, 30)));
 
         HWND hwnd = ::CreateWindow
                       (
@@ -98,7 +93,7 @@ public:
                         TEXT("Press me to do it"),
                         WS_CHILD | WS_VISIBLE | BS_SPLITBUTTON,
                         0, 0, size.x, size.y,
-                        (HWND)parent->GetHWND(), 0, NULL, NULL
+                        (HWND)parent->GetHWND(), 0, nullptr, nullptr
                       );
         if ( !hwnd )
         {
@@ -125,7 +120,7 @@ protected:
     // shows how to handle a native event in MSW (for the specific case of
     // WM_NOTIFY, more generally MSWHandleMessage() could be overridden).
     virtual bool
-    MSWOnNotify(int idCtrl, WXLPARAM lParam, WXLPARAM *result) wxOVERRIDE
+    MSWOnNotify(int idCtrl, WXLPARAM lParam, WXLPARAM *result) override
     {
         const NMHDR* hdr = reinterpret_cast<NMHDR*>(lParam);
         if ( hdr->code != BCN_DROPDOWN )
@@ -173,7 +168,9 @@ public:
         );
 #endif // GTK+ 3.6/earlier
 
+        wxGCC_WARNING_SUPPRESS(ignored-qualifiers)
         g_object_ref_sink(widget);
+        wxGCC_WARNING_RESTORE(ignored-qualifiers)
 
         (void)Create(parent, wxID_ANY, widget);
     }
@@ -251,13 +248,13 @@ public:
 class NativeWidgetsPage : public WidgetsPage
 {
 public:
-    NativeWidgetsPage(WidgetsBookCtrl *book, wxImageList *imaglist);
+    NativeWidgetsPage(WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist);
 
-    virtual wxWindow *GetWidget() const wxOVERRIDE { return m_nativeWindow; }
-    virtual void RecreateWidget() wxOVERRIDE;
+    virtual wxWindow *GetWidget() const override { return m_nativeWindow; }
+    virtual void RecreateWidget() override;
 
     // lazy creation of the content
-    virtual void CreateContent() wxOVERRIDE;
+    virtual void CreateContent() override;
 
 private:
     void OnCheckExpand(wxCommandEvent& event);
@@ -276,10 +273,10 @@ private:
 
 IMPLEMENT_WIDGETS_PAGE(NativeWidgetsPage, "Native", NATIVE_CTRLS);
 
-NativeWidgetsPage::NativeWidgetsPage(WidgetsBookCtrl *book, wxImageList *imaglist)
-                 : WidgetsPage(book, imaglist, native_xpm)
+NativeWidgetsPage::NativeWidgetsPage(WidgetsBookCtrl *book, wxVector<wxBitmapBundle>& imaglist)
+                 : WidgetsPage(book, imaglist, WidgetsIcon::Native)
 {
-    m_nativeWindow = NULL;
+    m_nativeWindow = nullptr;
 }
 
 void NativeWidgetsPage::CreateContent()
@@ -308,6 +305,8 @@ void NativeWidgetsPage::RecreateWidget()
 {
     delete m_nativeWindow;
     m_nativeWindow = new NativeWindow(this);
+
+    NotifyWidgetRecreation(m_nativeWindow);
 
     m_sizerCtrl->Clear();
     if ( m_chkExpand->IsChecked() )

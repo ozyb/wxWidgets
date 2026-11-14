@@ -2,7 +2,6 @@
 // Name:        src/x11/pen.cpp
 // Purpose:     wxPen
 // Author:      Julian Smart
-// Modified by:
 // Created:     17/09/98
 // Copyright:   (c) Julian Smart
 // Licence:     wxWindows licence
@@ -32,11 +31,12 @@ public:
         m_style = wxPENSTYLE_SOLID;
         m_joinStyle = wxJOIN_ROUND;
         m_capStyle = wxCAP_ROUND;
-        m_dash = NULL;
+        m_dash = nullptr;
         m_countDashes = 0;
     }
 
     wxPenRefData( const wxPenRefData& data )
+        : wxGDIRefData()
     {
         m_style = data.m_style;
         m_width = data.m_width;
@@ -107,11 +107,6 @@ wxPen::wxPen(const wxPenInfo& info)
     m_refData = new wxPenRefData(info);
 }
 
-wxPen::~wxPen()
-{
-    // m_refData unrefed in ~wxObject
-}
-
 wxGDIRefData *wxPen::CreateGDIRefData() const
 {
     return new wxPenRefData;
@@ -119,7 +114,7 @@ wxGDIRefData *wxPen::CreateGDIRefData() const
 
 wxGDIRefData *wxPen::CloneGDIRefData(const wxGDIRefData *data) const
 {
-    return new wxPenRefData(*(wxPenRefData *)data);
+    return new wxPenRefData(*(const wxPenRefData *)data);
 }
 
 bool wxPen::operator == ( const wxPen& pen ) const
@@ -143,7 +138,7 @@ void wxPen::SetDashes( int number_of_dashes, const wxDash *dash )
     AllocExclusive();
 
     M_PENDATA->m_countDashes = number_of_dashes;
-    M_PENDATA->m_dash = (wxX11Dash *)dash; // TODO
+    M_PENDATA->m_dash = (wxX11Dash *)const_cast<wxDash*>(dash); // TODO
 }
 
 void wxPen::SetColour( unsigned char red, unsigned char green, unsigned char blue )

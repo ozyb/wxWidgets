@@ -10,9 +10,9 @@
 
     This class represents the colour chooser dialog.
 
-    Starting from wxWidgets 3.1.3 and currently in the MSW port only, this
-    dialog generates wxEVT_COLOUR_CHANGED events while it is being shown, i.e.
-    from inside its ShowModal() method, that notify the program about the
+    Starting from wxWidgets 3.1.3 (MSW) and wxWidgets 3.3.2 (Qt) ports only,
+    this dialog generates wxEVT_COLOUR_CHANGED events while it is being shown,
+    i.e. from inside its ShowModal() method, that notify the program about the
     change of the currently selected colour and allow it to e.g. preview the
     effect of selecting this colour. Note that if you react to this event, you
     should also correctly revert to the previously selected colour if the
@@ -27,7 +27,7 @@
 
         wxColourData data;
         data.SetColour(initialColourToUse);
-        wxColourData dlg(this, &data);
+        wxColourDialog dlg(this, &data);
         dlg.Bind(wxEVT_COLOUR_CHANGED, [](wxColourDialogEvent& event) {
                     Redraw(event.GetColour());
                  });
@@ -66,7 +66,7 @@ public:
 
         @see wxColourData
     */
-    wxColourDialog(wxWindow* parent, const wxColourData* data = NULL);
+    wxColourDialog(wxWindow* parent, const wxColourData* data = nullptr);
 
     /**
         Destructor.
@@ -76,7 +76,7 @@ public:
     /**
         Same as wxColourDialog().
     */
-    bool Create(wxWindow* parent, const wxColourData* data = NULL);
+    bool Create(wxWindow* parent, const wxColourData* data = nullptr);
 
     /**
         Returns the colour data associated with the colour dialog.
@@ -117,7 +117,7 @@ public:
     wxColourDialogEvent(wxEventType evtType,
                         wxColourDialog* dialog,
                         const wxColour& colour);
-    
+
     /**
         Retrieve the colour the user has just selected.
     */
@@ -138,7 +138,7 @@ wxEventType wxEVT_COLOUR_CHANGED;
 // ============================================================================
 
 /** @addtogroup group_funcmacro_dialog */
-//@{
+///@{
 
 /**
     Shows the colour selection dialog and returns the colour selected by user
@@ -158,10 +158,10 @@ wxEventType wxEVT_COLOUR_CHANGED;
 
     @header{wx/colordlg.h}
 */
-wxColour wxGetColourFromUser(wxWindow* parent,
-                             const wxColour& colInit,
+wxColour wxGetColourFromUser(wxWindow* parent = nullptr,
+                             const wxColour& colInit = wxNullColour,
                              const wxString& caption = wxEmptyString,
-                             wxColourData* data = NULL);
+                             wxColourData* data = nullptr);
 
-//@}
+///@}
 

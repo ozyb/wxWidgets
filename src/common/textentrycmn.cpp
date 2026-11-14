@@ -18,9 +18,6 @@
 // for compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_TEXTCTRL || wxUSE_COMBOBOX
 
@@ -316,9 +313,7 @@ bool wxTextEntryBase::CanPaste() const
 #if wxUSE_CLIPBOARD
         // check if there is any text on the clipboard
         if ( wxTheClipboard->IsSupported(wxDF_TEXT)
-#if wxUSE_UNICODE
                 || wxTheClipboard->IsSupported(wxDF_UNICODETEXT)
-#endif // wxUSE_UNICODE
            )
         {
             return true;
@@ -343,7 +338,7 @@ struct ForceUpperFunctor
 {
     // This class must have default ctor in wxNO_RTTI case, so allow creating
     // it with null entry even if this never actually happens in practice.
-    explicit ForceUpperFunctor(wxTextEntryBase* entry = NULL)
+    explicit ForceUpperFunctor(wxTextEntryBase* entry = nullptr)
         : m_entry(entry)
     {
     }
@@ -413,7 +408,7 @@ bool wxTextEntryBase::SetHint(const wxString& hint)
     {
         // Setting empty hint removes any currently set one.
         delete m_hintData;
-        m_hintData = NULL;
+        m_hintData = nullptr;
     }
     //else: Setting empty hint when we don't have any doesn't do anything.
 
@@ -442,6 +437,76 @@ wxPoint wxTextEntryBase::DoGetMargins() const
 // ----------------------------------------------------------------------------
 // events
 // ----------------------------------------------------------------------------
+
+/* static */
+bool wxTextEntryBase::IsUsedForEditing(const wxKeyEvent& event)
+{
+    const int key = event.GetKeyCode();
+    const int mods = event.GetModifiers();
+
+    // Alt-Backspace is the standard accelerator for "Undo" but it is also used
+    // by the text controls themselves.
+    if ( mods == wxMOD_ALT )
+        return key == WXK_BACK;
+
+    if ( mods == wxMOD_NONE || mods == wxMOD_SHIFT )
+    {
+        // All the keys producing printable characters are used for entering
+        // text and so can't be used as accelerators when a text control has
+        // focus, unlike the special keys such as Esc, Enter or Tab.
+        if ( key >= WXK_SPACE && key < WXK_START && key != WXK_DELETE )
+            return true;
+
+        switch ( key )
+        {
+            case WXK_BACK:
+            case WXK_DELETE:
+            case WXK_NUMPAD_DELETE:
+            case WXK_HOME:
+            case WXK_NUMPAD_HOME:
+            case WXK_END:
+            case WXK_NUMPAD_END:
+                return true;
+        }
+    }
+
+    if ( mods == wxMOD_CONTROL )
+    {
+        // These are the standard editing commands.
+        switch ( key )
+        {
+            case 'A':
+            case 'C':
+            case 'V':
+            case 'X':
+                return true;
+        }
+    }
+
+    if ( mods == wxMOD_CONTROL || mods == wxMOD_SHIFT )
+    {
+        // These keys are used for moving the cursor or extending the selection
+        // and Ctrl/Shift-Insert/Delete are the traditional copy/paste keys.
+        switch ( key )
+        {
+            case WXK_INSERT:
+            case WXK_NUMPAD_INSERT:
+            case WXK_DELETE:
+            case WXK_NUMPAD_DELETE:
+            case WXK_HOME:
+            case WXK_NUMPAD_HOME:
+            case WXK_END:
+            case WXK_NUMPAD_END:
+            case WXK_LEFT:
+            case WXK_NUMPAD_LEFT:
+            case WXK_RIGHT:
+            case WXK_NUMPAD_RIGHT:
+                return true;
+        }
+    }
+
+    return false;
+}
 
 /* static */
 bool wxTextEntryBase::SendTextUpdatedEvent(wxWindow *win)

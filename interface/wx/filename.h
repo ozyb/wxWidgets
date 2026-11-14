@@ -54,20 +54,52 @@ enum wxSizeConvention
 */
 enum wxPathNormalize
 {
-    //! Replace environment variables with their values.
-    //! wxFileName understands both Unix and Windows (but only under Windows) environment
-    //! variables expansion: i.e. @c "$var", @c "$(var)" and @c "${var}" are always understood
-    //! and in addition under Windows @c "%var%" is also.
+    /**
+        Replace environment variables with their values.
+
+        wxFileName understands both Unix and Windows (but only under Windows) environment
+        variables expansion: i.e. @c "$var", @c "$(var)" and @c "${var}" are always understood
+        and in addition under Windows @c "%var%" is also.
+
+        Note that when this flag is used, dollar or percent signs may be
+        escaped with backslashes to prevent them from being used for the
+        variable expansion, meaning that normalizing any path with a directory
+        starting with a dollar sign under Windows can give unexpected results,
+        as normalizing @c c:\\foo\\$bar results in @c c:\\foo$bar. Because of
+        this, using this flag with arbitrary paths is not recommended.
+     */
     wxPATH_NORM_ENV_VARS = 0x0001,
 
     wxPATH_NORM_DOTS     = 0x0002,  //!< Squeeze all @c ".." and @c ".".
     wxPATH_NORM_TILDE    = 0x0004,  //!< Replace @c "~" and @c "~user" (Unix only).
     wxPATH_NORM_CASE     = 0x0008,  //!< If the platform is case insensitive, make lowercase the path.
     wxPATH_NORM_ABSOLUTE = 0x0010,  //!< Make the path absolute.
-    wxPATH_NORM_LONG =     0x0020,  //!< Expand the path to the "long" form (Windows only).
+
+    /**
+        Expand the path to the "long" form under Windows.
+
+        This flag converts DOS short paths in 8.3 format to long form under
+        Windows and does nothing under the other platforms. It is mostly
+        irrelevant nowadays as short paths are not used any longer in practice.
+
+        Notice that it only works for the existing file paths.
+
+        @see wxFileName::GetLongPath()
+     */
+    wxPATH_NORM_LONG     = 0x0020,
+
     wxPATH_NORM_SHORTCUT = 0x0040,  //!< Resolve the shortcut, if it is a shortcut (Windows only).
 
-    //! A value indicating all normalization flags except for @c wxPATH_NORM_CASE.
+    /**
+        Flags used by wxFileName::Normalize() by default.
+
+        This includes all normalization flags except for @c wxPATH_NORM_CASE
+        and notably does include @c wxPATH_NORM_ENV_VARS which may yield
+        unexpected results, as described above. Because of this, this flag is
+        deprecated and shouldn't be used in the new code and the existing code
+        should be reviewed to check if expanding environment variables is
+        really needed.
+     */
     wxPATH_NORM_ALL      = 0x00ff & ~wxPATH_NORM_CASE
 };
 
@@ -86,7 +118,33 @@ enum
       This flag is obviously @b dangerous and should be used with care and
       after asking the user for confirmation.
      */
-    wxPATH_RMDIR_RECURSIVE = 2
+    wxPATH_RMDIR_RECURSIVE = 2,
+
+    /**
+      Delete the specified directory itself and its parent directories if they
+      are empty, recursively.
+
+      With this flag, Rmdir() will delete the parent directory if it becomes
+      empty after the original directory is removed, and then its grandparent
+      directory if it is also empty, and so on, stopping at the first
+      non-empty (or otherwise impossible to remove) ancestor directory.
+
+      This flag can be combined with wxPATH_RMDIR_FULL, in which case the
+      original directory is removed even if it contains (empty)
+      subdirectories, while its ancestors are still only removed if they are
+      found to be empty.
+
+      It can @e not be combined with wxPATH_RMDIR_RECURSIVE, however, as
+      doing this could result in silently removing more than what was asked
+      for: an assertion failure is triggered and @false is returned if this
+      combination is used. If you do need to remove a possibly non-empty
+      directory tree and then prune the now empty ancestors, do it in two
+      steps by calling Rmdir() with wxPATH_RMDIR_RECURSIVE first and then
+      calling it again with wxPATH_RMDIR_PARENTS on the parent directory.
+
+      @since 3.3.4
+     */
+    wxPATH_RMDIR_PARENTS = 4
 };
 
 /**
@@ -137,14 +195,14 @@ wxULongLong wxInvalidSize;
     directory. Instead initialize the wxFileName instance like this:
 
     @code
-    wxFileName dirname( "C:\mydir", "" );
+    wxFileName dirname( "C:\\mydir", "" );
     MyMethod( dirname.GetPath() );
     @endcode
 
     The same can be done using the static method wxFileName::DirName():
 
     @code
-    wxFileName dirname = wxFileName::DirName( "C:\mydir" );
+    wxFileName dirname = wxFileName::DirName( "C:\\mydir" );
     MyMethod( dirname.GetPath() );
     @endcode
 
@@ -218,6 +276,7 @@ wxULongLong wxInvalidSize;
     @li wxFileName::AssignDir()
     @li wxFileName::AssignHomeDir()
     @li wxFileName::AssignTempFileName()
+    @li wxFileName::AssignTempDirName()
     @li wxFileName::DirName()
     @li wxFileName::FileName()
     @li wxFileName::operator=()
@@ -266,8 +325,6 @@ wxULongLong wxInvalidSize;
     @li wxFileName::SetName()
     @li wxFileName::SetVolume()
 
-    You can initialize a wxFileName instance using one of the following functions:
-
 
     @section filename_operations File name operations
 
@@ -287,6 +344,24 @@ wxULongLong wxInvalidSize;
     @li wxFileName::Mkdir()
     @li wxFileName::Rmdir()
 
+    @section symlink_behavior Behavior with symlinks
+
+    wxFileName instances can store the path to symlinks on systems that support them.
+    When the path is for a symlink, the behavior of the following methods can be modified
+    to either operate on the symlink itself or on the file the link points to.
+
+    @li wxFileName::FileExists()
+    @li wxFileName::DirExists()
+    @li wxFileName::Exists()
+    @li wxFileName::SameAs()
+    @li wxFileName::GetTimes()
+
+    By default, those functions will operate on the target of the link, but they can be
+    made to operate on the link itself by calling wxFileName::DontFollowLink(). The current
+    link-following mode can be examined by calling wxFileName::ShouldFollowLink().
+
+    The wxFileName::ResolveLink() method can be used to get the absolute path for the target
+    of the symlink.
 
     @library{wxbase}
     @category{file}
@@ -437,6 +512,17 @@ public:
     void AssignTempFileName(const wxString& prefix, wxFFile* fileTemp);
 
     /**
+        The function calls CreateTempDirName() to create a temporary directory
+        and sets this object to the name of this directory.
+
+        If a temporary directory couldn't be created, the object is put into
+        an invalid state (see IsOk()).
+
+        @since 3.3.5
+    */
+    void AssignTempDirName(const wxString& prefix);
+
+    /**
         Reset all components to default, uninitialized state.
     */
     void Clear();
@@ -477,14 +563,55 @@ public:
         @return The full temporary filepath, or an empty string on error.
     */
     static wxString CreateTempFileName(const wxString& prefix,
-                                       wxFile* fileTemp = NULL);
+                                       wxFile* fileTemp = nullptr);
 
     /**
         This is the same as CreateTempFileName(const wxString &prefix, wxFile *fileTemp)
         but takes a wxFFile parameter instead of wxFile.
     */
     static wxString CreateTempFileName(const wxString& prefix,
-                                       wxFFile* fileTemp = NULL);
+                                       wxFFile* fileTemp = nullptr);
+
+    /**
+        Creates a new directory with a unique name starting with the given
+        @a prefix.
+
+        Like with CreateTempFileName(), if @a prefix contains a path, the new
+        directory is created in this location (so it must end with a
+        separator if @a prefix specifies just the directory), otherwise it is
+        created in the directory returned by GetTempDir(). Unlike with
+        CreateTempFileName(), the extension of @a prefix, if any, is preserved.
+
+        The directory is created atomically, i.e. this function never returns
+        the name of an existing directory, even if another process tries to
+        create a directory with the same name at the same time. Under Unix,
+        the new directory has read, write and execute permissions for the
+        owner only.
+
+        Note that the directory is not removed automatically, use Rmdir()
+        with ::wxPATH_RMDIR_RECURSIVE flag to remove it together with all of
+        its contents when it is not needed any more, e.g.
+        @code
+        const wxString dir = wxFileName::CreateTempDirName("myapp");
+        if ( dir.empty() )
+            return; // Error was already logged.
+
+        ... create some files in the directory ...
+
+        wxFileName::Rmdir(dir, wxPATH_RMDIR_RECURSIVE);
+        @endcode
+
+        @param prefix
+            The prefix for the directory name, possibly including the path of
+            the directory in which it should be created.
+        @return The full path of the new directory or an empty string on
+            error, which is logged in this case.
+
+        @see AssignTempDirName()
+
+        @since 3.3.5
+    */
+    static wxString CreateTempDirName(const wxString& prefix);
 
 
     /**
@@ -586,6 +713,17 @@ public:
                                wxPathFormat format = wxPATH_NATIVE);
 
     /**
+        Returns full absolute path for this file.
+
+        This is just a convenient shortcut using MakeAbsolute() and
+        GetFullPath() internally.
+
+        @since 3.1.6
+     */
+    wxString GetAbsolutePath(const wxString& cwd = wxEmptyString,
+                             wxPathFormat format = wxPATH_NATIVE) const;
+
+    /**
         Retrieves the value of the current working directory on the specified volume.
         If the volume is empty, the program's current working directory is returned for
         the current volume.
@@ -619,6 +757,125 @@ public:
     static wxString GetForbiddenChars(wxPathFormat format = wxPATH_NATIVE);
 
     /**
+        Returns @true if the given name can't be used as a file or directory
+        name even if it doesn't contain any forbidden characters.
+
+        Currently only the Windows device names are considered to be
+        reserved, so this function always returns @false for formats other
+        than ::wxPATH_DOS. For it, the reserved names are @c CON, @c PRN,
+        @c AUX, @c NUL and @c COM or @c LPT followed by a single digit
+        (including superscript 1, 2 or 3). The names are case-insensitive and
+        are reserved even when followed by an extension or trailing spaces,
+        e.g. @c "nul.txt" or @c "Com1 .log" are reserved too.
+
+        @param name
+            A single path component, i.e. file or directory name without any
+            path separators.
+        @param format
+            The path format to use.
+
+        @see MakeValidName()
+
+        @since 3.3.5
+    */
+    static bool IsReservedName(const wxString& name,
+                               wxPathFormat format = wxPATH_NATIVE);
+
+    /**
+        Returns a valid file or directory name based on the given string.
+
+        This function is useful for constructing file names from strings
+        coming from elsewhere, e.g. from the document title or a network
+        resource name. It replaces all the characters returned by
+        GetForbiddenChars(), the path separators and all control characters
+        with underscores. For ::wxPATH_DOS format, it also removes trailing
+        spaces and dots, which are silently removed by Windows, and prepends
+        an underscore to the reserved names (see IsReservedName()).
+
+        It never returns an empty string, nor "." or "..": the special names
+        "." and ".." are replaced with "_" and "__" respectively and, for
+        ::wxPATH_DOS, a name consisting only of dots and spaces is replaced
+        with the same number of underscores instead of being stripped
+        entirely. An empty string is replaced with "_".
+
+        Note that this function doesn't limit the length of the returned
+        name.
+
+        @param name
+            Any string to make a valid file or directory name from. Note that
+            any path separators in it are replaced, as it is supposed to
+            become a single path component.
+        @param format
+            The path format to use.
+
+        @see MakeSafeRelativePath()
+
+        @since 3.3.5
+    */
+    static wxString MakeValidName(const wxString& name,
+                                  wxPathFormat format = wxPATH_NATIVE);
+
+    /**
+        Returns a safe relative path based on the given string.
+
+        This function is useful for handling paths coming from untrusted
+        sources, e.g. the names of the entries in an archive or of the files
+        dropped from another application, which must be created inside some
+        target directory and never outside of it.
+
+        The path is split into components at the separators returned by
+        GetPathSeparators() and the result contains all of them, separated by
+        GetPathSeparator(), with the following exceptions:
+
+        - Empty components are ignored, so that the leading separators, which
+          would make the path absolute, are removed, as are the trailing and
+          duplicate ones.
+        - "." components are ignored too.
+        - If any component is "..", the path is rejected entirely and an empty
+          string is returned. Such components are not interpreted in any way,
+          as even when they don't escape the target directory, as in
+          "dir/../file", using them is suspicious.
+
+        All the other components are passed to MakeValidName(), so the result
+        contains only valid file and directory names. Note that this means that
+        a DOS path starting with a drive letter, e.g. `c:\dir\file`, is
+        transformed into `c_\dir\file`, which is a relative path too.
+
+        An empty string is also returned if the path doesn't contain any
+        components at all, e.g. if it is empty or consists only of separators.
+
+        Note that this function only works with the path strings and doesn't
+        check whether the path exists or whether any of its components are
+        symbolic links, which could still point outside of the target
+        directory if they were created there before.
+
+        Example of using this function for extracting a file:
+        @code
+        const wxString path = wxFileName::MakeSafeRelativePath(entryName);
+        if ( path.empty() )
+        {
+            wxLogWarning("Skipping entry with invalid name \"%s\".", entryName);
+            return;
+        }
+
+        wxFileName fn(targetDir + wxFILE_SEP_PATH + path);
+        ...
+        @endcode
+
+        @param path
+            Any string to make a safe relative path from.
+        @param format
+            The path format to use. ::wxPATH_VMS is not supported by this
+            function.
+        @return
+            A relative path or empty string if the path couldn't be made safe.
+
+        @since 3.3.5
+    */
+    static wxString MakeSafeRelativePath(const wxString& path,
+                                         wxPathFormat format = wxPATH_NATIVE);
+
+    /**
         Returns the canonical path format for this platform.
     */
     static wxPathFormat GetFormat(wxPathFormat format = wxPATH_NATIVE);
@@ -638,7 +895,7 @@ public:
     */
     static wxString GetHomeDir();
 
-    //@{
+    ///@{
     /**
         Returns the representation of the file size in a human-readable form.
 
@@ -672,7 +929,7 @@ public:
                          const wxString& nullsize = _("Not available"),
                          int precision = 1,
                          wxSizeConvention conv = wxSIZE_CONV_TRADITIONAL);
-    //@}
+    ///@}
 
     /**
         Return the long form of the path (returns identity on non-Windows platforms).
@@ -755,6 +1012,14 @@ public:
 
     /**
         Return the short form of the path (returns identity on non-Windows platforms).
+
+        Under Windows, this function returns an empty string if the full path
+        corresponding to this file name is an "extended length" path, see
+        IsMSWExtendedLengthPath(), which is in particular the case for any path
+        longer than 250 characters because such paths don't have any short form.
+
+        If the short path can't be determined for any other reason, e.g.
+        because the file doesn't exist, the full path is returned.
     */
     wxString GetShortPath() const;
 
@@ -800,14 +1065,35 @@ public:
                   wxDateTime* dtCreate) const;
 
     /**
-        Returns the string containing the volume for this file name, empty if it
-        doesn't have one or if the file system doesn't support volumes at all
-        (for example, Unix).
+        Returns the string containing the volume for this file name.
+
+        The returned string is empty if this object doesn't have a volume name,
+        as is always the case for the paths in Unix format which don't support
+        volumes at all.
+
+        Note that for @c wxPATH_DOS format paths, the returned string may have
+        one of the following forms:
+
+        - Just a single letter, for the usual drive letter volumes, e.g. @c C.
+        - A share name preceded by a double backslash, e.g. `\\share`.
+        - The first part of a so-called "Windows NT device" path, also called
+          "extended length" path, in the form of `\\.\X:` or a raw volume path,
+          e.g. `\\?\Volume{12345678-9abc-def0-1234-56789abcdef0}`. Such volumes
+          always start with a double backslash and a question mark. See also
+          IsMSWExtendedLengthPath().
     */
     wxString GetVolume() const;
 
     /**
         Returns the string separating the volume from the path for this format.
+
+        Note that for @c wxPATH_DOS paths this string can only be used for
+        single-character volumes representing the drive letters, but not with
+        the UNC or GUID volumes (see their description in GetVolume()
+        documentation). For this reason, its use should be avoided, prefer
+        using wxFileName constructor and Assign() overload taking the volume
+        and the path as separate arguments to combining the volume and the path
+        into a single string using the volume separator between them.
     */
     static wxString GetVolumeSeparator(wxPathFormat format = wxPATH_NATIVE);
 
@@ -957,6 +1243,20 @@ public:
                                 wxPathFormat format = wxPATH_NATIVE);
 
     /**
+        Returns @true if the path starts with a double backslash and a question
+        mark.
+
+        Such paths are known as "Windows NT device" paths or "extended length"
+        paths and are passed directly to the file system, allowing to access
+        objects not accessible using the normal paths and avoiding the 260
+        character path length restriction.
+
+        @since 3.3.0
+     */
+    static bool IsMSWExtendedLengthPath(const wxString& path,
+                                        wxPathFormat format = wxPATH_NATIVE);
+
+    /**
         Returns @true if the volume part of the path is a unique volume name.
 
         This function will always return @false if the path format is not
@@ -1051,7 +1351,9 @@ public:
         Normalize the path.
 
         With the default flags value, the path will be made absolute, without
-        any ".." and "." and all environment variables will be expanded in it.
+        any ".." and ".", and, for the Unix format paths, any occurrences of
+        tilde (@c ~) character will be replaced with the home directory of the
+        user following it.
 
         Notice that in some rare cases normalizing a valid path may result in
         an invalid wxFileName object. E.g. normalizing "./" path using
@@ -1062,6 +1364,9 @@ public:
         @param flags
             The kind of normalization to do with the file name. It can be
             any or-combination of the ::wxPathNormalize enumeration values.
+            These values should be explicitly specified, omitting them uses the
+            deprecated wxPATH_NORM_ALL value which is not recommended, see
+            wxPathNormalize enum for more details.
         @param cwd
             If not empty, this directory will be used instead of current
             working directory in normalization (see @c wxPATH_NORM_ABSOLUTE).
@@ -1070,7 +1375,7 @@ public:
 
         @return @true if normalization was successfully or @false otherwise.
     */
-    bool Normalize(int flags = wxPATH_NORM_ALL,
+    bool Normalize(int flags,
                    const wxString& cwd = wxEmptyString,
                    wxPathFormat format = wxPATH_NATIVE);
 
@@ -1138,14 +1443,40 @@ public:
     */
     bool ReplaceHomeDir(wxPathFormat format = wxPATH_NATIVE);
 
+    /**
+        Find the absolute path of the file/directory that is pointed to by this
+        path.
+
+        If this path isn't a symlink, then this function will return the current
+        path. If the path does not exist on disk, An empty wxFileName instance
+        will be returned.
+
+        @note This is only supported on Unix-like platforms (e.g. wxGTK, wxOSX),
+              on other platforms (e.g. wxMSW) this function just returns the
+              current path.
+
+        @since 3.1.5
+
+        @return The absolute path that the current symlink path points to.
+    */
+    wxFileName ResolveLink();
+
 
     /**
         Deletes the specified directory from the file system.
 
         @param flags
-            Can contain one of wxPATH_RMDIR_FULL or wxPATH_RMDIR_RECURSIVE. By
-            default contains neither so the directory will not be removed
-            unless it is empty.
+            With default value, the directory is removed only if it is empty.
+            If wxPATH_RMDIR_FULL is specified, it is removed even if it
+            contains subdirectories, provided that there are no files in
+            neither this directory nor its subdirectories. If flags contains
+            wxPATH_RMDIR_RECURSIVE, then the directory is removed with all the
+            files and directories under it. Finally, if flags contains
+            wxPATH_RMDIR_PARENTS, then, after successfully removing this
+            directory, its parent directory is removed too if it is empty,
+            and so on recursively for the further ancestors of this
+            directory, stopping as soon as a non-empty (or otherwise
+            impossible to remove) directory is encountered.
 
         @return Returns @true if the directory was successfully deleted, @false
                 otherwise.
@@ -1158,9 +1489,17 @@ public:
         @param dir
             The directory to delete
         @param flags
-            Can contain one of wxPATH_RMDIR_FULL or wxPATH_RMDIR_RECURSIVE. By
-            default contains neither so the directory will not be removed
-            unless it is empty.
+            With default value, the directory is removed only if it is empty.
+            If wxPATH_RMDIR_FULL is specified, it is removed even if it
+            contains subdirectories, provided that there are no files in
+            neither this directory nor its subdirectories. If flags contains
+            wxPATH_RMDIR_RECURSIVE, then the directory is removed with all the
+            files and directories under it. Finally, if flags contains
+            wxPATH_RMDIR_PARENTS, then, after successfully removing this
+            directory, its parent directory is removed too if it is empty,
+            and so on recursively for the further ancestors of this
+            directory, stopping as soon as a non-empty (or otherwise
+            impossible to remove) directory is encountered.
 
         @return Returns @true if the directory was successfully deleted, @false
                 otherwise.
@@ -1247,6 +1586,37 @@ public:
     bool SetPermissions(int permissions);
 
     /**
+        Copies the attributes of the given file to this one.
+
+        This function is useful when replacing an existing file by writing the
+        new contents to a temporary file and then renaming it over the old
+        one, as it allows the replacement to keep the attributes of the file
+        being replaced, which would be lost otherwise.
+
+        Under Unix this copies the file permissions (including setuid and
+        setgid bits). Under MSW it copies the hidden, system and
+        not-content-indexed attributes and the creation time (access and
+        modification times will presumably be modified by the program anyhow
+        and so are not copied). Under other platforms this function currently
+        does nothing but still returns @true.
+
+        Note that this function does @e not copy everything and, in
+        particular, under MSW it doesn't copy the read-only attribute, as this
+        would prevent the destination file from being modified or removed
+        later. It also currently doesn't copy the compressed and encrypted
+        attributes nor the access control lists.
+
+        @param source
+            The file to copy the attributes from. It must exist.
+
+        @return @true if all supported attributes were copied, @false if any of
+            them couldn't be (some of them may still have been copied).
+
+        @since 3.3.4
+    */
+    bool CopyAttributesFrom(const wxFileName& source) const;
+
+    /**
         Converts URL into a well-formed filename.
         The URL must use the @c file protocol.
         If the URL does not use @c file protocol
@@ -1266,12 +1636,24 @@ public:
     static wxString FileNameToURL(const wxFileName& filename);
 
     /**
-        Sets the file creation and last access/modification times (any of the pointers
-        may be @NULL).
+        Sets the file creation and/or last access/modification times.
 
         Notice that the file creation time can't be changed under Unix, so @a
         dtCreate is ignored there (but @true is still returned). Under Windows
         all three times can be set.
+
+        Any of the parameters may be @NULL if the corresponding time is not to
+        be changed, but at least one of them must be non-@NULL. And if a
+        parameter is non-@NULL, the corresponding time must be valid (see
+        wxDateTime::IsValid()).
+
+        Moreover, the times must be in the range supported by the platform,
+        otherwise an error is logged, @false is returned and the file times
+        are not changed. Under Windows this range covers the dates from year
+        1601 until year 30828. Under Unix it starts in 1970 and ends in 2038
+        if `time_t` is 32 bits, while with 64-bit `time_t` there is no
+        universal upper limit, although particular file systems have their
+        own limits.
     */
     bool SetTimes(const wxDateTime* dtAccess,
                   const wxDateTime* dtMod,
@@ -1293,7 +1675,7 @@ public:
     */
     bool ShouldFollowLink() const;
 
-    //@{
+    ///@{
     /**
         This function splits a full file name into components: the volume (with the
         first version) path (including the volume in the second version), the base name
@@ -1317,7 +1699,7 @@ public:
                           wxString* path,
                           wxString* name,
                           wxString* ext,
-                          bool* hasExt = NULL,
+                          bool* hasExt = nullptr,
                           wxPathFormat format = wxPATH_NATIVE);
     static void SplitPath(const wxString& fullpath,
                           wxString* volume,
@@ -1330,7 +1712,7 @@ public:
                           wxString* name,
                           wxString* ext,
                           wxPathFormat format = wxPATH_NATIVE);
-    //@}
+    ///@}
 
     /**
         Splits the given @a fullpath into the volume part (which may be empty) and

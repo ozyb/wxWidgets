@@ -8,41 +8,11 @@
 
 #include "testprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
-#ifndef WX_PRECOMP
-#endif // WX_PRECOMP
 
 #include "wx/private/markupparser.h"
 
-class MarkupTestCase : public CppUnit::TestCase
-{
-public:
-    MarkupTestCase() { }
-
-private:
-    CPPUNIT_TEST_SUITE( MarkupTestCase );
-        CPPUNIT_TEST( RoundTrip );
-        CPPUNIT_TEST( Quote );
-        CPPUNIT_TEST( Strip );
-    CPPUNIT_TEST_SUITE_END();
-
-    void RoundTrip();
-    void Quote();
-    void Strip();
-
-    wxDECLARE_NO_COPY_CLASS(MarkupTestCase);
-};
-
-// register in the unnamed registry so that these tests are run by default
-CPPUNIT_TEST_SUITE_REGISTRATION( MarkupTestCase );
-
-// also include in its own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( MarkupTestCase, "MarkupTestCase" );
-
-void MarkupTestCase::RoundTrip()
+TEST_CASE("Markup::RoundTrip", "[markup]")
 {
     // Define a wxMarkupParserOutput object which produces the same markup
     // string on output. This is, of course, perfectly useless, but allows us
@@ -57,30 +27,30 @@ void MarkupTestCase::RoundTrip()
         const wxString& GetText() const { return m_text; }
 
 
-        virtual void OnText(const wxString& text) wxOVERRIDE { m_text += text; }
+        virtual void OnText(const wxString& text) override { m_text += text; }
 
-        virtual void OnBoldStart() wxOVERRIDE { m_text += "<b>"; }
-        virtual void OnBoldEnd() wxOVERRIDE { m_text += "</b>"; }
+        virtual void OnBoldStart() override { m_text += "<b>"; }
+        virtual void OnBoldEnd() override { m_text += "</b>"; }
 
-        virtual void OnItalicStart() wxOVERRIDE { m_text += "<i>"; }
-        virtual void OnItalicEnd() wxOVERRIDE { m_text += "</i>"; }
+        virtual void OnItalicStart() override { m_text += "<i>"; }
+        virtual void OnItalicEnd() override { m_text += "</i>"; }
 
-        virtual void OnUnderlinedStart() wxOVERRIDE { m_text += "<u>"; }
-        virtual void OnUnderlinedEnd() wxOVERRIDE { m_text += "</u>"; }
+        virtual void OnUnderlinedStart() override { m_text += "<u>"; }
+        virtual void OnUnderlinedEnd() override { m_text += "</u>"; }
 
-        virtual void OnStrikethroughStart() wxOVERRIDE { m_text += "<s>"; }
-        virtual void OnStrikethroughEnd() wxOVERRIDE { m_text += "</s>"; }
+        virtual void OnStrikethroughStart() override { m_text += "<s>"; }
+        virtual void OnStrikethroughEnd() override { m_text += "</s>"; }
 
-        virtual void OnBigStart() wxOVERRIDE { m_text += "<big>"; }
-        virtual void OnBigEnd() wxOVERRIDE { m_text += "</big>"; }
+        virtual void OnBigStart() override { m_text += "<big>"; }
+        virtual void OnBigEnd() override { m_text += "</big>"; }
 
-        virtual void OnSmallStart() wxOVERRIDE { m_text += "<small>"; }
-        virtual void OnSmallEnd() wxOVERRIDE { m_text += "</small>"; }
+        virtual void OnSmallStart() override { m_text += "<small>"; }
+        virtual void OnSmallEnd() override { m_text += "</small>"; }
 
-        virtual void OnTeletypeStart() wxOVERRIDE { m_text += "<tt>"; }
-        virtual void OnTeletypeEnd() wxOVERRIDE { m_text += "</tt>"; }
+        virtual void OnTeletypeStart() override { m_text += "<tt>"; }
+        virtual void OnTeletypeEnd() override { m_text += "</tt>"; }
 
-        virtual void OnSpanStart(const wxMarkupSpanAttributes& attrs) wxOVERRIDE
+        virtual void OnSpanStart(const wxMarkupSpanAttributes& attrs) override
         {
             m_text << "<span";
 
@@ -105,8 +75,8 @@ void MarkupTestCase::RoundTrip()
 
                 case wxMarkupSpanAttributes::Size_Symbolic:
                     {
-                        CPPUNIT_ASSERT( attrs.m_fontSize >= -3 );
-                        CPPUNIT_ASSERT( attrs.m_fontSize <= 3 );
+                        CHECK( attrs.m_fontSize >= -3 );
+                        CHECK( attrs.m_fontSize <= 3 );
                         static const char *cssSizes[] =
                         {
                             "xx-small", "x-small", "small",
@@ -131,7 +101,7 @@ void MarkupTestCase::RoundTrip()
             m_text << ">";
         }
 
-        virtual void OnSpanEnd(const wxMarkupSpanAttributes& WXUNUSED(attrs)) wxOVERRIDE
+        virtual void OnSpanEnd(const wxMarkupSpanAttributes& WXUNUSED(attrs)) override
         {
             m_text += "</span>";
         }
@@ -146,16 +116,16 @@ void MarkupTestCase::RoundTrip()
 
     #define CHECK_PARSES_OK(text) \
         output.Reset(); \
-        CPPUNIT_ASSERT( parser.Parse(text) ); \
-        CPPUNIT_ASSERT_EQUAL( text, output.GetText() )
+        CHECK( parser.Parse(text) ); \
+        CHECK( output.GetText() == text )
 
     #define CHECK_PARSES_AS(text, result) \
         output.Reset(); \
-        CPPUNIT_ASSERT( parser.Parse(text) ); \
-        CPPUNIT_ASSERT_EQUAL( result, output.GetText() )
+        CHECK( parser.Parse(text) ); \
+        CHECK( output.GetText() == result )
 
     #define CHECK_DOESNT_PARSE(text) \
-        CPPUNIT_ASSERT( !parser.Parse(text) )
+        CHECK( !parser.Parse(text) )
 
     CHECK_PARSES_OK( "" );
     CHECK_PARSES_OK( "foo" );
@@ -189,19 +159,19 @@ void MarkupTestCase::RoundTrip()
     #undef CHECK_DOESNT_PARSE
 }
 
-void MarkupTestCase::Quote()
+TEST_CASE("Markup::Quote", "[markup]")
 {
-    CPPUNIT_ASSERT_EQUAL( "", wxMarkupParser::Quote("") );
-    CPPUNIT_ASSERT_EQUAL( "foo", wxMarkupParser::Quote("foo") );
-    CPPUNIT_ASSERT_EQUAL( "&lt;foo&gt;", wxMarkupParser::Quote("<foo>") );
-    CPPUNIT_ASSERT_EQUAL( "B&amp;B", wxMarkupParser::Quote("B&B") );
-    CPPUNIT_ASSERT_EQUAL( "&quot;&quot;", wxMarkupParser::Quote("\"\"") );
+    CHECK( wxMarkupParser::Quote("") == "" );
+    CHECK( wxMarkupParser::Quote("foo") == "foo" );
+    CHECK( wxMarkupParser::Quote("<foo>") == "&lt;foo&gt;" );
+    CHECK( wxMarkupParser::Quote("B&B") == "B&amp;B" );
+    CHECK( wxMarkupParser::Quote("\"\"") == "&quot;&quot;" );
 }
 
-void MarkupTestCase::Strip()
+TEST_CASE("Markup::Strip", "[markup]")
 {
     #define CHECK_STRIP( text, stripped ) \
-        CPPUNIT_ASSERT_EQUAL( stripped, wxMarkupParser::Strip(text) )
+        CHECK( wxMarkupParser::Strip(text) == stripped )
 
     CHECK_STRIP( "", "" );
     CHECK_STRIP( "foo", "foo" );

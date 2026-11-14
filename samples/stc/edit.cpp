@@ -19,9 +19,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 // for all others, include the necessary headers (this file is usually all you
 // need because it includes almost all 'standard' wxWidgets headers)
@@ -33,6 +30,7 @@
 //! wxWidgets headers
 #include "wx/file.h"     // raw file io support
 #include "wx/filename.h" // filename support
+#include "wx/settings.h" // system colours
 
 //! application headers
 #include "defsext.h"     // additional definitions
@@ -55,8 +53,8 @@ const int ANNOTATION_STYLE = wxSTC_STYLE_LASTPREDEFINED + 1;
 // A small image of a hashtag symbol used in the autocompletion window.
 const char* hashtag_xpm[] = {
 "10 10 2 1",
-" 	c None",
-".	c #BD08F9",
+"  c None",
+". c #BD08F9",
 "  ..  ..  ",
 "  ..  ..  ",
 "..........",
@@ -118,6 +116,12 @@ wxBEGIN_EVENT_TABLE (Edit, wxStyledTextCtrl)
     EVT_MENU (myID_ANNOTATION_STYLE_HIDDEN,   Edit::OnAnnotationStyle)
     EVT_MENU (myID_ANNOTATION_STYLE_STANDARD, Edit::OnAnnotationStyle)
     EVT_MENU (myID_ANNOTATION_STYLE_BOXED,    Edit::OnAnnotationStyle)
+    // indicators
+    EVT_MENU (myID_INDICATOR_FILL,     Edit::OnIndicatorFill)
+    EVT_MENU (myID_INDICATOR_CLEAR,    Edit::OnIndicatorClear)
+    EVT_MENU_RANGE (myID_INDICATOR_STYLE_FIRST,
+                    myID_INDICATOR_STYLE_LAST,
+                    Edit::OnIndicatorStyle)
     // extra
     EVT_MENU (myID_CHANGELOWER,                 Edit::OnChangeCase)
     EVT_MENU (myID_CHANGEUPPER,                 Edit::OnChangeCase)
@@ -149,7 +153,7 @@ Edit::Edit (wxWindow *parent, wxWindowID id,
     m_FoldingID = 2;
 
     // initialize language
-    m_language = NULL;
+    m_language = nullptr;
 
     // default font for all styles
     SetViewEOL (g_CommonPrefs.displayEOLEnable);
@@ -164,11 +168,6 @@ Edit::Edit (wxWindow *parent, wxWindowID id,
                  wxSTC_WRAP_WORD: wxSTC_WRAP_NONE);
     wxFont font(wxFontInfo(10).Family(wxFONTFAMILY_MODERN));
     StyleSetFont (wxSTC_STYLE_DEFAULT, font);
-    StyleSetForeground (wxSTC_STYLE_DEFAULT, *wxBLACK);
-    StyleSetBackground (wxSTC_STYLE_DEFAULT, *wxWHITE);
-    StyleSetForeground (wxSTC_STYLE_LINENUMBER, wxColour ("DARK GREY"));
-    StyleSetBackground (wxSTC_STYLE_LINENUMBER, *wxWHITE);
-    StyleSetForeground(wxSTC_STYLE_INDENTGUIDE, wxColour ("DARK GREY"));
     InitializePrefs (DEFAULT_LANGUAGE);
 
     // set visibility
@@ -176,14 +175,17 @@ Edit::Edit (wxWindow *parent, wxWindowID id,
     SetXCaretPolicy (wxSTC_CARET_EVEN|wxSTC_VISIBLE_STRICT|wxSTC_CARET_SLOP, 1);
     SetYCaretPolicy (wxSTC_CARET_EVEN|wxSTC_VISIBLE_STRICT|wxSTC_CARET_SLOP, 1);
 
-    // markers
-    MarkerDefine (wxSTC_MARKNUM_FOLDER,        wxSTC_MARK_DOTDOTDOT, "BLACK", "BLACK");
-    MarkerDefine (wxSTC_MARKNUM_FOLDEROPEN,    wxSTC_MARK_ARROWDOWN, "BLACK", "BLACK");
-    MarkerDefine (wxSTC_MARKNUM_FOLDERSUB,     wxSTC_MARK_EMPTY,     "BLACK", "BLACK");
-    MarkerDefine (wxSTC_MARKNUM_FOLDEREND,     wxSTC_MARK_DOTDOTDOT, "BLACK", "WHITE");
-    MarkerDefine (wxSTC_MARKNUM_FOLDEROPENMID, wxSTC_MARK_ARROWDOWN, "BLACK", "WHITE");
-    MarkerDefine (wxSTC_MARKNUM_FOLDERMIDTAIL, wxSTC_MARK_EMPTY,     "BLACK", "BLACK");
-    MarkerDefine (wxSTC_MARKNUM_FOLDERTAIL,    wxSTC_MARK_EMPTY,     "BLACK", "BLACK");
+    // markers: note that some of them are made invisible by using the same
+    // colour for their foreground and background
+    const wxColour colFg = StyleGetForeground(wxSTC_STYLE_DEFAULT);
+    const wxColour colBg = StyleGetBackground(wxSTC_STYLE_DEFAULT);
+    MarkerDefine (wxSTC_MARKNUM_FOLDER,        wxSTC_MARK_DOTDOTDOT, colFg, colFg);
+    MarkerDefine (wxSTC_MARKNUM_FOLDEROPEN,    wxSTC_MARK_ARROWDOWN, colFg, colFg);
+    MarkerDefine (wxSTC_MARKNUM_FOLDERSUB,     wxSTC_MARK_EMPTY,     colFg, colFg);
+    MarkerDefine (wxSTC_MARKNUM_FOLDEREND,     wxSTC_MARK_DOTDOTDOT, colFg, colBg);
+    MarkerDefine (wxSTC_MARKNUM_FOLDEROPENMID, wxSTC_MARK_ARROWDOWN, colFg, colBg);
+    MarkerDefine (wxSTC_MARKNUM_FOLDERMIDTAIL, wxSTC_MARK_EMPTY,     colFg, colFg);
+    MarkerDefine (wxSTC_MARKNUM_FOLDERTAIL,    wxSTC_MARK_EMPTY,     colFg, colFg);
 
     // annotations
     AnnotationSetVisible(wxSTC_ANNOTATION_BOXED);
@@ -318,6 +320,10 @@ void Edit::OnIndentGuide (wxCommandEvent &WXUNUSED(event)) {
 }
 
 void Edit::OnLineNumber (wxCommandEvent &WXUNUSED(event)) {
+    ToggleLineNumbers();
+}
+
+void Edit::ToggleLineNumbers() {
     SetMarginWidth (m_LineNrID,
                     GetMarginWidth (m_LineNrID) == 0? m_LineNrMargin: 0);
 }
@@ -433,6 +439,26 @@ void Edit::OnAnnotationStyle(wxCommandEvent& event)
     AnnotationSetVisible(style);
 }
 
+void Edit::OnIndicatorFill(wxCommandEvent& WXUNUSED(event))
+{
+    long from, to;
+    GetSelection(&from, &to);
+    IndicatorFillRange(from, to - from);
+}
+
+void Edit::OnIndicatorClear(wxCommandEvent& WXUNUSED(event))
+{
+    long from, to;
+    GetSelection(&from, &to);
+    IndicatorClearRange(from, to - from);
+}
+
+void Edit::OnIndicatorStyle(wxCommandEvent& event)
+{
+    IndicatorSetStyle(GetIndicatorCurrent(),
+                      event.GetId() - myID_INDICATOR_STYLE_FIRST);
+}
+
 void Edit::OnChangeCase (wxCommandEvent &event) {
     switch (event.GetId()) {
         case myID_CHANGELOWER: {
@@ -489,7 +515,7 @@ void Edit::OnTechnology(wxCommandEvent& event)
 
 //! misc
 void Edit::OnMarginClick (wxStyledTextEvent &event) {
-    if (event.GetMargin() == 2) {
+    if (event.GetMargin() == m_FoldingID) {
         int lineClick = LineFromPosition (event.GetPosition());
         int levelClick = GetFoldLevel (lineClick);
         if ((levelClick & wxSTC_FOLDLEVELHEADERFLAG) > 0) {
@@ -583,7 +609,26 @@ bool Edit::InitializePrefs (const wxString &name) {
 
     // initialize styles
     StyleClearAll();
-    LanguageInfo const* curInfo = NULL;
+
+    const wxColour
+        colAux = wxSystemSettings::SelectLightDark("DARK GREY", "LIGHT GREY");
+
+    // set common styles
+    StyleSetForeground (wxSTC_STYLE_INDENTGUIDE, colAux);
+
+    // set margin for line numbers
+    SetMarginType (m_LineNrID, wxSTC_MARGIN_NUMBER);
+    StyleSetForeground (wxSTC_STYLE_LINENUMBER, colAux);
+    SetMarginWidth (m_LineNrID, 0); // start out not visible
+
+    // annotations style
+    StyleSetBackground(ANNOTATION_STYLE,
+            wxSystemSettings::SelectLightDark(wxColour(244, 220, 220),
+                                              wxColour(100, 100, 100)));
+    StyleSetSizeFractional(ANNOTATION_STYLE,
+            (StyleGetSizeFractional(wxSTC_STYLE_DEFAULT)*4)/5);
+
+    LanguageInfo const* curInfo = nullptr;
 
     // determine language
     bool found = false;
@@ -601,28 +646,12 @@ bool Edit::InitializePrefs (const wxString &name) {
     SetLexer (curInfo->lexer);
     m_language = curInfo;
 
-    // set margin for line numbers
-    SetMarginType (m_LineNrID, wxSTC_MARGIN_NUMBER);
-    StyleSetForeground (wxSTC_STYLE_LINENUMBER, wxColour ("DARK GREY"));
-    StyleSetBackground (wxSTC_STYLE_LINENUMBER, *wxWHITE);
-    SetMarginWidth (m_LineNrID, 0); // start out not visible
-
-    // annotations style
-    StyleSetBackground(ANNOTATION_STYLE, wxColour(244, 220, 220));
-    StyleSetForeground(ANNOTATION_STYLE, *wxBLACK);
-    StyleSetSizeFractional(ANNOTATION_STYLE,
-            (StyleGetSizeFractional(wxSTC_STYLE_DEFAULT)*4)/5);
-
     // default fonts for all styles!
     int Nr;
     for (Nr = 0; Nr < wxSTC_STYLE_LASTPREDEFINED; Nr++) {
         wxFont font(wxFontInfo(10).Family(wxFONTFAMILY_MODERN));
         StyleSetFont (Nr, font);
     }
-
-    // set common styles
-    StyleSetForeground (wxSTC_STYLE_DEFAULT, wxColour ("DARK GREY"));
-    StyleSetForeground (wxSTC_STYLE_INDENTGUIDE, wxColour ("DARK GREY"));
 
     // initialize settings
     if (g_CommonPrefs.syntaxEnable) {
@@ -634,12 +663,10 @@ bool Edit::InitializePrefs (const wxString &name) {
                             .Family(wxFONTFAMILY_MODERN)
                             .FaceName(curType.fontname));
             StyleSetFont (Nr, font);
-            if (curType.foreground.length()) {
-                StyleSetForeground (Nr, wxColour (curType.foreground));
-            }
-            if (curType.background.length()) {
-                StyleSetBackground (Nr, wxColour (curType.background));
-            }
+            StyleSetForeground (Nr, wxSystemSettings::SelectLightDark(
+                                        curType.foreground,
+                                        curType.foregroundDark
+                                ));
             StyleSetBold (Nr, (curType.fontstyle & mySTC_STYLE_BOLD) > 0);
             StyleSetItalic (Nr, (curType.fontstyle & mySTC_STYLE_ITALIC) > 0);
             StyleSetUnderline (Nr, (curType.fontstyle & mySTC_STYLE_UNDERL) > 0);
@@ -661,7 +688,7 @@ bool Edit::InitializePrefs (const wxString &name) {
     // folding
     SetMarginType (m_FoldingID, wxSTC_MARGIN_SYMBOL);
     SetMarginMask (m_FoldingID, wxSTC_MASK_FOLDERS);
-    StyleSetBackground (m_FoldingID, *wxWHITE);
+    StyleSetBackground (m_FoldingID, StyleGetBackground(wxSTC_STYLE_DEFAULT));
     SetMarginWidth (m_FoldingID, 0);
     SetMarginSensitive (m_FoldingID, false);
     if (g_CommonPrefs.foldEnable) {
@@ -810,23 +837,23 @@ EditProperties::EditProperties (Edit *edit,
     fullname->Add (10, 0);
     fullname->Add (new wxStaticText (this, wxID_ANY, _("Full filename"),
                                      wxDefaultPosition, wxSize(80, wxDefaultCoord)),
-                   0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL);
+                   wxSizerFlags().Left().CenterVertical());
     fullname->Add (new wxStaticText (this, wxID_ANY, edit->GetFilename()),
-                   0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL);
+                   wxSizerFlags().Left().CenterVertical());
 
     // text info
     wxGridSizer *textinfo = new wxGridSizer (4, 0, 2);
     textinfo->Add (new wxStaticText (this, wxID_ANY, _("Language"),
                                      wxDefaultPosition, wxSize(80, wxDefaultCoord)),
-                   0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL|wxLEFT, 4);
+                   wxSizerFlags().Left().CenterVertical().Border(wxLEFT));
     textinfo->Add (new wxStaticText (this, wxID_ANY, edit->m_language->name),
-                   0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL|wxRIGHT, 4);
+                   wxSizerFlags().Left().CenterVertical().Border(wxRIGHT));
     textinfo->Add (new wxStaticText (this, wxID_ANY, _("Lexer-ID: "),
                                      wxDefaultPosition, wxSize(80, wxDefaultCoord)),
-                   0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL|wxLEFT, 4);
+                   wxSizerFlags().Left().CenterVertical().Border(wxLEFT));
     text = wxString::Format ("%d", edit->GetLexer());
     textinfo->Add (new wxStaticText (this, wxID_ANY, text),
-                   0, wxALIGN_RIGHT|wxALIGN_CENTER_VERTICAL|wxRIGHT, 4);
+                   wxSizerFlags().Right().CenterVertical().Border(wxRIGHT));
     wxString EOLtype;
     switch (edit->GetEOLMode()) {
         case wxSTC_EOL_CR: {EOLtype = "CR (Unix)"; break; }
@@ -835,62 +862,62 @@ EditProperties::EditProperties (Edit *edit,
     }
     textinfo->Add (new wxStaticText (this, wxID_ANY, _("Line endings"),
                                      wxDefaultPosition, wxSize(80, wxDefaultCoord)),
-                   0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL|wxLEFT, 4);
+                   wxSizerFlags().Left().CenterVertical().Border(wxLEFT));
     textinfo->Add (new wxStaticText (this, wxID_ANY, EOLtype),
-                   0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL|wxRIGHT, 4);
+                   wxSizerFlags().Left().CenterVertical().Border(wxRIGHT));
 
     // text info box
     wxStaticBoxSizer *textinfos = new wxStaticBoxSizer (
                      new wxStaticBox (this, wxID_ANY, _("Information")),
                      wxVERTICAL);
-    textinfos->Add (textinfo, 0, wxEXPAND);
+    textinfos->Add (textinfo, wxSizerFlags().Expand());
     textinfos->Add (0, 6);
 
     // statistic
     wxGridSizer *statistic = new wxGridSizer (4, 0, 2);
     statistic->Add (new wxStaticText (this, wxID_ANY, _("Total lines"),
                                      wxDefaultPosition, wxSize(80, wxDefaultCoord)),
-                    0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL|wxLEFT, 4);
+                    wxSizerFlags().Left().CenterVertical().Border(wxLEFT));
     text = wxString::Format ("%d", edit->GetLineCount());
     statistic->Add (new wxStaticText (this, wxID_ANY, text),
-                    0, wxALIGN_RIGHT|wxALIGN_CENTER_VERTICAL|wxRIGHT, 4);
+                    wxSizerFlags().Right().CenterVertical().Border(wxRIGHT));
     statistic->Add (new wxStaticText (this, wxID_ANY, _("Total chars"),
                                      wxDefaultPosition, wxSize(80, wxDefaultCoord)),
-                    0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL|wxLEFT, 4);
+                    wxSizerFlags().Left().CenterVertical().Border(wxLEFT));
     text = wxString::Format ("%d", edit->GetTextLength());
     statistic->Add (new wxStaticText (this, wxID_ANY, text),
-                    0, wxALIGN_RIGHT|wxALIGN_CENTER_VERTICAL|wxRIGHT, 4);
+                    wxSizerFlags().Right().CenterVertical().Border(wxRIGHT));
     statistic->Add (new wxStaticText (this, wxID_ANY, _("Current line"),
                                      wxDefaultPosition, wxSize(80, wxDefaultCoord)),
-                    0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL|wxLEFT, 4);
+                    wxSizerFlags().Left().CenterVertical().Border(wxLEFT));
     text = wxString::Format ("%d", edit->GetCurrentLine());
     statistic->Add (new wxStaticText (this, wxID_ANY, text),
-                    0, wxALIGN_RIGHT|wxALIGN_CENTER_VERTICAL|wxRIGHT, 4);
+                    wxSizerFlags().Right().CenterVertical().Border(wxRIGHT));
     statistic->Add (new wxStaticText (this, wxID_ANY, _("Current pos"),
                                      wxDefaultPosition, wxSize(80, wxDefaultCoord)),
-                    0, wxALIGN_LEFT|wxALIGN_CENTER_VERTICAL|wxLEFT, 4);
+                    wxSizerFlags().Left().CenterVertical().Border(wxLEFT));
     text = wxString::Format ("%d", edit->GetCurrentPos());
     statistic->Add (new wxStaticText (this, wxID_ANY, text),
-                    0, wxALIGN_RIGHT|wxALIGN_CENTER_VERTICAL|wxRIGHT, 4);
+                    wxSizerFlags().Right().CenterVertical().Border(wxRIGHT));
 
     // char/line statistics
     wxStaticBoxSizer *statistics = new wxStaticBoxSizer (
                      new wxStaticBox (this, wxID_ANY, _("Statistics")),
                      wxVERTICAL);
-    statistics->Add (statistic, 0, wxEXPAND);
+    statistics->Add (statistic, wxSizerFlags().Expand());
     statistics->Add (0, 6);
 
     // total pane
     wxBoxSizer *totalpane = new wxBoxSizer (wxVERTICAL);
-    totalpane->Add (fullname, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 10);
+    totalpane->Add (fullname, wxSizerFlags().Expand().DoubleBorder(wxLEFT | wxRIGHT | wxTOP));
     totalpane->Add (0, 6);
-    totalpane->Add (textinfos, 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
+    totalpane->Add (textinfos, wxSizerFlags().Expand().DoubleHorzBorder());
     totalpane->Add (0, 10);
-    totalpane->Add (statistics, 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
+    totalpane->Add (statistics, wxSizerFlags().Expand().DoubleHorzBorder());
     totalpane->Add (0, 6);
     wxButton *okButton = new wxButton (this, wxID_OK, _("OK"));
     okButton->SetDefault();
-    totalpane->Add (okButton, 0, wxALIGN_CENTER | wxALL, 10);
+    totalpane->Add (okButton, wxSizerFlags().Center().DoubleBorder());
 
     SetSizerAndFit (totalpane);
 
@@ -1022,10 +1049,8 @@ bool EditPrint::PrintScaling (wxDC *dc){
     GetPageSizePixels (&pageSize.x, &pageSize.y);
 
     // set user scale
-    float scale_x = (float)(ppiPrt.x * dcSize.x) /
-                    (float)(ppiScr.x * pageSize.x);
-    float scale_y = (float)(ppiPrt.y * dcSize.y) /
-                    (float)(ppiScr.y * pageSize.y);
+    double scale_x = double(ppiPrt.x * dcSize.x) / (ppiScr.x * pageSize.x);
+    double scale_y = double(ppiPrt.y * dcSize.y) / (ppiScr.y * pageSize.y);
     dc->SetUserScale (scale_x, scale_y);
 
     return true;

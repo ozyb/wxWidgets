@@ -7,9 +7,6 @@
 
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if wxUSE_COLOURDLG || wxUSE_COLOURPICKERCTRL
 
@@ -85,11 +82,10 @@ wxString wxColourData::ToString() const
 {
     wxString str(m_chooseFull ? '1' : '0');
 
-    for ( int i = 0; i < NUM_CUSTOM; i++ )
+    for ( const auto& clr : m_custColours )
     {
         str += wxCOL_DATA_SEP;
 
-        const wxColour& clr = m_custColours[i];
         if ( clr.IsOk() )
             str += clr.GetAsString(wxC2S_HTML_SYNTAX);
     }

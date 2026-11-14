@@ -2,7 +2,6 @@
 // Name:        wx/msgdlg.h
 // Purpose:     common header and base class for wxMessageDialog
 // Author:      Julian Smart
-// Modified by:
 // Created:
 // Copyright:   (c) Julian Smart
 // Licence:     wxWindows licence
@@ -50,6 +49,14 @@ public:
             : m_label(label), m_stockId(wxID_NONE)
         {
         }
+#elif defined(wxALLOW_UTF8_LITERALS)
+        template <size_t N>
+        ButtonLabel(const char (&label)[N])
+            : m_label(wxString::FromUTF8Unchecked(label)), m_stockId(wxID_NONE)
+        {
+        }
+        template <size_t N>
+        ButtonLabel(char (&label)[N]) = delete;
 #endif // wxNO_IMPLICIT_WXSTRING_ENCODING
 
         ButtonLabel(const wchar_t *label)
@@ -99,14 +106,14 @@ public:
     }
 
     // virtual dtor for the base class
-    virtual ~wxMessageDialogBase() { }
+    virtual ~wxMessageDialogBase() = default;
 
     wxString GetCaption() const { return m_caption; }
 
     // Title and caption are the same thing, GetCaption() mostly exists just
     // for compatibility.
-    virtual void SetTitle(const wxString& title) wxOVERRIDE { m_caption = title; }
-    virtual wxString GetTitle() const wxOVERRIDE { return m_caption; }
+    virtual void SetTitle(const wxString& title) override { m_caption = title; }
+    virtual wxString GetTitle() const override { return m_caption; }
 
 
     virtual void SetMessage(const wxString& message)
@@ -294,16 +301,12 @@ private:
 
 #include "wx/generic/msgdlgg.h"
 
-#if defined(__WX_COMPILING_MSGDLGG_CPP__) || \
-    defined(__WXUNIVERSAL__) || defined(__WXGPE__) || \
-    (defined(__WXGTK__) && !defined(__WXGTK20__))
+#if defined(__WX_COMPILING_MSGDLGG_CPP__) || defined(__WXUNIVERSAL__)
 
     #define wxMessageDialog wxGenericMessageDialog
 #elif defined(__WXMSW__)
     #include "wx/msw/msgdlg.h"
-#elif defined(__WXMOTIF__)
-    #include "wx/motif/msgdlg.h"
-#elif defined(__WXGTK20__)
+#elif defined(__WXGTK__)
     #include "wx/gtk/msgdlg.h"
 #elif defined(__WXMAC__)
     #include "wx/osx/msgdlg.h"
@@ -318,7 +321,7 @@ private:
 int WXDLLIMPEXP_CORE wxMessageBox(const wxString& message,
                              const wxString& caption = wxASCII_STR(wxMessageBoxCaptionStr),
                              long style = wxOK | wxCENTRE,
-                             wxWindow *parent = NULL,
+                             wxWindow *parent = nullptr,
                              int x = wxDefaultCoord, int y = wxDefaultCoord);
 
 #endif // wxUSE_MSGDLG

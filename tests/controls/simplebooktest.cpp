@@ -10,9 +10,6 @@
 
 #if wxUSE_BOOKCTRL
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #ifndef WX_PRECOMP
     #include "wx/app.h"
@@ -22,48 +19,38 @@
 #include "wx/simplebook.h"
 #include "bookctrlbasetest.h"
 
-class SimplebookTestCase : public BookCtrlBaseTestCase, public CppUnit::TestCase
+#include <memory>
+
+class SimplebookTestCase : public BookCtrlBaseTestCase
 {
 public:
-    SimplebookTestCase() { }
+    SimplebookTestCase();
 
-    virtual void setUp() wxOVERRIDE;
-    virtual void tearDown() wxOVERRIDE;
+protected:
+    virtual wxBookCtrlBase *GetBase() const override
+    { return m_simplebook.get(); }
 
-private:
-    virtual wxBookCtrlBase *GetBase() const wxOVERRIDE { return m_simplebook; }
+    virtual wxEventType GetChangedEvent() const override
+    { return wxEVT_BOOKCTRL_PAGE_CHANGED; }
 
-    virtual wxEventType GetChangedEvent() const wxOVERRIDE
-        { return wxEVT_BOOKCTRL_PAGE_CHANGED; }
+    virtual wxEventType GetChangingEvent() const override
+    { return wxEVT_BOOKCTRL_PAGE_CHANGING; }
 
-    virtual wxEventType GetChangingEvent() const wxOVERRIDE
-        { return wxEVT_BOOKCTRL_PAGE_CHANGING; }
-
-    CPPUNIT_TEST_SUITE( SimplebookTestCase );
-        wxBOOK_CTRL_BASE_TESTS();
-    CPPUNIT_TEST_SUITE_END();
-
-    wxSimplebook *m_simplebook;
+    std::unique_ptr<wxSimplebook> m_simplebook;
 
     wxDECLARE_NO_COPY_CLASS(SimplebookTestCase);
 };
 
-// register in the unnamed registry so that these tests are run by default
-CPPUNIT_TEST_SUITE_REGISTRATION( SimplebookTestCase );
+wxBOOK_CTRL_BASE_TESTS(SimplebookTestCase, "Simplebook",
+                       "[simplebook][book]");
 
-// also include in its own registry so that these tests can be run alone
-CPPUNIT_TEST_SUITE_NAMED_REGISTRATION( SimplebookTestCase, "SimplebookTestCase" );
-
-void SimplebookTestCase::setUp()
+SimplebookTestCase::SimplebookTestCase()
 {
-    m_simplebook = new wxSimplebook(wxTheApp->GetTopWindow(), wxID_ANY);
+    m_simplebook = make_unique<wxSimplebook>(
+        wxTheApp->GetTopWindow(), wxID_ANY);
     AddPanels();
 }
 
-void SimplebookTestCase::tearDown()
-{
-    wxDELETE(m_simplebook);
-}
 
 #endif // wxUSE_BOOKCTRL
 

@@ -18,9 +18,6 @@
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #if !wxUSE_STATUSBAR
     #error "You need to set wxUSE_STATUSBAR to 1 to compile this sample"
@@ -56,6 +53,10 @@
 //#define USE_MDI_PARENT_FRAME 1
 #ifdef USE_MDI_PARENT_FRAME
     #include "wx/mdi.h"
+
+    using BaseFrame = wxMDIParentFrame;
+#else
+    using BaseFrame = wxFrame;
 #endif // USE_MDI_PARENT_FRAME
 
 static const char *SAMPLE_DIALOGS_TITLE = "wxWidgets statbar sample";
@@ -81,7 +82,7 @@ public:
     // this one is called on application startup and is a good place for the app
     // initialization (doing it here and not in the ctor allows to have an error
     // return: if OnInit() returns false, the application terminates)
-    virtual bool OnInit() wxOVERRIDE;
+    virtual bool OnInit() override;
 };
 
 // A custom status bar which contains controls, icons &c
@@ -97,7 +98,6 @@ public:
 #if wxUSE_TIMER
     void OnTimer(wxTimerEvent& WXUNUSED(event)) { UpdateClock(); }
 #endif
-    void OnSize(wxSizeEvent& event);
     void OnToggleClock(wxCommandEvent& event);
     void OnIdle(wxIdleEvent& event);
 
@@ -129,15 +129,11 @@ private:
 };
 
 // Define a new frame type: this is going to be our main frame
-#ifdef USE_MDI_PARENT_FRAME
-class MyFrame : public wxMDIParentFrame
-#else
-class MyFrame : public wxFrame
-#endif
+class MyFrame : public BaseFrame
 {
 public:
     // ctor(s)
-    MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size);
+    explicit MyFrame(const wxString& title);
 
     // event handlers (these functions should _not_ be virtual)
     void OnQuit(wxCommandEvent& event);
@@ -201,7 +197,7 @@ enum
     StatusBar_Quit = wxID_EXIT,
     StatusBar_About = wxID_ABOUT,
 
-    StatusBar_SetFields = wxID_HIGHEST+1,
+    StatusBar_SetFields = wxID_HIGHEST,
     StatusBar_SetField,
     StatusBar_SetText,
     StatusBar_PushText,
@@ -226,7 +222,6 @@ enum
     StatusBar_SetStyleShowTips
 };
 
-static const int BITMAP_SIZE_X = 32;
 
 // ----------------------------------------------------------------------------
 // event tables and other macros for wxWidgets
@@ -235,11 +230,7 @@ static const int BITMAP_SIZE_X = 32;
 // the event tables connect the wxWidgets events with the functions (event
 // handlers) which process them. It can be also done at run-time, but for the
 // simple menu events like this the static method is much simpler.
-#ifdef USE_MDI_PARENT_FRAME
-wxBEGIN_EVENT_TABLE(MyFrame, wxMDIParentFrame)
-#else
-wxBEGIN_EVENT_TABLE(MyFrame, wxFrame)
-#endif
+wxBEGIN_EVENT_TABLE(MyFrame, BaseFrame)
     EVT_MENU(StatusBar_Quit,  MyFrame::OnQuit)
     EVT_MENU(StatusBar_SetFields, MyFrame::OnSetStatusFields)
     EVT_MENU(StatusBar_SetField, MyFrame::OnSetStatusField)
@@ -274,7 +265,6 @@ wxBEGIN_EVENT_TABLE(MyFrame, wxFrame)
 wxEND_EVENT_TABLE()
 
 wxBEGIN_EVENT_TABLE(MyStatusBar, wxStatusBar)
-    EVT_SIZE(MyStatusBar::OnSize)
 #if wxUSE_CHECKBOX
     EVT_CHECKBOX(StatusBar_Checkbox, MyStatusBar::OnToggleClock)
 #endif
@@ -306,8 +296,7 @@ bool MyApp::OnInit()
         return false;
 
     // create the main application window
-    MyFrame *frame = new MyFrame("wxStatusBar sample",
-                                 wxPoint(50, 50), wxSize(450, 340));
+    MyFrame *frame = new MyFrame("wxStatusBar sample");
 
     // and show it (the frames, unlike simple controls, are not shown when
     // created initially)
@@ -324,12 +313,8 @@ bool MyApp::OnInit()
 // ----------------------------------------------------------------------------
 
 // frame constructor
-MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
-#ifdef USE_MDI_PARENT_FRAME
-    : wxMDIParentFrame(NULL, wxID_ANY, title, pos, size)
-#else
-    : wxFrame(NULL, wxID_ANY, title, pos, size)
-#endif
+MyFrame::MyFrame(const wxString& title)
+    : BaseFrame(nullptr, wxID_ANY, title)
 {
     SetIcon(wxICON(sample));
 
@@ -359,7 +344,7 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
                                       "wxSTB_ELLIPSIZE_END",
                                       "Toggle wxSTB_ELLIPSIZE_END style");
     statbarMenu->Append(StatusBar_SetPaneStyle, "Status bar style",
-                        statbarStyleMenu);
+                        statbarStyleMenu, "Status bar choices");
     statbarMenu->AppendSeparator();
 
     statbarMenu->Append(StatusBar_SetField, "Set active field &number\tCtrl-N",
@@ -403,7 +388,7 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size)
             "Sets the style of the first field to sunken look"
         );
     statbarMenu->Append(StatusBar_SetPaneStyle, "Field style",
-                        statbarPaneStyleMenu);
+                        statbarPaneStyleMenu, "Field style choices");
 
     statbarMenu->Append(StatusBar_ResetFieldsWidth, "Reset field widths",
                         "Sets all fields to the same width");
@@ -440,11 +425,11 @@ void MyFrame::DoCreateStatusBar(MyFrame::StatusBarKind kind, long style)
     wxStatusBar *statbarOld = GetStatusBar();
     if ( statbarOld )
     {
-        SetStatusBar(NULL);
+        SetStatusBar(nullptr);
         delete statbarOld;
     }
 
-    wxStatusBar *statbarNew = NULL;
+    wxStatusBar *statbarNew = nullptr;
     switch ( kind )
     {
         case StatBar_Default:
@@ -500,7 +485,7 @@ void MyFrame::OnSetStatusField(wxCommandEvent& WXUNUSED(event))
                 m_field,
                 0,
                 sb->GetFieldsCount() - 1,
-                NULL
+                nullptr
               );
 
     if ( rc == -1 )
@@ -603,17 +588,18 @@ void MyFrame::OnSetStatusFields(wxCommandEvent& WXUNUSED(event))
     // SetFieldsCount() with the same number of fields should be ok
     if ( nFields != -1 )
     {
-        static const int widthsFor2Fields[] = { 200, -1 };
+        static const int widthsFor2Fields[] = { FromDIP(200), -1 };
         static const int widthsFor3Fields[] = { -1, -2, -1 };
-        static const int widthsFor4Fields[] = { 100, -1, 100, -2, 100 };
+        static const int widthsFor4Fields[] =
+            { FromDIP(100), -1, FromDIP(100), -2, FromDIP(100) };
 
         static const int *widthsAll[] =
         {
-            NULL,               // 1 field: default
+            nullptr,            // 1 field: default
             widthsFor2Fields,   // 2 fields: 1 fixed, 1 var
             widthsFor3Fields,   // 3 fields: 3 var
             widthsFor4Fields,   // 4 fields: 3 fixed, 2 vars
-            NULL                // 5 fields: default (all have same width)
+            nullptr             // 5 fields: default (all have same width)
         };
 
         const int * const widths = widthsAll[nFields - 1];
@@ -653,7 +639,7 @@ void MyFrame::OnResetFieldsWidth(wxCommandEvent& WXUNUSED(event))
         return;
 
     const int n = pStat->GetFieldsCount();
-    pStat->SetStatusWidths(n, NULL);
+    pStat->SetStatusWidths(n, nullptr);
     for ( int i = 0; i < n; i++ )
         pStat->SetStatusText("same size", i);
 }
@@ -689,12 +675,12 @@ void MyFrame::OnShowFieldsRect(wxCommandEvent& WXUNUSED(event))
         }
     }
 
-    wxLogMessage("%s", msg);
+    wxLogMessage(msg);
 }
 
 void MyFrame::OnUpdateStatusBarToggle(wxUpdateUIEvent& event)
 {
-    event.Check(GetStatusBar() != NULL);
+    event.Check(GetStatusBar() != nullptr);
 }
 
 void MyFrame::OnStatusBarToggle(wxCommandEvent& WXUNUSED(event))
@@ -702,7 +688,7 @@ void MyFrame::OnStatusBarToggle(wxCommandEvent& WXUNUSED(event))
     wxStatusBar *statbarOld = GetStatusBar();
     if ( statbarOld )
     {
-        SetStatusBar(NULL);
+        SetStatusBar(nullptr);
         delete statbarOld;
     }
     else
@@ -888,13 +874,13 @@ MyAboutDialog::MyAboutDialog(wxWindow *parent)
     statbarBottom->SetStatusText("in a dialog", 1);
 
     wxBoxSizer *sizerTop = new wxBoxSizer(wxVERTICAL);
-    sizerTop->Add(statbarTop, 0, wxGROW);
-    sizerTop->Add(-1, 10, 1, wxGROW);
-    sizerTop->Add(text, 0, wxCENTRE | wxRIGHT | wxLEFT, 20);
-    sizerTop->Add(-1, 10, 1, wxGROW);
-    sizerTop->Add(btn, 0, wxCENTRE | wxRIGHT | wxLEFT, 20);
-    sizerTop->Add(-1, 10, 1, wxGROW);
-    sizerTop->Add(statbarBottom, 0, wxGROW);
+    sizerTop->Add(statbarTop, wxSizerFlags().Expand());
+    sizerTop->Add(-1, 10, wxSizerFlags(1).Expand());
+    sizerTop->Add(text, wxSizerFlags().Centre().Border(wxLEFT|wxRIGHT, FromDIP(20)));
+    sizerTop->Add(-1, 10, wxSizerFlags(1).Expand());
+    sizerTop->Add(btn, wxSizerFlags().Centre().Border(wxLEFT|wxRIGHT, FromDIP(20)));
+    sizerTop->Add(-1, 10, wxSizerFlags(1).Expand());
+    sizerTop->Add(statbarBottom, wxSizerFlags().Expand());
 
     SetSizerAndFit(sizerTop);
 }
@@ -917,7 +903,7 @@ MyStatusBar::MyStatusBar(wxWindow *parent, long style)
             , m_timer(this)
 #endif
 #if wxUSE_CHECKBOX
-            , m_checkbox(NULL)
+            , m_checkbox(nullptr)
 #endif
 {
     // compute the size needed for num lock indicator pane
@@ -927,10 +913,10 @@ MyStatusBar::MyStatusBar(wxWindow *parent, long style)
 
     int widths[Field_Max];
     widths[Field_Text] = -1; // growable
-    widths[Field_Checkbox] = 150;
-    widths[Field_Bitmap] = BITMAP_SIZE_X;
+    widths[Field_Checkbox] = FromDIP(150);
+    widths[Field_Bitmap] = -1; // growable
     widths[Field_NumLockIndicator] = sizeNumLock.x;
-    widths[Field_Clock] = 100;
+    widths[Field_Clock] = FromDIP(100);
     widths[Field_CapsLockIndicator] = dc.GetTextExtent(capslockIndicators[1]).x;
 
     SetFieldsCount(Field_Max);
@@ -939,9 +925,11 @@ MyStatusBar::MyStatusBar(wxWindow *parent, long style)
 #if wxUSE_CHECKBOX
     m_checkbox = new wxCheckBox(this, StatusBar_Checkbox, "&Toggle clock");
     m_checkbox->SetValue(true);
+    AddFieldControl(Field_Checkbox, m_checkbox);
 #endif
 
     m_statbmp = new wxStaticBitmap(this, wxID_ANY, wxIcon(green_xpm));
+    AddFieldControl(Field_Bitmap, m_statbmp);
 
 #if wxUSE_TIMER
     m_timer.Start(1000);
@@ -965,35 +953,6 @@ MyStatusBar::~MyStatusBar()
         m_timer.Stop();
     }
 #endif
-}
-
-void MyStatusBar::OnSize(wxSizeEvent& event)
-{
-#if wxUSE_CHECKBOX
-    if ( !m_checkbox )
-        return;
-#endif
-
-    wxRect rect;
-    if (!GetFieldRect(Field_Checkbox, rect))
-    {
-        event.Skip();
-        return;
-    }
-
-#if wxUSE_CHECKBOX
-    wxRect rectCheck = rect;
-    rectCheck.Deflate(2);
-    m_checkbox->SetSize(rectCheck);
-#endif
-
-    GetFieldRect(Field_Bitmap, rect);
-    wxSize size = m_statbmp->GetSize();
-
-    m_statbmp->Move(rect.x + (rect.width - size.x) / 2,
-                    rect.y + (rect.height - size.y) / 2);
-
-    event.Skip();
 }
 
 void MyStatusBar::OnToggleClock(wxCommandEvent& WXUNUSED(event))

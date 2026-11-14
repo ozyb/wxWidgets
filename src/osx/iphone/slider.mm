@@ -2,7 +2,6 @@
 // Name:        src/osx/iphone/slider.mm
 // Purpose:     wxSlider
 // Author:      Stefan Csomor
-// Modified by:
 // Created:     1998-01-01
 // Copyright:   (c) Stefan Csomor
 // Licence:       wxWindows licence
@@ -46,35 +45,35 @@ public :
     ~wxSliderIPhoneImpl()
     {
     }
-    
-    void controlAction(void* sender, wxUint32 controlEvent, WX_UIEvent rawEvent)
+
+    void controlAction(wxUint32 controlEvent) override
     {
         if ( controlEvent == UIControlEventValueChanged )
             GetWXPeer()->TriggerScrollEvent(wxEVT_SCROLL_THUMBTRACK);
-        else 
-            wxWidgetIPhoneImpl::controlAction(sender,controlEvent,rawEvent);
+        else
+            wxWidgetIPhoneImpl::controlAction(controlEvent);
     }
 
-    void SetMaximum(wxInt32 m)
+    void SetMaximum(wxInt32 m) override
     {
         [m_control setMaximumValue:m];
     }
-    
-    void SetMinimum(wxInt32 m)
+
+    void SetMinimum(wxInt32 m) override
     {
         [m_control setMinimumValue:m];
     }
-    
-    void SetValue(wxInt32 n)
+
+    void SetValue(wxInt32 n) override
     {
         [m_control setValue:n];
     }
 
-    wxInt32  GetValue() const
+    wxInt32  GetValue() const override
     {
         return [m_control value];
     }
-    
+
 private:
     UISlider* m_control;
 };
@@ -87,7 +86,7 @@ wxWidgetImplType* wxWidgetImpl::CreateSlider( wxWindowMac* wxpeer,
                                     wxInt32 maximum,
                                     const wxPoint& pos,
                                     const wxSize& size,
-                                    long style,
+                                    long /*style*/,
                                     long WXUNUSED(extraStyle))
 {
     CGRect r = wxOSXGetFrameForControl( wxpeer, pos , size ) ;

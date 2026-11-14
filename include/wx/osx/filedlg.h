@@ -2,7 +2,6 @@
 // Name:        wx/osx/filedlg.h
 // Purpose:     wxFileDialog class
 // Author:      Stefan Csomor
-// Modified by:
 // Created:     1998-01-01
 // Copyright:   (c) Stefan Csomor
 // Licence:     wxWindows licence
@@ -21,6 +20,11 @@ class WXDLLIMPEXP_FWD_CORE wxChoice;
 // file open dialogs if possible
 
 #define wxOSX_FILEDIALOG_ALWAYS_SHOW_TYPES wxT("osx.openfiledialog.always-show-types")
+
+// set this system option to 1 (or the corresponding
+// wx_osx_openfiledialog_disable_extra_controls environment variable) in order
+// to not show the extra controls and file type filter in the file dialogs
+#define wxOSX_FILEDIALOG_DISABLE_EXTRA_CONTROLS wxT("osx.openfiledialog.disable-extra-controls")
 
 class WXDLLIMPEXP_CORE wxFileDialog: public wxFileDialogBase
 {
@@ -60,17 +64,17 @@ public:
     ~wxFileDialog();
 #endif
 
-    virtual void GetPaths(wxArrayString& paths) const wxOVERRIDE { paths = m_paths; }
-    virtual void GetFilenames(wxArrayString& files) const wxOVERRIDE { files = m_fileNames ; }
+    virtual void GetPaths(wxArrayString& paths) const override { paths = m_paths; }
+    virtual void GetFilenames(wxArrayString& files) const override { files = m_fileNames ; }
 
-    virtual int ShowModal() wxOVERRIDE;
+    virtual int ShowModal() override;
 
 #if wxOSX_USE_COCOA
-    virtual void ShowWindowModal() wxOVERRIDE;
-    virtual void ModalFinishedCallback(void* panel, int resultCode) wxOVERRIDE;
+    virtual void ShowWindowModal() override;
+    virtual void ModalFinishedCallback(void* panel, int resultCode) override;
 #endif
 
-    virtual bool SupportsExtraControl() const wxOVERRIDE;
+    virtual bool SupportsExtraControl() const override;
 
     // implementation only
 
@@ -78,7 +82,7 @@ protected:
     // not supported for file dialog, RR
     virtual void DoSetSize(int WXUNUSED(x), int WXUNUSED(y),
                            int WXUNUSED(width), int WXUNUSED(height),
-                           int WXUNUSED(sizeFlags) = wxSIZE_AUTO) wxOVERRIDE {}
+                           int WXUNUSED(sizeFlags) = wxSIZE_AUTO) override {}
 
     void SetupExtraControls(WXWindow nativeWindow);
 
@@ -88,18 +92,26 @@ protected:
     virtual void OnFilterSelected(wxCommandEvent &event);
     int GetMatchingFilterExtension(const wxString& filename);
 
+    // Return the hidden in-process window owning the accessory controls,
+    // creating it on demand; see wxFileDialog::SetupExtraControls() in
+    // filedlg.mm.
+    wxWindow* GetAccessoryHost();
+
     wxArrayString m_filterExtensions;
     wxArrayString m_filterNames;
     wxChoice* m_filterChoice;
     wxWindow* m_filterPanel;
+    wxWindow* m_accessoryHost = nullptr;
     bool m_useFileTypeFilter;
     int m_firstFileTypeFilter;
     wxArrayString m_currentExtensions;
+    WX_NSObject m_delegate;
 #endif
 
 private:
     // Common part of all ctors.
     void Init();
+    WX_NSObject CommonShow();
 };
 
 #endif // _WX_FILEDLG_H_

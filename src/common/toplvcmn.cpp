@@ -18,9 +18,6 @@
 // For compilers that support precompilation, includes "wx.h".
 #include "wx/wxprec.h"
 
-#ifdef __BORLANDC__
-    #pragma hdrstop
-#endif
 
 #include "wx/toplevel.h"
 
@@ -30,6 +27,7 @@
 #endif // WX_PRECOMP
 
 #include "wx/display.h"
+#include "wx/modalhook.h"
 
 #include "wx/private/tlwgeom.h"
 
@@ -62,7 +60,7 @@ wxTopLevelWindowBase::~wxTopLevelWindowBase()
 {
     // don't let wxTheApp keep any stale pointers to us
     if ( wxTheApp && wxTheApp->GetTopWindow() == this )
-        wxTheApp->SetTopWindow(NULL);
+        wxTheApp->SetTopWindow(nullptr);
 
     wxTopLevelWindows.DeleteObject(this);
 
@@ -124,12 +122,9 @@ bool wxTopLevelWindowBase::Destroy()
     // any more as no events will be sent to the hidden window and without idle
     // events we won't prune wxPendingDelete list and the application won't
     // terminate
-    for ( wxWindowList::const_iterator i = wxTopLevelWindows.begin(),
-                                     end = wxTopLevelWindows.end();
-          i != end;
-          ++i )
+    for ( auto* item : wxTopLevelWindows )
     {
-        wxTopLevelWindow * const win = static_cast<wxTopLevelWindow *>(*i);
+        wxTopLevelWindow * const win = static_cast<wxTopLevelWindow *>(item);
         if ( win != this && win->IsShown() )
         {
             // there remains at least one other visible TLW, we can hide this
@@ -217,16 +212,18 @@ wxSize wxTopLevelWindowBase::GetDefaultSize()
 {
     wxSize size = wxGetClientDisplayRect().GetSize();
 #ifndef __WXOSX_IPHONE__
-    // create proportionally bigger windows on small screens
+    // create proportionally bigger windows on small screens but also scale the
+    // size with DPI on the large screens to avoid creating windows too small
+    // to fit anything at all when using high DPI
     if ( size.x >= 1024 )
-        size.x = 400;
+        size.x = FromDIP(400, nullptr /* no window */);
     else if ( size.x >= 800 )
         size.x = 300;
     else if ( size.x >= 320 )
         size.x = 240;
 
     if ( size.y >= 768 )
-        size.y = 250;
+        size.y = FromDIP(250, nullptr /* no window */);
     else if ( size.y > 200 )
     {
         size.y *= 2;
@@ -247,18 +244,28 @@ void wxTopLevelWindowBase::DoCentre(int dir)
         return;
 
     // we need the display rect anyhow so store it first: notice that we should
-    // be centered on the same display as our parent window, the display of
-    // this window itself is not really defined yet
-    wxDisplay dpy(GetParent() ? GetParent() : this);
+    // be centered on the same display as our parent window, or the currently
+    // active window for a parentless TLW, as the display of this window itself
+    // is not really defined yet
+    wxWindow* const parent = GetParent();
+    wxWindow* winDisplay = parent;
+    if ( !winDisplay )
+    {
+        winDisplay = wxGetTopLevelParent(wxGetActiveWindow());
+        if ( winDisplay == this )
+            winDisplay = nullptr;
+    }
+
+    wxDisplay dpy(winDisplay ? winDisplay : this);
     const wxRect rectDisplay(dpy.GetClientArea());
 
     // what should we centre this window on?
     wxRect rectParent;
-    if ( !(dir & wxCENTRE_ON_SCREEN) && GetParent() )
+    if ( !(dir & wxCENTRE_ON_SCREEN) && parent )
     {
         // centre on parent window: notice that we need screen coordinates for
         // positioning this TLW
-        rectParent = GetParent()->GetScreenRect();
+        rectParent = parent->GetScreenRect();
 
         // if the parent is entirely off screen (happens at least with MDI
         // parent frame under Mac but could happen elsewhere too if the frame
@@ -312,22 +319,40 @@ void wxTopLevelWindowBase::DoCentre(int dir)
 }
 
 // ----------------------------------------------------------------------------
+// Default item management
+// ----------------------------------------------------------------------------
+
+wxWindow* wxTopLevelWindowBase::SetDefaultItem(wxWindow* win)
+{
+    wxWindow* const old = GetDefaultItem();
+    m_winDefault = win;
+    return old;
+}
+
+wxWindow* wxTopLevelWindowBase::SetTmpDefaultItem(wxWindow* win)
+{
+    wxWindow* const old = GetDefaultItem();
+    m_winTmpDefault = win;
+    return old;
+}
+
+// ----------------------------------------------------------------------------
 // Saving/restoring geometry
 // ----------------------------------------------------------------------------
 
-bool wxTopLevelWindowBase::SaveGeometry(const GeometrySerializer& ser) const
+bool wxTopLevelWindowBase::SaveGeometry(GeometryStore& store) const
 {
     wxTLWGeometry geom;
     if ( !geom.GetFrom(static_cast<const wxTopLevelWindow*>(this)) )
         return false;
 
-    return geom.Save(ser);
+    return geom.Save(store);
 }
 
-bool wxTopLevelWindowBase::RestoreToGeometry(GeometrySerializer& ser)
+bool wxTopLevelWindowBase::RestoreToGeometry(const GeometryStore& store)
 {
     wxTLWGeometry geom;
-    if ( !geom.Restore(ser) )
+    if ( !geom.Restore(store) )
         return false;
 
     return geom.ApplyTo(static_cast<wxTopLevelWindow*>(this));
@@ -409,6 +434,49 @@ bool wxTopLevelWindowBase::IsTopNavigationDomain(NavigationKind kind) const
     return true;
 }
 
+wxWindow* wxTopLevelWindowBase::GetUniqueChild() const
+{
+    // do we have _exactly_ one child?
+    wxWindow *child = nullptr;
+    for ( wxWindowList::compatibility_iterator node = GetChildren().GetFirst();
+          node;
+          node = node->GetNext() )
+    {
+        wxWindow *win = node->GetData();
+
+        // exclude top level and managed windows (status bar isn't
+        // currently in the children list except under wxMac anyhow, but
+        // it makes no harm to test for it)
+        if ( !win->IsTopLevel() && !IsOneOfBars(win) )
+        {
+            // We don't take hidden children into account and we also consider
+            // that something more complicated than just the default resizing
+            // behaviour is necessary if there are any hidden windows, so give
+            // up immediately in this case.
+            if ( !win->IsShown() )
+                return nullptr;
+
+            // Also stop if it's not our first child.
+            if ( child )
+                return nullptr;
+
+            child = win;
+        }
+    }
+
+    return child;
+}
+
+bool wxTopLevelWindowBase::UsesAutoLayout() const
+{
+    return GetAutoLayout()
+                || GetSizer()
+#if wxUSE_CONSTRAINTS
+                    || GetConstraints()
+#endif
+        ;
+}
+
 // default resizing behaviour - if only ONE subwindow, resize to fill the
 // whole client area
 bool wxTopLevelWindowBase::Layout()
@@ -422,43 +490,16 @@ bool wxTopLevelWindowBase::Layout()
 
 
     // if we're using sizers or constraints - do use them
-    if ( GetAutoLayout()
-            || GetSizer()
-#if wxUSE_CONSTRAINTS
-                    || GetConstraints()
-#endif
-                                        )
+    if ( UsesAutoLayout() )
     {
         return wxNonOwnedWindow::Layout();
     }
     else
     {
         // do we have _exactly_ one child?
-        wxWindow *child = NULL;
-        for ( wxWindowList::compatibility_iterator node = GetChildren().GetFirst();
-              node;
-              node = node->GetNext() )
+        if ( wxWindow* const child = GetUniqueChild() )
         {
-            wxWindow *win = node->GetData();
-
-            // exclude top level and managed windows (status bar isn't
-            // currently in the children list except under wxMac anyhow, but
-            // it makes no harm to test for it)
-            if ( !win->IsTopLevel() && !IsOneOfBars(win) )
-            {
-                if ( child )
-                {
-                    return false; // it's our second subwindow - nothing to do
-                }
-
-                child = win;
-            }
-        }
-
-        // do we have any children at all?
-        if ( child && child->IsShown() )
-        {
-            // exactly one child - set it's size to fill the whole frame
+            // yes - set its size to fill the whole frame
             int clientW, clientH;
             DoGetClientSize(&clientW, &clientH);
 
@@ -471,9 +512,43 @@ bool wxTopLevelWindowBase::Layout()
     return false;
 }
 
-// The default implementation for the close window event.
-void wxTopLevelWindowBase::OnCloseWindow(wxCloseEvent& WXUNUSED(event))
+void wxTopLevelWindowBase::Fit()
 {
+    if ( !UsesAutoLayout() )
+    {
+        if ( wxWindow* const child = GetUniqueChild() )
+        {
+            SetClientSize(child->GetBestSize());
+            return;
+        }
+    }
+
+    return wxNonOwnedWindow::Fit();
+}
+
+wxSize wxTopLevelWindowBase::DoGetBestClientSize() const
+{
+    // The logic here parallels that of Layout() above.
+    if ( !UsesAutoLayout() )
+    {
+        if ( wxWindow* const child = GetUniqueChild() )
+            return child->GetBestSize();
+    }
+
+    return wxNonOwnedWindow::DoGetBestClientSize();
+}
+
+// The default implementation for the close window event.
+void wxTopLevelWindowBase::OnCloseWindow(wxCloseEvent& event)
+{
+    if ( event.CanVeto() && wxModalDialogHook::GetOpenCount() )
+    {
+        // We can't close the window if there are any app-modal dialogs still
+        // shown.
+        event.Veto();
+        return;
+    }
+
     Destroy();
 }
 

@@ -2,7 +2,6 @@
 // Name:        src/msw/uiaction.cpp
 // Purpose:     wxUIActionSimulator implementation
 // Author:      Kevin Ollivier, Steven Lamerton, Vadim Zeitlin
-// Modified by:
 // Created:     2010-03-06
 // Copyright:   (c) Kevin Ollivier
 //              (c) 2010 Steven Lamerton
@@ -42,11 +41,11 @@ public:
         return &s_impl;
     }
 
-    virtual bool MouseMove(long x, long y) wxOVERRIDE;
-    virtual bool MouseDown(int button = wxMOUSE_BTN_LEFT) wxOVERRIDE;
-    virtual bool MouseUp(int button = wxMOUSE_BTN_LEFT) wxOVERRIDE;
+    virtual bool MouseMove(long x, long y) override;
+    virtual bool MouseDown(int button = wxMOUSE_BTN_LEFT) override;
+    virtual bool MouseUp(int button = wxMOUSE_BTN_LEFT) override;
 
-    virtual bool DoKey(int keycode, int modifiers, bool isDown) wxOVERRIDE;
+    virtual bool DoKey(int keycode, int modifiers, bool isDown) override;
 
 private:
     // This class has no public ctors, use Get() instead.
@@ -55,9 +54,28 @@ private:
     wxDECLARE_NO_COPY_CLASS(wxUIActionSimulatorMSWImpl);
 };
 
+int PhysicalButtonForLogicalButton(int button)
+{
+    if ( ::GetSystemMetrics(SM_SWAPBUTTON) )
+    {
+        switch ( button )
+        {
+            case wxMOUSE_BTN_LEFT:
+                return wxMOUSE_BTN_RIGHT;
+
+            case wxMOUSE_BTN_RIGHT:
+                return wxMOUSE_BTN_LEFT;
+        }
+    }
+
+    return button;
+}
+
 DWORD EventTypeForMouseButton(int button, bool isDown)
 {
-    switch (button)
+    // wxUIActionSimulator uses logical left/right buttons. mouse_event() needs
+    // the physical MSW button producing them when the user swaps buttons.
+    switch ( PhysicalButtonForLogicalButton(button) )
     {
         case wxMOUSE_BTN_LEFT:
             return isDown ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;

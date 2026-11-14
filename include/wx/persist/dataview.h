@@ -12,7 +12,11 @@
 
 #include "wx/persist/window.h"
 
+#if wxUSE_DATAVIEWCTRL
+
 #include "wx/dataview.h"
+
+#include <vector>
 
 // ----------------------------------------------------------------------------
 // String constants used by wxPersistentDataViewCtrl.
@@ -44,11 +48,11 @@ public:
     {
     }
 
-    virtual void Save() const wxOVERRIDE
+    virtual void Save() const override
     {
         wxDataViewCtrl* const control = Get();
 
-        const wxDataViewColumn* sortColumn = NULL;
+        const wxDataViewColumn* sortColumn = nullptr;
 
         for ( unsigned int col = 0; col < control->GetColumnCount(); col++ )
         {
@@ -69,7 +73,7 @@ public:
             // entire control width.
             const int width = column->WXGetSpecifiedWidth();
             if ( width > 0 )
-                SaveValue(columnPrefix + wxASCII_STR(wxPERSIST_DVC_WIDTH), width);
+                SaveCoord(columnPrefix + wxASCII_STR(wxPERSIST_DVC_WIDTH), width);
 
             // Check if this column is the current sort key.
             if ( column->IsSortKey() )
@@ -90,9 +94,10 @@ public:
         }
     }
 
-    virtual bool Restore() wxOVERRIDE
+    virtual bool Restore() override
     {
         wxDataViewCtrl* const control = Get();
+        std::vector<wxDataViewColumn*> order(control->GetColumnCount());
 
         for ( unsigned int col = 0; col < control->GetColumnCount(); col++ )
         {
@@ -110,10 +115,27 @@ public:
 
             // Restore the column width.
             int width;
-            if ( RestoreValue(columnPrefix + wxASCII_STR(wxPERSIST_DVC_WIDTH), &width) )
+            if ( RestoreCoord(columnPrefix + wxASCII_STR(wxPERSIST_DVC_WIDTH), &width) )
                 column->SetWidth(width);
 
-            // TODO: Set the column's view position.
+            // Restore the column's view position.
+            int pos;
+            if ( RestoreValue(columnPrefix + wxASCII_STR(wxPERSIST_DVC_POS), &pos) )
+            {
+                if ( pos >= 0 && pos < wxSsize(order) )
+                    order[pos] = column;
+            }
+        }
+
+        // Set columns view position.
+        for ( int i = 0; i < wxSsize(order); ++i )
+        {
+            auto* const column = order[i];
+            if ( column && i != control->GetColumnPosition(column) )
+            {
+                control->DeleteColumn(column);
+                control->InsertColumn(i, column);
+            }
         }
 
         // Restore the sort key and order if there is a valid model and sort
@@ -137,7 +159,7 @@ public:
         return true;
     }
 
-    virtual wxString GetKind() const wxOVERRIDE
+    virtual wxString GetKind() const override
     {
         return wxASCII_STR(wxPERSIST_DVC_KIND);
     }
@@ -149,7 +171,7 @@ private:
         return wxString::Format(wxASCII_STR("/Columns/%s/"), column->GetTitle());
     }
 
-    // Return the column with the given title or NULL.
+    // Return the column with the given title or nullptr.
     static wxDataViewColumn*
     GetColumnByTitle(wxDataViewCtrl* control, const wxString& title)
     {
@@ -159,7 +181,7 @@ private:
                 return control->GetColumn(col);
         }
 
-        return NULL;
+        return nullptr;
     }
 };
 
@@ -167,5 +189,7 @@ inline wxPersistentObject *wxCreatePersistentObject(wxDataViewCtrl* control)
 {
     return new wxPersistentDataViewCtrl(control);
 }
+
+#endif // wxUSE_DATAVIEWCTRL
 
 #endif // _WX_PERSIST_DATAVIEW_H_

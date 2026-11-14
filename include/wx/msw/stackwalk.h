@@ -2,7 +2,6 @@
 // Name:        wx/msw/stackwalk.h
 // Purpose:     wxStackWalker for MSW
 // Author:      Vadim Zeitlin
-// Modified by:
 // Created:     2005-01-08
 // Copyright:   (c) 2005 Vadim Zeitlin <vadim@wxwidgets.org>
 // Licence:     wxWindows licence
@@ -21,11 +20,7 @@ struct _EXCEPTION_POINTERS;
 struct _SYMBOL_INFO;
 struct _SYMBOL_INFOW;
 
-#if wxUSE_UNICODE
-    #define wxSYMBOL_INFO _SYMBOL_INFOW
-#else // !wxUSE_UNICODE
-    #define wxSYMBOL_INFO _SYMBOL_INFO
-#endif // wxUSE_UNICODE/!wxUSE_UNICODE
+#define wxSYMBOL_INFO _SYMBOL_INFOW
 
 // ----------------------------------------------------------------------------
 // wxStackFrame
@@ -40,38 +35,56 @@ private:
     size_t DoGetParamCount() const { return m_paramTypes.GetCount(); }
 
 public:
-    wxStackFrame(size_t level, void *address, size_t addrFrame)
+    // kind of the address passed to the ctor
+    enum class AddrKind
+    {
+        // address of the instruction being executed (innermost frame only)
+        Current,
+
+        // return address, i.e. address of the instruction following the call
+        Return
+    };
+
+    wxStackFrame(size_t level, void *address, size_t addrFrame,
+                 AddrKind addrKind = AddrKind::Current)
         : wxStackFrameBase(level, address)
     {
         m_hasName =
         m_hasLocation = false;
 
         m_addrFrame = addrFrame;
+
+        m_symAddrAdjust = addrKind == AddrKind::Return ? 1 : 0;
     }
 
-    virtual size_t GetParamCount() const wxOVERRIDE
+    virtual size_t GetParamCount() const override
     {
         ConstCast()->OnGetParam();
         return DoGetParamCount();
     }
 
     virtual bool
-    GetParam(size_t n, wxString *type, wxString *name, wxString *value) const wxOVERRIDE;
+    GetParam(size_t n, wxString *type, wxString *name, wxString *value) const override;
 
     // callback used by OnGetParam(), don't call directly
     void OnParam(wxSYMBOL_INFO *pSymInfo);
 
 protected:
-    virtual void OnGetName() wxOVERRIDE;
-    virtual void OnGetLocation() wxOVERRIDE;
+    virtual void OnGetName() override;
+    virtual void OnGetLocation() override;
 
     void OnGetParam();
 
 
     // helper for debug API: it wants to have addresses as DWORDs
+    //
+    // notice that this address is inside the call instruction for the return
+    // addresses, as the instruction following it can belong to another line
+    // or even another function (if the call is the last instruction of the
+    // function, which can happen when calling a noreturn function)
     size_t GetSymAddr() const
     {
-        return reinterpret_cast<size_t>(m_address);
+        return reinterpret_cast<size_t>(m_address) - m_symAddrAdjust;
     }
 
 private:
@@ -79,6 +92,9 @@ private:
          m_hasLocation;
 
     size_t m_addrFrame;
+
+    // 1 if m_address is a return address, 0 otherwise
+    size_t m_symAddrAdjust;
 
     wxArrayString m_paramTypes,
                   m_paramNames,
@@ -94,11 +110,11 @@ class WXDLLIMPEXP_BASE wxStackWalker : public wxStackWalkerBase
 public:
     // we don't use ctor argument, it is for compatibility with Unix version
     // only
-    wxStackWalker(const char * WXUNUSED(argv0) = NULL) { }
+    wxStackWalker(const char * WXUNUSED(argv0) = nullptr) {}
 
-    virtual void Walk(size_t skip = 1, size_t maxDepth = wxSTACKWALKER_MAX_DEPTH) wxOVERRIDE;
+    virtual void Walk(size_t skip = 1, size_t maxDepth = wxSTACKWALKER_MAX_DEPTH) override;
 #if wxUSE_ON_FATAL_EXCEPTION
-    virtual void WalkFromException(size_t maxDepth = wxSTACKWALKER_MAX_DEPTH) wxOVERRIDE;
+    virtual void WalkFromException(size_t maxDepth = wxSTACKWALKER_MAX_DEPTH) override;
 #endif // wxUSE_ON_FATAL_EXCEPTION
 
 
